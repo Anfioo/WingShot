@@ -23,7 +23,9 @@
 		"dev:rsdoctor": "cross-env RSDOCTOR=true rsbuild dev",
 		"build:rsdoctor": "cross-env RSDOCTOR=true rsbuild build",
 		"build:analyze": "cross-env BUNDLE_ANALYZE=true pnpm build",
-		"prepare": "husky"
+		"prepare": "husky",
+		"tauri:dev": "tauri dev",
+		"tauri:build": "tauri build"
 	},
 	"dependencies": {
 		"@ant-design/icons": "^6.3.2",
