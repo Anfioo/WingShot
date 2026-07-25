@@ -57,22 +57,16 @@
 			"identifier": "http:default",
 			"allow": [
 				{
-					"url": "https://snowshot.top"
+					"url": "https://wingshot.anfioo.com"
 				},
 				{
-					"url": "https://*.snowshot.top"
+					"url": "https://*.wingshot.anfioo.com"
 				},
 				{
 					"url": "http://127.0.0.1:*"
 				},
 				{
 					"url": "http://localhost:*"
-				},
-				{
-					"url": "http://120.79.232.67"
-				},
-				{
-					"url": "https://snowshot.mgchao.top"
 				},
 				{
 					"url": "https://*.deepl.com"

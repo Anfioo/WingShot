@@ -1,9 +1,10 @@
 export const about = {
-	"about.title": "Snow Shot",
+	"about.title": "Wing Shot",
 	"about.subtitle":
 		"A tool software designed with simplicity and elegance as the concept ❄️",
 	"about.version": "Version",
-	"about.author": "Author: mg-chao",
+	"about.author": "Author: anfioo",
+	"about.basedOn": "Based on Snow Shot",
 	"about.license.title": "📄 Open Source License",
 	"about.license.description": "This project adopts a dual licensing model:",
 	"about.license.nonCommercial": "Non-commercial scenarios:",
@@ -13,7 +14,7 @@ export const about = {
 	"about.contact.title": "📞 Feedback & Contact",
 	"about.contact.github": "GitHub Issue",
 	"about.contact.bilibili": "Bilibili 3N0W",
-	"about.contact.email": "Email: chao@mgchao.top",
+	"about.contact.email": "Email: anfioo@wingshot.anfioo.com",
 	"about.contact.qqGroup": "QQ Group: ",
 	"about.newVersion": "New Version",
 };

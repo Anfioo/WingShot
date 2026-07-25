@@ -3,11 +3,11 @@ export const common = {
 	"common.delete": "删除",
 	"common.delete.tip": "确定删除“{name}”吗？",
 	"common.newVersion":
-		"Snow Shot 新版本 {latestVersion} 已发布 \n当前版本 {currentVersion}",
+		"Wing Shot 新版本 {latestVersion} 已发布 \n当前版本 {currentVersion}",
 	"common.newVersion.title": "发现新版本 {latestVersion}",
 	"common.newVersion.updateReady": "更新已下载完成",
 	"common.newVersion.updateReady.description":
-		"Snow Shot {version} 已准备就绪，是否立即重启应用进行更新？",
+		"Wing Shot {version} 已准备就绪，是否立即重启应用进行更新？",
 	"common.newVersion.updateNow": "立即更新",
 	"common.newVersion.updateLater": "稍后更新",
 	"common.newVersion.downloading": "正在下载更新...",

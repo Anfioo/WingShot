@@ -99,7 +99,7 @@ const ScreenshotSVG = () => (
 		></path>
 		<path
 			d="M804.588308 731.411692h82.274461V173.725538a36.588308 36.588308 0 0 0-36.588307-36.588307H292.627692v82.313846h512v512z"
-			fill="var(--snow-shot-purple-color)"
+			fill="var(--wing-shot-purple-color)"
 			p-id="17188"
 		></path>
 	</svg>

@@ -1,9 +1,9 @@
 {
 	"$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-	"identifier": "com.chao.snowshot",
+	"identifier": "com.anfioo.wingshot",
 	"plugins": {
 		"updater": {
-			"pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDMxREY5QjM4RDU5QzBBMEEKUldRS0NwelZPSnZmTVNjeWxydlZFRytwM0tZK1pkVVIzQm1rSlE4bjV3clVucGxyTXIydWZ1cW8K",
+			"pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEY4MjBDMjRFNkI0RURFQUIKUldTcjNrNXJUc0lnK05yTUtKQndxRXhNcUR2TmZjTnhDb1ZsQ3hDR1VjTDhkRnpia0JpM2hweGgK",
 			"endpoints": [],
 			"windows": {
 				"installMode": "passive"
@@ -14,7 +14,7 @@
 		"createUpdaterArtifacts": false,
 		"active": true,
 		"category": "Utility",
-		"shortDescription": "Snow Shot",
+		"shortDescription": "Wing Shot",
 		"longDescription": "Simple and elegant screenshot tool",
 		"macOS": {
 			"minimumSystemVersion": "12.3.0"

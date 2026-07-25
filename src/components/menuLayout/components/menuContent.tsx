@@ -65,10 +65,7 @@ const MenuContentCore: React.FC<{
 
 				{currentPlatform === "macos" && (
 					<div data-tauri-drag-region className="logo-text">
-						<div data-tauri-drag-region className="logo-text-highlight">
-							Snow
-						</div>
-						<div data-tauri-drag-region>Shot</div>
+						Wing Shot
 					</div>
 				)}
 			</Header>
@@ -136,7 +133,7 @@ const MenuContentCore: React.FC<{
                     height: 32px;
                     align-items: center;
                     justify-content: center;
-                    color: var(--snow-shot-text-color);
+                    color: var(--wing-shot-text-color);
                     font-style: italic;
                     font-weight: 600;
                     user-select: none;
@@ -146,9 +143,6 @@ const MenuContentCore: React.FC<{
                     right: 0;
                 }
 
-                .logo-text-highlight {
-                    color: var(--snow-shot-purple-color);
-                }
             `}</style>
 		</Layout>
 	);

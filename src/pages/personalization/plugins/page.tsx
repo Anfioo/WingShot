@@ -1,6 +1,11 @@
 "use client";
 
-import { DeleteOutlined, FolderOpenOutlined, PlusOutlined, SyncOutlined } from "@ant-design/icons";
+import {
+	DeleteOutlined,
+	FolderOpenOutlined,
+	PlusOutlined,
+	SyncOutlined,
+} from "@ant-design/icons";
 import { openPath, openUrl } from "@tauri-apps/plugin-opener";
 import { Badge, Button, List } from "antd";
 import { useMemo } from "react";
@@ -136,7 +141,9 @@ export const PluginsPage = () => {
 								disabled={item.status !== PluginStatus.Installed}
 								onClick={async () => {
 									try {
-										const dirPath = await pluginConfig?.getPluginDirPath(item.id);
+										const dirPath = await pluginConfig?.getPluginDirPath(
+											item.id,
+										);
 										if (dirPath) {
 											await openPath(dirPath);
 										}

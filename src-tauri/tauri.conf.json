@@ -1,9 +1,9 @@
 {
 	"$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-	"productName": "Snow Shot",
-	"mainBinaryName": "snowshot",
+	"productName": "Wing Shot",
+	"mainBinaryName": "wingshot",
 	"version": "0.9.0-beta",
-	"identifier": "com.chao.snowshot",
+	"identifier": "com.anfioo.wingshot",
 	"build": {
 		"removeUnusedCommands": true,
 		"frontendDist": "../dist",
@@ -19,7 +19,7 @@
 				"fullscreen": false,
 				"height": 632,
 				"maximizable": false,
-				"title": "Snow Shot",
+				"title": "Wing Shot",
 				"width": 1024,
 				"center": true,
 				"decorations": true,

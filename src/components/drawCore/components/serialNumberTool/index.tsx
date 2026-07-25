@@ -36,7 +36,7 @@ export const isSerialNumberElement = (
 		return false;
 	}
 
-	return element.id.startsWith("snow-shot_serial-number_");
+	return element.id.startsWith("wing-shot_serial-number_");
 };
 
 export const isSerialNumberTextElement = (
@@ -131,9 +131,9 @@ export const generateSerialNumber = (
 ) => {
 	const id = Date.now();
 
-	const ellipseId = `snow-shot_serial-number_${id}-ellipse`;
-	const textId = `snow-shot_serial-number_${id}-text`;
-	const serialNumberGroupNumber = `snow-shot_serial-number_${id}-group-number`;
+	const ellipseId = `wing-shot_serial-number_${id}-ellipse`;
+	const textId = `wing-shot_serial-number_${id}-text`;
+	const serialNumberGroupNumber = `wing-shot_serial-number_${id}-group-number`;
 
 	const sizeScale = appState.currentItemFontSize / 16;
 
@@ -449,7 +449,7 @@ export const SerialNumberTool: React.FC = () => {
 					const { pointerDownState } = params.params;
 					if (
 						pointerDownState.hit.element?.id.startsWith(
-							"snow-shot_serial-number_",
+							"wing-shot_serial-number_",
 						) ||
 						pointerDownState.resize.isResizing
 					) {

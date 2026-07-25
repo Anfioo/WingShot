@@ -59,7 +59,7 @@ fn main() {
 /// 仅在 Windows 下调用，读取失败时回退为 false（正常优先级）。
 #[cfg(target_os = "windows")]
 fn read_boost_process_priority_setting() -> bool {
-    const IDENTIFIER: &str = "com.chao.snowshot";
+    const IDENTIFIER: &str = "com.anfioo.wingshot";
     let config_dir = resolve_config_dir(IDENTIFIER);
     let path = config_dir.join("systemCommon.json");
 

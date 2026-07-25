@@ -35,11 +35,11 @@ export const home = {
 	"home.shortcut.none": "未设置",
 	"home.shortcut.error": "注册失败，快捷键已被其他应用占用",
 	"home.exit": "退出",
-	"home.about": "关于 Snow Shot",
+	"home.about": "关于 Wing Shot",
 	"home.disableShortcut": "禁用快捷功能",
 	"home.enableShortcut": "启用快捷功能",
 	"home.trayIcon.error": "托盘图标设置失败",
 	"home.trayIcon.error3": "托盘图标尺寸过大，推荐使用 32x32 或 64x64 的图片",
 	"home.trayIcon.error4": "托盘图标读取失败",
-	"home.snowShot": "Snow Shot",
+	"home.wingShot": "Wing Shot",
 };

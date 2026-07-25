@@ -76,7 +76,7 @@ export const getDefaultIconPath = async (
 	const nativePath = await join(
 		basePath,
 		"app-icons",
-		`snow-shot-tray-${defaultIcon}.png`,
+		`wing-shot-tray-${defaultIcon}.png`,
 	);
 	const defaultIconPath = convertFileSrc(nativePath);
 
@@ -526,7 +526,7 @@ const TrayIconLoaderComponent = () => {
 					(await defaultWindowIcon()) ??
 					""),
 			showMenuOnLeftClick: false,
-			tooltip: "Snow Shot",
+			tooltip: "Wing Shot",
 			action: (event) => {
 				switch (event.type) {
 					case "Click":
@@ -536,27 +536,27 @@ const TrayIconLoaderComponent = () => {
 									.iconClickAction === TrayIconClickAction.Screenshot
 							) {
 								executeScreenshot();
-						} else if (
-							getAppSettings()[AppSettingsGroup.FunctionTrayIcon]
-								.iconClickAction === TrayIconClickAction.ShowMainWindow
-						) {
-							showWindow();
-						} else if (
-							getAppSettings()[AppSettingsGroup.FunctionTrayIcon]
-								.iconClickAction === TrayIconClickAction.Translate
-						) {
-							executeTranslate();
-						} else if (
-							getAppSettings()[AppSettingsGroup.FunctionTrayIcon]
-								.iconClickAction === TrayIconClickAction.AiChat
-						) {
-							executeChat();
-						} else if (
-							getAppSettings()[AppSettingsGroup.FunctionTrayIcon]
-								.iconClickAction === TrayIconClickAction.CaptureHistory
-						) {
-							openCaptureHistory();
-						}
+							} else if (
+								getAppSettings()[AppSettingsGroup.FunctionTrayIcon]
+									.iconClickAction === TrayIconClickAction.ShowMainWindow
+							) {
+								showWindow();
+							} else if (
+								getAppSettings()[AppSettingsGroup.FunctionTrayIcon]
+									.iconClickAction === TrayIconClickAction.Translate
+							) {
+								executeTranslate();
+							} else if (
+								getAppSettings()[AppSettingsGroup.FunctionTrayIcon]
+									.iconClickAction === TrayIconClickAction.AiChat
+							) {
+								executeChat();
+							} else if (
+								getAppSettings()[AppSettingsGroup.FunctionTrayIcon]
+									.iconClickAction === TrayIconClickAction.CaptureHistory
+							) {
+								openCaptureHistory();
+							}
 						}
 						break;
 				}

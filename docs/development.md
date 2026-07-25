@@ -36,19 +36,19 @@ UI 组件库使用 [Ant Design](https://ant.design/)
 
 #### 1. 准备 Excalidraw
 
-在安装 Snow Shot 的项目依赖前，还需要手动准备一下 [@mg-chao/excalidraw](https://github.com/mg-chao/excalidraw) 项目作为项目的依赖。
+在安装 Wing Shot 的项目依赖前，还需要手动准备一下 [@mg-chao/excalidraw](https://github.com/mg-chao/excalidraw) 项目作为项目的依赖。
 
-因为 Snow Shot 需要自定义 Excalidraw 非常多的功能，Excalidraw 的官方组件远远没法满足 Snow Shot 的支持。
+因为 Wing Shot 需要自定义 Excalidraw 非常多的功能，Excalidraw 的官方组件远远没法满足 Wing Shot 的支持。
 
-将 `@mg-chao/excalidraw` 项目 `clone` 到 Snow Shot 的**同级目录**后，**使用 git 切换到项目的 `custom/master` 分支**，然后使用以下命令安装依赖。
+将 `@mg-chao/excalidraw` 项目 `clone` 到 Wing Shot 的**同级目录**后，**使用 git 切换到项目的 `custom/master` 分支**，然后使用以下命令安装依赖。
 
 ```bash
 yarn install
 ```
 
-Excalidraw 使用 yarn 作为包管理器，这点和 Snow Shot 不同。
+Excalidraw 使用 yarn 作为包管理器，这点和 Wing Shot 不同。
 
-接着回到 Snow Shot 目录，运行命令以构建 Excalidraw。
+接着回到 Wing Shot 目录，运行命令以构建 Excalidraw。
 
 ```bash
 pnpm update:excalidraw
@@ -56,7 +56,7 @@ pnpm update:excalidraw
 
 #### 2. 准备 ONNX 模型的运行环境
 
-Snow Shot 使用 ONNX 调用文本识别模型，为了更好的兼容性，使用了静态编译来包含模型所需的库。所以需要下载将 ONNX Runtime 的静态库放到 `src-tauri/lib` 目录下供静态编译使用。
+Wing Shot 使用 ONNX 调用文本识别模型，为了更好的兼容性，使用了静态编译来包含模型所需的库。所以需要下载将 ONNX Runtime 的静态库放到 `src-tauri/lib` 目录下供静态编译使用。
 
 ONNX Runtime 可以从 [ONNX Runtime Releases](https://github.com/supertone-inc/onnxruntime-build/releases) 下载，选择 `onnxruntime-win-x64-static_lib-1.22.1.zip`。
 
@@ -64,7 +64,7 @@ ONNX Runtime 可以从 [ONNX Runtime Releases](https://github.com/supertone-inc/
 
 #### 3. 准备视频录制环境（可选）
 
-为了完成视频录制，Snow Shot 选择调用 FFmpeg CLI 进行屏幕录制。如果不准备进行视频录制相关功能的开发，可以选择不安装 FFmpeg。
+为了完成视频录制，Wing Shot 选择调用 FFmpeg CLI 进行屏幕录制。如果不准备进行视频录制相关功能的开发，可以选择不安装 FFmpeg。
 
 可以从 [FFmpeg Builds](https://www.gyan.dev/ffmpeg/builds/) 下载 FFmpeg 的 CLI 程序，然后将 `ffmpeg.exe` 文件放入 `src-tauri/ffmpeg` 中。
 

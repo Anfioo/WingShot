@@ -305,7 +305,7 @@ export const fixedToScreen = async (
 			});
 			return canvas;
 		}),
-		appWindow.setTitle("Snow Shot - Fixed Content"),
+		appWindow.setTitle("Wing Shot - Fixed Content"),
 		new Promise((resolve) => {
 			setTimeout(() => {
 				if (getPlatform() === "windows") {

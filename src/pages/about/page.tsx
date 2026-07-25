@@ -72,7 +72,7 @@ export const AboutPage = () => {
 				<div style={{ marginBottom: -12 }}>
 					<img
 						src={"/images/app-icon.png"}
-						alt="Snow Shot"
+						alt="Wing Shot"
 						width={100}
 						height={100}
 					/>
@@ -87,19 +87,11 @@ export const AboutPage = () => {
 						}
 						style={{ display: "block", cursor: "pointer" }}
 						size="small"
-						onClick={() => openUrl("https://snowshot.top/")}
+						onClick={() => openUrl("https://wingshot.anfioo.com/")}
 					>
-						<div
-							style={{
-								fontSize: token.fontSizeHeading2,
-								marginTop: token.marginXS,
-							}}
-						>
-							<span style={{ color: "var(--snow-shot-purple-color)" }}>
-								Snow{" "}
-							</span>
-							<span>Shot</span>
-						</div>
+						<span style={{ color: "var(--wing-shot-purple-color)" }}>
+							{intl.formatMessage({ id: "about.title" })}
+						</span>
 					</Badge>
 				</Title>
 				<div>
@@ -112,7 +104,7 @@ export const AboutPage = () => {
 						<Tag color="blue" variant="outlined">
 							<a
 								style={{ color: token.colorLink }}
-								onClick={() => openUrl("https://snowshot.top/")}
+								onClick={() => openUrl("https://wingshot.anfioo.com/")}
 							>
 								{intl.formatMessage({ id: "about.version" })} {version}
 							</a>
@@ -121,9 +113,17 @@ export const AboutPage = () => {
 					<Tag color="green" variant="outlined">
 						<a
 							style={{ color: token.colorLink }}
-							onClick={() => openUrl("https://github.com/mg-chao")}
+							onClick={() => openUrl("https://github.com/anfioo")}
 						>
 							{intl.formatMessage({ id: "about.author" })}
+						</a>
+					</Tag>
+					<Tag color="purple" variant="outlined">
+						<a
+							style={{ color: token.colorLink }}
+							onClick={() => openUrl("https://github.com/Anfioo/WingShot")}
+						>
+							{intl.formatMessage({ id: "about.basedOn" })}
 						</a>
 					</Tag>
 				</Space>
@@ -176,9 +176,7 @@ export const AboutPage = () => {
 					<Button
 						type="primary"
 						icon={<GithubOutlined />}
-						onClick={() =>
-							openUrl("https://github.com/xiaofeiTM233/snow-shot/issues")
-						}
+						onClick={() => openUrl("https://github.com/Anfioo/WingShot/issues")}
 						block
 					>
 						{intl.formatMessage({ id: "about.contact.github" })}
@@ -194,7 +192,7 @@ export const AboutPage = () => {
 					</Button>
 					<Button
 						icon={<MailOutlined />}
-						onClick={() => openUrl("mailto:chao@mgchao.top")}
+						onClick={() => openUrl("mailto:anfioo@wingshot.anfioo.com")}
 						block
 					>
 						{intl.formatMessage({ id: "about.contact.email" })}

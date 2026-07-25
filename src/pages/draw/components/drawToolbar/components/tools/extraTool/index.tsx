@@ -6,12 +6,12 @@ import { createVideoRecordWindow } from "@/commands/core";
 import { DrawStatePublisher } from "@/components/drawCore/extra";
 import { VideoRecordIcon } from "@/components/icons";
 import { PLUGIN_ID_FFMPEG } from "@/constants/pluginService";
+import { AntdContext } from "@/contexts/antdContext";
 import {
 	AppSettingsActionContext,
 	AppSettingsPublisher,
 } from "@/contexts/appSettingsActionContext";
 import { usePluginServiceContext } from "@/contexts/pluginServiceContext";
-import { AntdContext } from "@/contexts/antdContext";
 import { useStateSubscriber } from "@/hooks/useStateSubscriber";
 import { DrawContext } from "@/pages/draw/types";
 import {
@@ -87,7 +87,13 @@ export const ExtraTool: React.FC<{
 		setTimeout(() => {
 			finishCapture();
 		}, 0);
-	}, [captureBoundingBoxInfoRef, finishCapture, intl, selectLayerActionRef]);
+	}, [
+		captureBoundingBoxInfoRef,
+		finishCapture,
+		intl,
+		message,
+		selectLayerActionRef,
+	]);
 
 	const updateLastActiveTool = useCallback(
 		(value: ExtraToolList) => {

@@ -401,7 +401,7 @@ pub fn capture_target_monitor(
             excluded_targets: if let Some(window_id) = window_id {
                 Some(vec![scap::Target::Window(scap::Window {
                     id: window_id,
-                    title: "Snow Shot - Draw".to_string(),
+                    title: "Wing Shot - Draw".to_string(),
                     raw_handle: window_id,
                 })])
             } else {

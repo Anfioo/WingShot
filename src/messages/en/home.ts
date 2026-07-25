@@ -39,12 +39,12 @@ export const home = {
 	"home.shortcut.none": "Not set",
 	"home.shortcut.error": "Registration failed (hotkey occupied by another app)",
 	"home.exit": "Exit",
-	"home.about": "About Snow Shot",
+	"home.about": "About Wing Shot",
 	"home.disableShortcut": "Disable Quick Functions",
 	"home.enableShortcut": "Enable Quick Functions",
 	"home.trayIcon.error": "Tray icon setting failed",
 	"home.trayIcon.error3":
 		"Tray icon size too large, recommended 32x32 or 64x64 image",
 	"home.trayIcon.error4": "Tray icon read failed",
-	"home.snowShot": "Snow Shot",
+	"home.wingShot": "Wing Shot",
 };

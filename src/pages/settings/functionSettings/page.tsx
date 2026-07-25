@@ -10,6 +10,7 @@ import {
 	ProFormText,
 	ProFormTextArea,
 } from "@ant-design/pro-components";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import {
 	Alert,
 	Col,
@@ -35,7 +36,6 @@ import {
 	useState,
 } from "react";
 import { FormattedMessage, useIntl } from "react-intl";
-import { openUrl } from "@tauri-apps/plugin-opener";
 import { listOcrModelFiles } from "@/commands/ocr";
 import { videoRecordGetMicrophoneDeviceNames } from "@/commands/videoRecord";
 import { ContentWrap } from "@/components/contentWrap";
@@ -67,6 +67,7 @@ import {
 	AppSettingsGroup,
 	CloudSaveUrlFormat,
 	CloudSaveUrlType,
+	type CustomOcrModelConfig,
 	DoubleClickAction,
 	DragOutsideSelectRectAction,
 	FixedContentDoubleClickAction,
@@ -74,7 +75,6 @@ import {
 	KeyDisplayDirection,
 	OcrDetectAfterAction,
 	OcrModel,
-	type CustomOcrModelConfig,
 	TranslationApiType,
 	TrayIconClickAction,
 	VideoMaxSize,
@@ -928,36 +928,33 @@ export const FunctionSettingsPage = () => {
 						</Row>
 					)}
 
-				<Row gutter={token.marginLG}>
-					<Col span={12}>
-						<ProFormSelect
-							name="doubleClickAction"
-							layout="horizontal"
-							label={
-								<IconLabel
-									label={<FormattedMessage id="draw.doubleClickAction" />}
-								/>
-							}
-							options={doubleClickActionOptions}
-						/>
-					</Col>
+					<Row gutter={token.marginLG}>
+						<Col span={12}>
+							<ProFormSelect
+								name="doubleClickAction"
+								layout="horizontal"
+								label={
+									<IconLabel
+										label={<FormattedMessage id="draw.doubleClickAction" />}
+									/>
+								}
+								options={doubleClickActionOptions}
+							/>
+						</Col>
 
-					<Col span={12}>
-						<ProFormSelect
-							name="dragOutsideSelectRectAction"
-							layout="horizontal"
-							label={
-								<IconLabel
-									label={
-										<FormattedMessage id="draw.dragOutsideSelectRect" />
-									}
-								/>
-							}
-							options={dragOutsideSelectRectActionOptions}
-						/>
-					</Col>
-				</Row>
-
+						<Col span={12}>
+							<ProFormSelect
+								name="dragOutsideSelectRectAction"
+								layout="horizontal"
+								label={
+									<IconLabel
+										label={<FormattedMessage id="draw.dragOutsideSelectRect" />}
+									/>
+								}
+								options={dragOutsideSelectRectActionOptions}
+							/>
+						</Col>
+					</Row>
 
 					<Row gutter={token.marginLG}>
 						<Col span={12}>
@@ -1618,42 +1615,40 @@ export const FunctionSettingsPage = () => {
 							</Row>
 
 							{isReadyStatus?.(PLUGIN_ID_AI_CHAT) && (
-								<>
-									<Row gutter={token.marginLG}>
-										<Col span={24}>
-											<ProFormTextArea
-												name="htmlVisionModelSystemPrompt"
-												label={
-													<IconLabel
-														label={
-															<FormattedMessage id="settings.functionSettings.ocrSettings.htmlVisionModelSystemPrompt" />
-														}
-													/>
-												}
-												fieldProps={{
-													rows: 1,
-													style: { resize: "vertical" },
-												}}
-											/>
-										</Col>
-										<Col span={24}>
-											<ProFormTextArea
-												name="markdownVisionModelSystemPrompt"
-												label={
-													<IconLabel
-														label={
-															<FormattedMessage id="settings.functionSettings.ocrSettings.markdownVisionModelSystemPrompt" />
-														}
-													/>
-												}
-												fieldProps={{
-													rows: 1,
-													style: { resize: "vertical" },
-												}}
-											/>
-										</Col>
-									</Row>
-								</>
+								<Row gutter={token.marginLG}>
+									<Col span={24}>
+										<ProFormTextArea
+											name="htmlVisionModelSystemPrompt"
+											label={
+												<IconLabel
+													label={
+														<FormattedMessage id="settings.functionSettings.ocrSettings.htmlVisionModelSystemPrompt" />
+													}
+												/>
+											}
+											fieldProps={{
+												rows: 1,
+												style: { resize: "vertical" },
+											}}
+										/>
+									</Col>
+									<Col span={24}>
+										<ProFormTextArea
+											name="markdownVisionModelSystemPrompt"
+											label={
+												<IconLabel
+													label={
+														<FormattedMessage id="settings.functionSettings.ocrSettings.markdownVisionModelSystemPrompt" />
+													}
+												/>
+											}
+											fieldProps={{
+												rows: 1,
+												style: { resize: "vertical" },
+											}}
+										/>
+									</Col>
+								</Row>
 							)}
 						</ProForm>
 					</Spin>
@@ -2079,128 +2074,128 @@ export const FunctionSettingsPage = () => {
 											model_name: "",
 										})}
 									>
-									<Row gutter={token.marginLG}>
-										<Col span={12}>
-											<ProFormText
-												name="model_name"
-												label={
-													<IconLabel
-														label={
-															<FormattedMessage id="settings.functionSettings.chatSettings.apiConfig.modelName" />
-														}
-														tooltipTitle={
-															<FormattedMessage id="settings.functionSettings.chatSettings.apiConfig.modelName.tip" />
-														}
-													/>
-												}
-												rules={[
-													{
-														required: true,
-														message: intl.formatMessage({
-															id: "settings.functionSettings.chatSettings.apiConfig.modelName.required",
-														}),
-													},
-												]}
-											/>
-										</Col>
-										<Col span={12}>
-											<ProFormText
-												name="api_model"
-												label={
-													<IconLabel
-														label={
-															<FormattedMessage id="settings.functionSettings.chatSettings.apiConfig.apiModel" />
-														}
-														tooltipTitle={
-															<FormattedMessage id="settings.functionSettings.chatSettings.apiConfig.apiModel.tip" />
-														}
-													/>
-												}
-												rules={[
-													{
-														required: true,
-														message: intl.formatMessage({
-															id: "settings.functionSettings.chatSettings.apiConfig.apiModel.required",
-														}),
-													},
-												]}
-											/>
-										</Col>
-										<Col span={12}>
-											<ProFormText
-												name="api_uri"
-												label={
-													<IconLabel
-														label={
-															<FormattedMessage id="settings.functionSettings.chatSettings.apiConfig.apiUri" />
-														}
-														tooltipTitle={
-															<FormattedMessage id="settings.functionSettings.chatSettings.apiConfig.apiUri.tip" />
-														}
-													/>
-												}
-												rules={[
-													{
-														required: true,
-														message: intl.formatMessage({
-															id: "settings.functionSettings.chatSettings.apiConfig.apiUri.required",
-														}),
-													},
-												]}
-											/>
-										</Col>
-										<Col span={12}>
-											<ProFormText.Password
-												name="api_key"
-												label={
-													<IconLabel
-														label={
-															<FormattedMessage id="settings.functionSettings.chatSettings.apiConfig.apiKey" />
-														}
-														tooltipTitle={
-															<FormattedMessage id="settings.functionSettings.chatSettings.apiConfig.apiKey.tip" />
-														}
-													/>
-												}
-												rules={[
-													{
-														required: true,
-														message: intl.formatMessage({
-															id: "settings.functionSettings.chatSettings.apiConfig.apiKey.required",
-														}),
-													},
-												]}
-											/>
-										</Col>
-										<Col span={12}>
-											<ProFormSwitch
-												name="support_thinking"
-												label={
-													<IconLabel
-														label={
-															<FormattedMessage id="settings.functionSettings.chatSettings.apiConfig.supportThinking" />
-														}
-													/>
-												}
-											/>
-										</Col>
-										{isReadyStatus?.(PLUGIN_ID_AI_CHAT) && (
+										<Row gutter={token.marginLG}>
 											<Col span={12}>
-												<ProFormSwitch
-													name="support_vision"
+												<ProFormText
+													name="model_name"
 													label={
 														<IconLabel
 															label={
-																<FormattedMessage id="settings.functionSettings.chatSettings.apiConfig.supportVision" />
+																<FormattedMessage id="settings.functionSettings.chatSettings.apiConfig.modelName" />
 															}
 															tooltipTitle={
-																<FormattedMessage id="settings.functionSettings.chatSettings.apiConfig.supportVision.tip" />
+																<FormattedMessage id="settings.functionSettings.chatSettings.apiConfig.modelName.tip" />
+															}
+														/>
+													}
+													rules={[
+														{
+															required: true,
+															message: intl.formatMessage({
+																id: "settings.functionSettings.chatSettings.apiConfig.modelName.required",
+															}),
+														},
+													]}
+												/>
+											</Col>
+											<Col span={12}>
+												<ProFormText
+													name="api_model"
+													label={
+														<IconLabel
+															label={
+																<FormattedMessage id="settings.functionSettings.chatSettings.apiConfig.apiModel" />
+															}
+															tooltipTitle={
+																<FormattedMessage id="settings.functionSettings.chatSettings.apiConfig.apiModel.tip" />
+															}
+														/>
+													}
+													rules={[
+														{
+															required: true,
+															message: intl.formatMessage({
+																id: "settings.functionSettings.chatSettings.apiConfig.apiModel.required",
+															}),
+														},
+													]}
+												/>
+											</Col>
+											<Col span={12}>
+												<ProFormText
+													name="api_uri"
+													label={
+														<IconLabel
+															label={
+																<FormattedMessage id="settings.functionSettings.chatSettings.apiConfig.apiUri" />
+															}
+															tooltipTitle={
+																<FormattedMessage id="settings.functionSettings.chatSettings.apiConfig.apiUri.tip" />
+															}
+														/>
+													}
+													rules={[
+														{
+															required: true,
+															message: intl.formatMessage({
+																id: "settings.functionSettings.chatSettings.apiConfig.apiUri.required",
+															}),
+														},
+													]}
+												/>
+											</Col>
+											<Col span={12}>
+												<ProFormText.Password
+													name="api_key"
+													label={
+														<IconLabel
+															label={
+																<FormattedMessage id="settings.functionSettings.chatSettings.apiConfig.apiKey" />
+															}
+															tooltipTitle={
+																<FormattedMessage id="settings.functionSettings.chatSettings.apiConfig.apiKey.tip" />
+															}
+														/>
+													}
+													rules={[
+														{
+															required: true,
+															message: intl.formatMessage({
+																id: "settings.functionSettings.chatSettings.apiConfig.apiKey.required",
+															}),
+														},
+													]}
+												/>
+											</Col>
+											<Col span={12}>
+												<ProFormSwitch
+													name="support_thinking"
+													label={
+														<IconLabel
+															label={
+																<FormattedMessage id="settings.functionSettings.chatSettings.apiConfig.supportThinking" />
 															}
 														/>
 													}
 												/>
 											</Col>
-										)}
+											{isReadyStatus?.(PLUGIN_ID_AI_CHAT) && (
+												<Col span={12}>
+													<ProFormSwitch
+														name="support_vision"
+														label={
+															<IconLabel
+																label={
+																	<FormattedMessage id="settings.functionSettings.chatSettings.apiConfig.supportVision" />
+																}
+																tooltipTitle={
+																	<FormattedMessage id="settings.functionSettings.chatSettings.apiConfig.supportVision.tip" />
+																}
+															/>
+														}
+													/>
+												</Col>
+											)}
 										</Row>
 									</ProFormList>
 								</Col>

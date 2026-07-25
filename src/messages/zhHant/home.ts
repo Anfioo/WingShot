@@ -35,11 +35,11 @@ export const home = {
 	"home.shortcut.none": "未設定",
 	"home.shortcut.error": "註冊失敗，快捷鍵已被其他應用程式佔用",
 	"home.exit": "結束",
-	"home.about": "關於 Snow Shot",
+	"home.about": "關於 Wing Shot",
 	"home.disableShortcut": "停用快速功能",
 	"home.enableShortcut": "啟用快速功能",
 	"home.trayIcon.error": "系統匣圖示設定失敗",
 	"home.trayIcon.error3": "系統匣圖示尺寸過大，建議使用 32x32 或 64x64 的圖片",
 	"home.trayIcon.error4": "系統匣圖示讀取失敗",
-	"home.snowShot": "Snow Shot",
+	"home.wingShot": "Wing Shot",
 };

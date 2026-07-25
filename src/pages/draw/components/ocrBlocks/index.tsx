@@ -15,6 +15,7 @@ import {
 import { AntdContext } from "@/contexts/antdContext";
 import { AppSettingsPublisher } from "@/contexts/appSettingsActionContext";
 import { usePluginServiceContext } from "@/contexts/pluginServiceContext";
+import { executeTranslateOcrText } from "@/functions/tools";
 import { useStateSubscriber } from "@/hooks/useStateSubscriber";
 import {
 	type AllOcrResult,
@@ -29,7 +30,6 @@ import type { OcrDetectResult } from "@/types/commands/ocr";
 import type { ElementRect } from "@/types/commands/screenshot";
 import { DrawState } from "@/types/draw";
 import { writeTextToClipboard } from "@/utils/clipboard";
-import { executeTranslateOcrText } from "@/functions/tools";
 import { ScreenshotType } from "@/utils/types";
 import { zIndexs } from "@/utils/zIndex";
 import { getCanvas } from "../../actions";

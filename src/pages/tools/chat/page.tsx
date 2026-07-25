@@ -239,10 +239,13 @@ export const MarkdownContent: React.FC<{
 	);
 };
 
-const modelRequest = XRequest(getUrl("/api/v1/chat/completions"), {
-	fetch: appFetch,
-	manual: true,
-});
+const modelRequest = XRequest<ChatRequestBody, SSEOutput, ChatMessage>(
+	getUrl("/api/v1/chat/completions"),
+	{
+		fetch: appFetch,
+		manual: true,
+	},
+);
 
 type ChatModelConfig = ChatModel & {
 	customConfig?: ChatApiConfig;
@@ -305,6 +308,7 @@ const fliterErrorMessages = (messages: ChatMessage[] | undefined) => {
 };
 
 type ChatRequestBody = {
+	message?: ChatMessage;
 	messages: { role: string; content: string }[];
 	model: string;
 	temperature?: number;
@@ -316,25 +320,35 @@ type ChatRequestBody = {
 	stream: boolean;
 };
 
-class SnowShotChatProvider extends AbstractChatProvider<any, any, any> {
+type ChatRequest = AbstractXRequestClass<
+	ChatRequestBody,
+	SSEOutput,
+	ChatMessage
+>;
+
+class WingShotChatProvider extends AbstractChatProvider<
+	ChatMessage,
+	ChatRequestBody,
+	SSEOutput
+> {
 	private selectedModelRef: { current: string | undefined };
 	private getAppSettings: () => AppSettingsData;
 	private enableThinkingRef: { current: boolean };
 	private getCustomModelRequest: (
 		model: string,
-	) => { request: AbstractXRequestClass; config: ChatApiConfig } | undefined;
+	) => { request: ChatRequest; config: ChatApiConfig } | undefined;
 	private intl: IntlShape;
 	private messageApi: { error: (content: React.ReactNode) => void };
 	private newestMessageRef: { current: ChatMessage | undefined };
 
 	constructor(params: {
-		request: AbstractXRequestClass | (() => AbstractXRequestClass);
+		request: ChatRequest | (() => ChatRequest);
 		selectedModelRef: { current: string | undefined };
 		getAppSettings: () => AppSettingsData;
 		enableThinkingRef: { current: boolean };
 		getCustomModelRequest: (
 			model: string,
-		) => { request: AbstractXRequestClass; config: ChatApiConfig } | undefined;
+		) => { request: ChatRequest; config: ChatApiConfig } | undefined;
 		intl: IntlShape;
 		messageApi: { error: (content: React.ReactNode) => void };
 		newestMessageRef: { current: ChatMessage | undefined };
@@ -350,8 +364,8 @@ class SnowShotChatProvider extends AbstractChatProvider<any, any, any> {
 	}
 
 	transformParams(
-		requestParams: Partial<ChatRequestBody>,
-		options: XRequestOptions,
+		_requestParams: Partial<ChatRequestBody>,
+		_options: XRequestOptions<ChatRequestBody, SSEOutput, ChatMessage>,
 	): ChatRequestBody {
 		const inputMessages = this.getMessages().slice(-20);
 		let newInputMessages = fliterErrorMessages(inputMessages);
@@ -383,7 +397,7 @@ class SnowShotChatProvider extends AbstractChatProvider<any, any, any> {
 
 		const userInput = last(newInputMessages);
 		if (!userInput) {
-			appError("[SnowShotChatProvider] userInput is undefined");
+			appError("[WingShotChatProvider] userInput is undefined");
 			return {
 				messages: [],
 				model: "",
@@ -441,7 +455,9 @@ class SnowShotChatProvider extends AbstractChatProvider<any, any, any> {
 		return (message ?? { content: "", role: "user" }) as ChatMessage;
 	}
 
-	transformMessage(info: TransformMessage): ChatMessage {
+	transformMessage(
+		info: TransformMessage<ChatMessage, SSEOutput>,
+	): ChatMessage {
 		const { originMessage, chunk } = info;
 		if (chunk && "code" in chunk && "message" in chunk) {
 			const chatResponse = ServiceResponse.serviceError(
@@ -514,7 +530,7 @@ class SnowShotChatProvider extends AbstractChatProvider<any, any, any> {
 				}
 			}
 		} catch (error) {
-			appError("[SnowShotChatProvider] transformMessage error", error);
+			appError("[WingShotChatProvider] transformMessage error", error);
 		}
 
 		this.newestMessageRef.current = {
@@ -657,7 +673,7 @@ const Chat = () => {
 
 			const baseURL = urlJoin(customConfig.api_uri, "chat/completions");
 			return {
-				request: XRequest(baseURL, {
+				request: XRequest<ChatRequestBody, SSEOutput, ChatMessage>(baseURL, {
 					headers: { Authorization: `Bearer ${customConfig.api_key}` },
 					fetch: appFetch,
 					manual: true,
@@ -668,7 +684,7 @@ const Chat = () => {
 		[supportedModelsRef],
 	);
 	const provider = useMemo(() => {
-		return new SnowShotChatProvider({
+		return new WingShotChatProvider({
 			request:
 				getCustomModelRequest(selectedModel ?? "")?.request ?? modelRequest,
 			selectedModelRef,
@@ -687,14 +703,15 @@ const Chat = () => {
 		getAppSettings,
 		selectedModelRef,
 		enableThinkingRef,
-		newestMessage,
 	]);
 
 	const { messages, onRequest, setMessages, abort, isRequesting } = useXChat<
 		ChatMessage,
+		ChatMessage,
+		ChatRequestBody,
 		SSEOutput
 	>({
-		provider: provider as AbstractChatProvider,
+		provider,
 		requestFallback: (_requestParams, info): ChatMessage => {
 			const { error } = info;
 

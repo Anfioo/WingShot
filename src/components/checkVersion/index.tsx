@@ -18,7 +18,7 @@ import { type AppSettingsData, AppSettingsGroup } from "@/types/appSettings";
 import { appError, appInfo } from "@/utils/log";
 import { getPlatform } from "@/utils/platform";
 
-const WEBSITE_URL = "https://snowshot.top/";
+const WEBSITE_URL = "https://wingshot.anfioo.com/";
 
 export const getLatestVersion = async () => {
 	const response = await fetch(`${WEBSITE_URL}latest-version.txt`);

@@ -1,8 +1,9 @@
 export const about = {
-	"about.title": "Snow Shot",
+	"about.title": "Wing Shot",
 	"about.subtitle": "简单优雅的工具软件 ❄️",
 	"about.version": "版本",
-	"about.author": "作者: mg-chao",
+	"about.author": "作者: anfioo",
+	"about.basedOn": "基于 Snow Shot",
 	"about.license.title": "📄 开源协议",
 	"about.license.description": "本项目采用双重许可模式：",
 	"about.license.nonCommercial": "非商用场景：",
@@ -12,7 +13,7 @@ export const about = {
 	"about.contact.title": "📞 问题反馈与联系",
 	"about.contact.github": "GitHub Issue",
 	"about.contact.bilibili": "B站 3N0W",
-	"about.contact.email": "邮件: chao@mgchao.top",
+	"about.contact.email": "邮件: anfioo@wingshot.anfioo.com",
 	"about.contact.qqGroup": "QQ 交流群: 974311403",
 	"about.newVersion": "新版本",
 };

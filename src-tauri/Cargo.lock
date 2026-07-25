@@ -6730,51 +6730,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "51d44cfb396c3caf6fbfd0ab422af02631b69ddd96d2eff0b0f0724f9024051b"
 
 [[package]]
-name = "snow-shot"
-version = "0.9.0-beta"
-dependencies = [
- "base64 0.22.1",
- "log",
- "serde",
- "serde_json",
- "snow-shot-app-os",
- "snow-shot-app-scroll-screenshot-service",
- "snow-shot-app-services",
- "snow-shot-app-shared",
- "snow-shot-app-utils",
- "snow-shot-global-state",
- "snow-shot-http-services",
- "snow-shot-plugin-service",
- "snow-shot-tauri-commands-core",
- "snow-shot-tauri-commands-file",
- "snow-shot-tauri-commands-http-service",
- "snow-shot-tauri-commands-ocr",
- "snow-shot-tauri-commands-screenshot",
- "snow-shot-tauri-commands-scroll-screenshot",
- "snow-shot-webview",
- "tauri",
- "tauri-build",
- "tauri-plugin-autostart",
- "tauri-plugin-clipboard",
- "tauri-plugin-clipboard-manager",
- "tauri-plugin-dialog",
- "tauri-plugin-fs",
- "tauri-plugin-global-shortcut",
- "tauri-plugin-http",
- "tauri-plugin-log",
- "tauri-plugin-macos-permissions",
- "tauri-plugin-notification",
- "tauri-plugin-opener",
- "tauri-plugin-os",
- "tauri-plugin-process",
- "tauri-plugin-single-instance",
- "tauri-plugin-store",
- "tauri-plugin-updater",
- "tauri-plugin-window-state",
- "tokio",
-]
-
-[[package]]
 name = "snow-shot-app-os"
 version = "0.1.0"
 dependencies = [
@@ -9809,6 +9764,51 @@ name = "windows_x86_64_msvc"
 version = "0.53.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6bbff5f0aada427a1e5a6da5f1f98158182f26556f345ac9e04d36d0ebed650"
+
+[[package]]
+name = "wing-shot"
+version = "0.9.0-beta"
+dependencies = [
+ "base64 0.22.1",
+ "log",
+ "serde",
+ "serde_json",
+ "snow-shot-app-os",
+ "snow-shot-app-scroll-screenshot-service",
+ "snow-shot-app-services",
+ "snow-shot-app-shared",
+ "snow-shot-app-utils",
+ "snow-shot-global-state",
+ "snow-shot-http-services",
+ "snow-shot-plugin-service",
+ "snow-shot-tauri-commands-core",
+ "snow-shot-tauri-commands-file",
+ "snow-shot-tauri-commands-http-service",
+ "snow-shot-tauri-commands-ocr",
+ "snow-shot-tauri-commands-screenshot",
+ "snow-shot-tauri-commands-scroll-screenshot",
+ "snow-shot-webview",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-autostart",
+ "tauri-plugin-clipboard",
+ "tauri-plugin-clipboard-manager",
+ "tauri-plugin-dialog",
+ "tauri-plugin-fs",
+ "tauri-plugin-global-shortcut",
+ "tauri-plugin-http",
+ "tauri-plugin-log",
+ "tauri-plugin-macos-permissions",
+ "tauri-plugin-notification",
+ "tauri-plugin-opener",
+ "tauri-plugin-os",
+ "tauri-plugin-process",
+ "tauri-plugin-single-instance",
+ "tauri-plugin-store",
+ "tauri-plugin-updater",
+ "tauri-plugin-window-state",
+ "tokio",
+]
 
 [[package]]
 name = "winnow"

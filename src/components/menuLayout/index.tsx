@@ -9,6 +9,7 @@ import { Layout, theme } from "antd";
 import type { ItemType, MenuItemType } from "antd/es/menu/interface";
 import React, { useCallback, useContext, useEffect, useMemo } from "react";
 import { useIntl } from "react-intl";
+import { setRememberWindowGeometry } from "@/commands/core";
 import { CheckEnvironment } from "@/components/checkEnvironment";
 import { CheckVersion } from "@/components/checkVersion";
 import { GlobalEventHandler } from "@/components/globalEventHandler";
@@ -29,7 +30,6 @@ import { AppSettingsActionContext } from "@/contexts/appSettingsActionContext";
 import { usePluginServiceContext } from "@/contexts/pluginServiceContext";
 import { useAppSettingsLoad } from "@/hooks/useAppSettingsLoad";
 import { withStatePublisher } from "@/hooks/useStatePublisher";
-import { setRememberWindowGeometry } from "@/commands/core";
 import { en } from "@/messages/en";
 import { zhHans } from "@/messages/zhHans";
 import { zhHant } from "@/messages/zhHant";
@@ -493,8 +493,8 @@ const MenuLayoutCore: React.FC<{ children: React.ReactNode }> = ({
 				path: "/about",
 				tabs: [
 					{
-						key: "snowShot",
-						label: intl.formatMessage({ id: "home.snowShot" }),
+						key: "wingShot",
+						label: intl.formatMessage({ id: "home.wingShot" }),
 					},
 				],
 				label: intl.formatMessage({ id: "menu.about" }),

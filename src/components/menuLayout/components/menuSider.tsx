@@ -71,19 +71,7 @@ const MenuSiderCore: React.FC<{
 
 				{currentPlatform !== "macos" && (
 					<div className="logo-wrap">
-						<div className="logo-text">
-							{collapsed ? (
-								<>
-									<div className="logo-text-highlight">S</div>
-									<div>now</div>
-								</>
-							) : (
-								<>
-									<div className="logo-text-highlight">Snow</div>
-									<div>Shot</div>
-								</>
-							)}
-						</div>
+						<div className="logo-text">{collapsed ? "WS" : "Wing Shot"}</div>
 					</div>
 				)}
 				<RSC>
@@ -110,22 +98,14 @@ const MenuSiderCore: React.FC<{
                 }
 
                 .logo-wrap .logo-text {
-                    color: var(--snow-shot-text-color);
+                    color: var(--wing-shot-text-color);
                     display: inline-block;
                     padding: 0px 12px;
                 }
 
                 :global(body) {
-                    --snow-shot-purple-color: ${darkMode ? token["purple-7"] : token["purple-5"]};
-                    --snow-shot-text-color: ${darkMode ? "#fff" : "#000"};
-                }
-
-                .logo-wrap .logo-text .logo-text-highlight {
-                    color: var(--snow-shot-purple-color);
-                }
-
-                .logo-wrap .logo-text div {
-                    display: inline;
+                    --wing-shot-purple-color: ${darkMode ? token["purple-7"] : token["purple-5"]};
+                    --wing-shot-text-color: ${darkMode ? "#fff" : "#000"};
                 }
 
                 .macos-title-bar-margin {

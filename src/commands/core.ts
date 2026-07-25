@@ -11,7 +11,7 @@ export const getSelectedText = async () => {
 export const setEnableProxy = async (enable: boolean) => {
 	const result = await invoke<string>("set_enable_proxy", {
 		enable,
-		host: "127.0.0.1,localhost,snowshot.top,120.79.232.67,snowshot.mgchao.top",
+		host: "127.0.0.1,localhost,wingshot.anfioo.com",
 	});
 	return result;
 };

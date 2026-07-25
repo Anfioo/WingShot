@@ -171,7 +171,9 @@ export const useDragElement = (
 		) => ElementRect,
 	) => UpdateElementPositionResult;
 	reset: () => void;
-	onMouseDown: (event: React.PointerEvent<HTMLDivElement> | PointerEvent) => void;
+	onMouseDown: (
+		event: React.PointerEvent<HTMLDivElement> | PointerEvent,
+	) => void;
 	onMouseMove: (
 		event: React.PointerEvent<HTMLDivElement> | PointerEvent,
 		element: HTMLElement,

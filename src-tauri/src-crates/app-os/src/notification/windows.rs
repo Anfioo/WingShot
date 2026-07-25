@@ -5,9 +5,9 @@ use windows::{
 
 pub fn send_new_version_notification(title: String, body: String) {
     // 首先尝试 Toast 通知，失败时使用备用方案
-    if let Err(e) = send_toast_notification(&title, &body, "https://snowshot.top/") {
+    if let Err(e) = send_toast_notification(&title, &body, "https://wingshot.anfioo.com/") {
         log::warn!("Toast 通知发送失败: {}，使用备用方案", e);
-        send_notification_with_url_fallback(&title, &body, "https://snowshot.top/");
+        send_notification_with_url_fallback(&title, &body, "https://wingshot.anfioo.com/");
     }
 }
 
@@ -23,7 +23,7 @@ fn send_toast_notification(title: &str, body: &str, url: &str) -> Result<()> {
         RoInitialize(RO_INIT_SINGLETHREADED).ok();
 
         // 创建 Toast 通知管理器，使用应用程序标识符
-        let app_id = HSTRING::from("Snow Shot");
+        let app_id = HSTRING::from("Wing Shot");
         let toast_manager = ToastNotificationManager::CreateToastNotifierWithId(&app_id)?;
 
         // 创建 Toast XML 模板
@@ -127,7 +127,7 @@ $notify.Dispose()"#,
 
 // 公共函数：尝试发送 Toast 通知，失败时使用备用方案
 pub fn send_notification_with_fallback(title: &str, body: &str) {
-    if send_toast_notification(title, body, "https://snowshot.top/").is_err() {
+    if send_toast_notification(title, body, "https://wingshot.anfioo.com/").is_err() {
         log::warn!("Toast 通知发送失败，使用备用方案");
         if let Err(e) = send_simple_notification(title, body) {
             log::error!("备用通知也发送失败: {:?}", e);

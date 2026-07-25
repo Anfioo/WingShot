@@ -71,7 +71,7 @@ pub fn get_focused_window() -> HWND {
     unsafe { GetForegroundWindow() }
 }
 
-const TASK_NAME: &str = "SnowShot Admin Auto Start";
+const TASK_NAME: &str = "WingShot Admin Auto Start";
 
 struct ComGuard;
 impl Drop for ComGuard {
@@ -193,7 +193,7 @@ pub fn create_admin_auto_start_task() -> Result<(), String> {
         }
     };
     unsafe {
-        let hr = p_reg_info.SetAuthor(&windows::core::BSTR::from("SnowShot"));
+        let hr = p_reg_info.SetAuthor(&windows::core::BSTR::from("WingShot"));
         if hr.is_err() {
             return Err(format!(
                 "[create_admin_auto_start_task] SetAuthor failed: {:?}",

@@ -225,7 +225,7 @@ pub async fn create_fixed_content_window(
     .maximizable(false)
     .minimizable(false)
     .fullscreen(false)
-    .title("Snow Shot - Fixed Content")
+    .title("Wing Shot - Fixed Content")
     .position(window_x, window_y)
     .decorations(false)
     .shadow(false)
@@ -291,7 +291,7 @@ pub async fn create_full_screen_draw_window(
             match main_window_opt {
                 Some(window) => {
                     window.set_always_on_top(true).unwrap();
-                    window.set_title("Snow Shot - Full Screen Draw").unwrap();
+                    window.set_title("Wing Shot - Full Screen Draw").unwrap();
                     window.show().unwrap();
                     window.set_focus().unwrap();
 
@@ -322,7 +322,7 @@ pub async fn create_full_screen_draw_window(
                 .resizable(false)
                 .maximizable(false)
                 .minimizable(false)
-                .title("Snow Shot - Full Screen Draw")
+                .title("Wing Shot - Full Screen Draw")
                 .position(0.0, 0.0)
                 .inner_size(1.0, 1.0)
                 .decorations(false)
@@ -340,7 +340,7 @@ pub async fn create_full_screen_draw_window(
                 Some(window) => {
                     window.set_always_on_top(true).unwrap();
                     window
-                        .set_title("Snow Shot - Full Screen Draw - Switch Mouse Through")
+                        .set_title("Wing Shot - Full Screen Draw - Switch Mouse Through")
                         .unwrap();
                     window.show().unwrap();
 
@@ -371,7 +371,7 @@ pub async fn create_full_screen_draw_window(
                 .resizable(false)
                 .maximizable(false)
                 .minimizable(false)
-                .title("Snow Shot - Full Screen Draw - Switch Mouse Through")
+                .title("Wing Shot - Full Screen Draw - Switch Mouse Through")
                 .position(0.0, 0.0)
                 .inner_size(1.0, 1.0)
                 .decorations(false)
@@ -605,7 +605,7 @@ pub async fn create_video_record_window(
             match main_window_opt {
                 Some(window) => {
                     window.set_always_on_top(true).unwrap();
-                    window.set_title("Snow Shot - Video Record").unwrap();
+                    window.set_title("Wing Shot - Video Record").unwrap();
                     window.hide().unwrap();
 
                     match window.emit(
@@ -632,7 +632,7 @@ pub async fn create_video_record_window(
                 .resizable(false)
                 .maximizable(false)
                 .minimizable(false)
-                .title("Snow Shot - Video Record")
+                .title("Wing Shot - Video Record")
                 .position(0.0, 0.0)
                 .inner_size(10.0, 10.0)
                 .decorations(false)
@@ -650,7 +650,7 @@ pub async fn create_video_record_window(
                 Some(window) => {
                     window.set_always_on_top(true).unwrap();
                     window
-                        .set_title("Snow Shot - Video Record - Toolbar")
+                        .set_title("Wing Shot - Video Record - Toolbar")
                         .unwrap();
                     window.hide().unwrap();
 
@@ -678,7 +678,7 @@ pub async fn create_video_record_window(
                 .resizable(false)
                 .maximizable(false)
                 .minimizable(false)
-                .title("Snow Shot - Video Record - Toolbar")
+                .title("Wing Shot - Video Record - Toolbar")
                 .position(0.0, 0.0)
                 .inner_size(10.0, 10.0)
                 .decorations(false)

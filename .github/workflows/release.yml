@@ -1,4 +1,4 @@
-# Snow Shot 项目 Release 自动构建工作流
+# Wing Shot 项目 Release 自动构建工作流
 # 将显示在 GitHub 存储库的"操作"选项卡中的工作流名称
 name: Release CI
 
@@ -209,7 +209,7 @@ jobs:
         run: |
           # 下载 npm.zip
           Write-Host "Downloading npm.zip..."
-          Invoke-WebRequest -Uri "https://github.com/mg-chao/snow-shot-webview-runtime/releases/download/Resources_20251107/npm.zip" -OutFile "npm.zip"
+          Invoke-WebRequest -Uri "https://github.com/Anfioo/WingShot/releases/download/Resources_20251107/npm.zip" -OutFile "npm.zip"
 
           # 解压 npm.zip 到 public 目录
           Write-Host "Extracting npm.zip to public directory..."
@@ -330,11 +330,11 @@ jobs:
         id: asset_pattern
         run: |
           if [ "${{ matrix.fixedRuntime }}" = "true" ]; then
-            echo "pattern=Snow Shot_[version]_[platform]-[arch]_webview[_setup][ext]" >> $GITHUB_OUTPUT
+            echo "pattern=Wing Shot_[version]_[platform]-[arch]_webview[_setup][ext]" >> $GITHUB_OUTPUT
           elif [ "${{ matrix.offline }}" = "true" ]; then
-            echo "pattern=Snow Shot_[version]_[platform]-[arch]_offline[_setup][ext]" >> $GITHUB_OUTPUT
+            echo "pattern=Wing Shot_[version]_[platform]-[arch]_offline[_setup][ext]" >> $GITHUB_OUTPUT
           else
-            echo "pattern=Snow Shot_[version]_[platform]-[arch][_setup][ext]" >> $GITHUB_OUTPUT
+            echo "pattern=Wing Shot_[version]_[platform]-[arch][_setup][ext]" >> $GITHUB_OUTPUT
           fi
         shell: bash
 
@@ -349,7 +349,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: ${{ needs.create-release.outputs.app_version }}
-          releaseName: Snow Shot ${{ needs.create-release.outputs.app_version }}
+          releaseName: Wing Shot ${{ needs.create-release.outputs.app_version }}
           assetNamePattern: ${{ steps.asset_pattern.outputs.pattern }}
           releaseBody: ""
           releaseDraft: true

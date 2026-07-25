@@ -30,7 +30,7 @@ impl PluginService {
             plugin_install_dir: RwLock::new(PathBuf::new()),
             plugin_download_dir: RwLock::new(PathBuf::new()),
             plugin_download_service_url: RwLock::new(
-                Url::parse("https://snowshot.top/plugins").unwrap(),
+                Url::parse("https://wingshot.anfioo.com/plugins").unwrap(),
             ),
             plugins: DashMap::new(),
             app_handle: Arc::new(RwLock::new(None)),

@@ -209,7 +209,7 @@ pub fn run() {
 
     // 每次启动用时间戳生成独立日志文件名
     let launch_tag = utc_timestamp_tag();
-    let log_file_name = format!("snow-shot-{launch_tag}");
+    let log_file_name = format!("wing-shot-{launch_tag}");
 
     // log 文件可能因为某些异常情况不断输出，造成日志文件过大
     // 先在 release 下屏蔽日志输出

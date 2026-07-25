@@ -112,8 +112,10 @@ export const settings = {
 	"settings.systemSettings.commonSettings.runLog": "執行日誌",
 	"settings.systemSettings.commonSettings.runLog.tip":
 		"將記錄輸出到記錄檔案中，用於問題回報",
-	"settings.systemSettings.commonSettings.rememberWindowGeometry": "記住關閉時視窗的位置和大小",
-	"settings.systemSettings.commonSettings.boostProcessPriority": "提升程序優先級",
+	"settings.systemSettings.commonSettings.rememberWindowGeometry":
+		"記住關閉時視窗的位置和大小",
+	"settings.systemSettings.commonSettings.boostProcessPriority":
+		"提升程序優先級",
 	"settings.systemSettings.commonSettings.boostProcessPriority.tip":
 		"將應用程式程序優先級提升為「高於正常」，使截圖與全域快捷鍵的回應更及時（僅 Windows）",
 	"settings.hotKeySettings.translation": "翻譯",
@@ -176,7 +178,7 @@ export const settings = {
 		"請輸入 API 模型",
 	"settings.functionSettings.chatSettings.apiConfig.modelName": "模型名稱",
 	"settings.functionSettings.chatSettings.apiConfig.modelName.tip":
-		"模型名稱用於 Snow Shot 的顯示",
+		"模型名稱用於 Wing Shot 的顯示",
 	"settings.functionSettings.chatSettings.apiConfig.modelName.required":
 		"請輸入模型名稱",
 	"settings.functionSettings.chatSettings.apiConfig.supportThinking":
@@ -528,7 +530,7 @@ export const settings = {
 	"settings.systemSettings.screenshotSettings.tryGetElementByFocus":
 		"選取視窗元素增強",
 	"settings.systemSettings.screenshotSettings.tryGetElementByFocus.tip":
-		"啟用後將為嘗試選取的視窗元素提供焦點，以修復諸如瀏覽器等程式在無焦點時無法選取視窗元素的問題。當視窗堆疊排列的情況複雜時，底部視窗取得焦點後將遮擋頂部視窗，Snow Shot 會嘗試復原視窗的層級，如影響使用請停用該功能。\n 白名單程式：{whiteList}",
+		"啟用後將為嘗試選取的視窗元素提供焦點，以修復諸如瀏覽器等程式在無焦點時無法選取視窗元素的問題。當視窗堆疊排列的情況複雜時，底部視窗取得焦點後將遮擋頂部視窗，Wing Shot 會嘗試復原視窗的層級，如影響使用請停用該功能。\n 白名單程式：{whiteList}",
 	"settings.systemSettings.screenshotSettings.tryGetElementByFocus.never":
 		"停用",
 	"settings.systemSettings.screenshotSettings.tryGetElementByFocus.firefox":
@@ -620,15 +622,22 @@ export const settings = {
 	"settings.functionSettings.ocrSettings.htmlVisionModel": "視覺理解模型",
 	"settings.functionSettings.ocrSettings.htmlVisionModel.tip":
 		"將圖片轉為 HTML 的視覺理解模型",
-	"settings.functionSettings.ocrSettings.customOcrModelConfig": "文字辨識模型配置",
+	"settings.functionSettings.ocrSettings.customOcrModelConfig":
+		"文字辨識模型配置",
 	"settings.functionSettings.ocrSettings.customOcrModelConfig.tip":
 		"從 {link} 下載 ONNX 模型檔案放置到外掛程式資料目錄後，可在此配置文字辨識模型",
-	"settings.functionSettings.ocrSettings.customOcrModelConfig.tip.link": "此倉庫",
-	"settings.functionSettings.ocrSettings.customOcrModelConfig.add": "新增文字辨識模型配置",
-	"settings.functionSettings.ocrSettings.customOcrModelConfig.modelName": "模型名稱",
-	"settings.functionSettings.ocrSettings.customOcrModelConfig.detModel": "檢測(det)",
-	"settings.functionSettings.ocrSettings.customOcrModelConfig.recModel": "識別(rec)",
-	"settings.functionSettings.ocrSettings.customOcrModelConfig.clsModel": "方向(cls)",
+	"settings.functionSettings.ocrSettings.customOcrModelConfig.tip.link":
+		"此倉庫",
+	"settings.functionSettings.ocrSettings.customOcrModelConfig.add":
+		"新增文字辨識模型配置",
+	"settings.functionSettings.ocrSettings.customOcrModelConfig.modelName":
+		"模型名稱",
+	"settings.functionSettings.ocrSettings.customOcrModelConfig.detModel":
+		"檢測(det)",
+	"settings.functionSettings.ocrSettings.customOcrModelConfig.recModel":
+		"識別(rec)",
+	"settings.functionSettings.ocrSettings.customOcrModelConfig.clsModel":
+		"方向(cls)",
 	"settings.functionSettings.ocrSettings.htmlVisionModel.default": "預設",
 	"settings.functionSettings.ocrSettings.htmlVisionModel.default.tip":
 		"預設使用首個支援視覺理解的模型",

@@ -599,7 +599,7 @@ pub async fn create_draw_window(app: tauri::AppHandle) {
     .maximizable(false)
     .minimizable(false)
     .fullscreen(false)
-    .title("Snow Shot - Draw")
+    .title("Wing Shot - Draw")
     .decorations(false)
     .shadow(false)
     .transparent(true)

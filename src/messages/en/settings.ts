@@ -188,7 +188,7 @@ export const settings = {
 		"Please enter API Model",
 	"settings.functionSettings.chatSettings.apiConfig.modelName": "Model Name",
 	"settings.functionSettings.chatSettings.apiConfig.modelName.tip":
-		"Model name for display in Snow Shot",
+		"Model name for display in Wing Shot",
 	"settings.functionSettings.chatSettings.apiConfig.modelName.required":
 		"Please enter Model Name",
 	"settings.functionSettings.chatSettings.apiConfig.supportThinking":
@@ -558,7 +558,7 @@ export const settings = {
 	"settings.systemSettings.screenshotSettings.tryGetElementByFocus":
 		"Window Element Selection Enhancement",
 	"settings.systemSettings.screenshotSettings.tryGetElementByFocus.tip":
-		"Enables focus for attempted window elements, fixes issues like browsers not being able to select window elements without focus. When window stacking is complex, bottom window getting focus may cover top window. Snow Shot will try to restore window layering. If it affects usage, disable this feature.\n Whitelist programs: {whiteList}",
+		"Enables focus for attempted window elements, fixes issues like browsers not being able to select window elements without focus. When window stacking is complex, bottom window getting focus may cover top window. Wing Shot will try to restore window layering. If it affects usage, disable this feature.\n Whitelist programs: {whiteList}",
 	"settings.systemSettings.screenshotSettings.tryGetElementByFocus.never":
 		"Never",
 	"settings.systemSettings.screenshotSettings.tryGetElementByFocus.firefox":
@@ -655,15 +655,22 @@ export const settings = {
 	"settings.functionSettings.ocrSettings.htmlVisionModel": "Vision Model",
 	"settings.functionSettings.ocrSettings.htmlVisionModel.tip":
 		"Vision model for converting images to HTML",
-	"settings.functionSettings.ocrSettings.customOcrModelConfig": "OCR Model Configuration",
+	"settings.functionSettings.ocrSettings.customOcrModelConfig":
+		"OCR Model Configuration",
 	"settings.functionSettings.ocrSettings.customOcrModelConfig.tip":
 		"Download ONNX model files from {link} and place them in the plugin data directory, then configure OCR models here",
-	"settings.functionSettings.ocrSettings.customOcrModelConfig.tip.link": "this repository",
-	"settings.functionSettings.ocrSettings.customOcrModelConfig.add": "Add OCR Model Config",
-	"settings.functionSettings.ocrSettings.customOcrModelConfig.modelName": "Model Name",
-	"settings.functionSettings.ocrSettings.customOcrModelConfig.detModel": "Detection(det)",
-	"settings.functionSettings.ocrSettings.customOcrModelConfig.recModel": "Recognition(rec)",
-	"settings.functionSettings.ocrSettings.customOcrModelConfig.clsModel": "Orientation(cls)",
+	"settings.functionSettings.ocrSettings.customOcrModelConfig.tip.link":
+		"this repository",
+	"settings.functionSettings.ocrSettings.customOcrModelConfig.add":
+		"Add OCR Model Config",
+	"settings.functionSettings.ocrSettings.customOcrModelConfig.modelName":
+		"Model Name",
+	"settings.functionSettings.ocrSettings.customOcrModelConfig.detModel":
+		"Detection(det)",
+	"settings.functionSettings.ocrSettings.customOcrModelConfig.recModel":
+		"Recognition(rec)",
+	"settings.functionSettings.ocrSettings.customOcrModelConfig.clsModel":
+		"Orientation(cls)",
 	"settings.functionSettings.ocrSettings.htmlVisionModel.default": "Default",
 	"settings.functionSettings.ocrSettings.htmlVisionModel.default.tip":
 		"Use the first vision model by default",

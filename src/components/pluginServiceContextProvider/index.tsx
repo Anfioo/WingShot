@@ -75,7 +75,7 @@ export const PluginServiceContextProvider: React.FC<{
 			"20251005",
 			await path.join(configDirPath, "plugins"),
 			await path.join(configDirPath, "pluginsDownloads"),
-			"https://snowshot.top/plugins/",
+			"https://wingshot.anfioo.com/plugins/",
 		);
 		setPluginConfig(pluginConfig);
 

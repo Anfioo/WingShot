@@ -235,7 +235,7 @@ impl UIElements {
 
                 match window.title() {
                     Ok(title) => {
-                        if title.eq("Shell Handwriting Canvas") || title.eq("Snow Shot - Draw") {
+                        if title.eq("Shell Handwriting Canvas") || title.eq("Wing Shot - Draw") {
                             return None;
                         }
 
@@ -442,11 +442,11 @@ impl UIElements {
     //     current_element: &mut uiautomation::Result<UIElement>,
     //     parent_level: &ElementLevel,
     // ) {
-    //     // 跳过 Snow Shot 窗口
+    //     // 跳过 Wing Shot 窗口
     //     if parent_level.is_root() {
     //         if let Ok(element) = current_element.as_ref() {
     //             if let Ok(name) = element.get_name() {
-    //                 if name == "Snow Shot - Draw" {
+    //                 if name == "Wing Shot - Draw" {
     //                     *current_element = automation_walker.get_next_sibling(element);
     //                     return;
     //                 }

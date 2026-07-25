@@ -69,7 +69,7 @@ impl HotLoadPageService {
         .maximizable(false)
         .minimizable(false)
         .fullscreen(false)
-        .title("Snow Shot - Hot Load Page")
+        .title("Wing Shot - Hot Load Page")
         .decorations(false)
         .shadow(false)
         .transparent(true)

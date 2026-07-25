@@ -17,7 +17,11 @@ import {
 import { usePluginServiceContext } from "@/contexts/pluginServiceContext";
 import { useAppSettingsLoad } from "@/hooks/useAppSettingsLoad";
 import { usePlatform } from "@/hooks/usePlatform";
-import { type AppSettingsData, AppSettingsGroup, OcrModel } from "@/types/appSettings";
+import {
+	type AppSettingsData,
+	AppSettingsGroup,
+	OcrModel,
+} from "@/types/appSettings";
 import { CaptureHistory } from "@/utils/captureHistory";
 import { appWarn } from "@/utils/log";
 
@@ -150,7 +154,8 @@ export const InitService = () => {
 			(!hasInitBoostProcessPriority.current ||
 				(prevAppSettings &&
 					appSettings[AppSettingsGroup.SystemCommon].boostProcessPriority !==
-						prevAppSettings[AppSettingsGroup.SystemCommon].boostProcessPriority))
+						prevAppSettings[AppSettingsGroup.SystemCommon]
+							.boostProcessPriority))
 		) {
 			hasInitBoostProcessPriority.current = true;
 

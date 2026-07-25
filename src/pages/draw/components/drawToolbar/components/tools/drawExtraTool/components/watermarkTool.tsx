@@ -30,7 +30,7 @@ const generateWatermarkElement = (
 	appState: AppState,
 ): ExcalidrawWatermarkElement => {
 	return {
-		id: `snow-shot_watermark_${Date.now()}`,
+		id: `wing-shot_watermark_${Date.now()}`,
 		type: "watermark",
 		x: -Number.MAX_SAFE_INTEGER,
 		y: -Number.MAX_SAFE_INTEGER,

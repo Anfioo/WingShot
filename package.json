@@ -1,15 +1,18 @@
 {
-	"name": "snow-shot",
+	"name": "wing-shot",
 	"version": "0.0.1",
-	"author": "mg-chao",
-	"homepage": "https://github.com/mg-chao/snow-shot",
+	"author": "anfioo",
+	"contributors": [
+		"mg-chao"
+	],
+	"homepage": "https://github.com/Anfioo/WingShot",
 	"repository": {
 		"type": "git",
-		"url": "https://github.com/mg-chao/snow-shot.git"
+		"url": "https://github.com/Anfioo/WingShot.git"
 	},
 	"license": "GPL-3.0",
 	"keywords": [
-		"snow-shot"
+		"wing-shot"
 	],
 	"private": true,
 	"type": "module",
@@ -19,13 +22,13 @@
 		"preview": "rsbuild preview",
 		"lint": "biome format ./ && biome check ./",
 		"lint:fix": "biome format ./ --write && biome check --write ./src",
-		"update:excalidraw": "cd ../excalidraw && rimraf ./packages/excalidraw/dist && yarn build:packages && cd ../snow-shot && pnpm update @mg-chao/excalidraw",
+		"update:excalidraw": "cd ../excalidraw && rimraf ./packages/excalidraw/dist && yarn build:packages && cd ../WingShot && pnpm update @mg-chao/excalidraw",
 		"dev:rsdoctor": "cross-env RSDOCTOR=true rsbuild dev",
 		"build:rsdoctor": "cross-env RSDOCTOR=true rsbuild build",
 		"build:analyze": "cross-env BUNDLE_ANALYZE=true pnpm build",
 		"prepare": "husky",
 		"tauri:dev": "powershell -ExecutionPolicy Bypass -File ./scripts/dev.ps1",
-		"tauri:build": "tauri build"
+		"tauri:build": "powershell -ExecutionPolicy Bypass -File ./scripts/build.ps1"
 	},
 	"dependencies": {
 		"@ant-design/icons": "^6.3.2",
