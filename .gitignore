@@ -30,6 +30,9 @@ dist/
 # production
 /build
 
+# dev
+/lib
+
 # misc
 .DS_Store
 *.pem
