@@ -209,7 +209,7 @@ jobs:
         run: |
           # 下载 npm.zip
           Write-Host "Downloading npm.zip..."
-          Invoke-WebRequest -Uri "https://github.com/Anfioo/WingShot/releases/download/Resources_20251107/npm.zip" -OutFile "npm.zip"
+          Invoke-WebRequest -Uri "https://github.com/Anfioo/WingShot/releases/download/Resources_20260725/npm.zip" -OutFile "npm.zip"
 
           # 解压 npm.zip 到 public 目录
           Write-Host "Extracting npm.zip to public directory..."
