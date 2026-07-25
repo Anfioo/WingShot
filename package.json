@@ -1,6 +1,6 @@
 {
 	"name": "wing-shot",
-	"version": "0.0.1",
+	"version": "0.9.0-beta",
 	"author": "anfioo",
 	"contributors": [
 		"mg-chao"
@@ -20,6 +20,7 @@
 		"build": "rsbuild build",
 		"dev": "rsbuild dev --port 8083",
 		"preview": "rsbuild preview",
+		"release:version": "node scripts/release-version.mjs",
 		"lint": "biome format ./ && biome check ./",
 		"lint:fix": "biome format ./ --write && biome check --write ./src",
 		"update:excalidraw": "cd ../excalidraw && rimraf ./packages/excalidraw/dist && yarn build:packages && cd ../WingShot && pnpm update @mg-chao/excalidraw",

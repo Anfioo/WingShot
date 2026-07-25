@@ -16,4 +16,10 @@ export const about = {
 	"about.contact.email": "郵件: anfioo@wingshot.anfioo.com",
 	"about.contact.qqGroup": "QQ 交流群: 974311403",
 	"about.newVersion": "新版本",
+	"about.update.checking": "檢查更新中...",
+	"about.update.upToDate": "目前已是最新版本",
+	"about.update.checkFailed": "檢查更新失敗，請稍後再試",
+	"about.update.openRelease": "開啟 GitHub Release",
+	"about.update.githubRelease.description":
+		"發現 Wing Shot 新版本 {latestVersion}，目前版本 {currentVersion}。是否前往 GitHub Release 下載對應版本？",
 };
