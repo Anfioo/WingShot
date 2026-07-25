@@ -32,6 +32,7 @@ dist/
 
 # dev
 /lib
+.example
 
 # misc
 .DS_Store

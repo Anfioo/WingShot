@@ -46,11 +46,6 @@ import { ResetSettingsButton } from "@/components/resetSettingsButton";
 import { defaultAppSettingsData } from "@/constants/appSettings";
 import { FOCUS_WINDOW_APP_NAME_ENV_VARIABLE } from "@/constants/components/chat";
 import {
-	SOURCE_LANGUAGE_ENV_VARIABLE,
-	TARGET_LANGUAGE_ENV_VARIABLE,
-	TRANSLATION_DOMAIN_ENV_VARIABLE,
-} from "@/constants/components/translation";
-import {
 	PLUGIN_ID_AI_CHAT,
 	PLUGIN_ID_FFMPEG,
 	PLUGIN_ID_RAPID_OCR,
@@ -75,7 +70,6 @@ import {
 	KeyDisplayDirection,
 	OcrDetectAfterAction,
 	OcrModel,
-	TranslationApiType,
 	TrayIconClickAction,
 	VideoMaxSize,
 } from "@/types/appSettings";
@@ -87,7 +81,6 @@ import {
 	getVideoRecordSaveDirectory,
 } from "@/utils/file";
 import { TestChat } from "./components/testChat";
-import { TranslationConfig } from "./components/translationConfig";
 
 export const FunctionSettingsPage = () => {
 	const intl = useIntl();
@@ -100,8 +93,6 @@ export const FunctionSettingsPage = () => {
 		Form.useForm<AppSettingsData[AppSettingsGroup.FunctionDraw]>();
 	const [trayIconForm] =
 		Form.useForm<AppSettingsData[AppSettingsGroup.FunctionTrayIcon]>();
-	const [translationForm] =
-		Form.useForm<AppSettingsData[AppSettingsGroup.FunctionTranslation]>();
 	const [screenshotForm] =
 		Form.useForm<AppSettingsData[AppSettingsGroup.FunctionScreenshot]>();
 	const [outputForm] =
@@ -123,16 +114,6 @@ export const FunctionSettingsPage = () => {
 		useCallback(
 			(settings: AppSettingsData, preSettings?: AppSettingsData) => {
 				setAppSettingsLoading(false);
-
-				if (
-					preSettings === undefined ||
-					preSettings[AppSettingsGroup.FunctionTranslation] !==
-						settings[AppSettingsGroup.FunctionTranslation]
-				) {
-					translationForm.setFieldsValue(
-						settings[AppSettingsGroup.FunctionTranslation],
-					);
-				}
 
 				if (
 					preSettings === undefined ||
@@ -248,7 +229,6 @@ export const FunctionSettingsPage = () => {
 				}
 			},
 			[
-				translationForm,
 				functionForm,
 				functionDrawForm,
 				screenshotForm,
@@ -568,23 +548,6 @@ export const FunctionSettingsPage = () => {
 					id: "draw.laserPointerTool",
 				}),
 				value: DrawState.LaserPointer,
-			},
-		];
-	}, [intl]);
-
-	const translationApiTypeOptions = useMemo(() => {
-		return [
-			{
-				label: intl.formatMessage({
-					id: "settings.functionSettings.translationSettings.apiConfig.apiType.deepL",
-				}),
-				value: TranslationApiType.DeepL,
-			},
-			{
-				label: intl.formatMessage({
-					id: "settings.functionSettings.translationSettings.apiConfig.apiType.custom",
-				}),
-				value: TranslationApiType.Custom,
 			},
 		];
 	}, [intl]);
@@ -1650,304 +1613,6 @@ export const FunctionSettingsPage = () => {
 									</Col>
 								</Row>
 							)}
-						</ProForm>
-					</Spin>
-				</>
-			)}
-
-			{isReadyStatus?.(PLUGIN_ID_TRANSLATE) && (
-				<>
-					<Divider />
-
-					<GroupTitle
-						id="translationSettings"
-						extra={
-							<ResetSettingsButton
-								title={
-									<FormattedMessage id="settings.functionSettings.translationSettings" />
-								}
-								appSettingsGroup={AppSettingsGroup.FunctionTranslation}
-							/>
-						}
-					>
-						<FormattedMessage id="settings.functionSettings.translationSettings" />
-					</GroupTitle>
-
-					<Spin spinning={appSettingsLoading}>
-						<TranslationConfig />
-
-						<ProForm
-							form={translationForm}
-							onValuesChange={(_, values) => {
-								updateAppSettings(
-									AppSettingsGroup.FunctionTranslation,
-									values,
-									true,
-									true,
-									true,
-									true,
-									false,
-								);
-							}}
-							submitter={false}
-						>
-							<Row gutter={token.marginLG}>
-								<Col span={12}>
-									<ProFormSwitch
-										name="optimizeAiTranslationLayout"
-										label={
-											<IconLabel
-												label={
-													<FormattedMessage id="settings.functionSettings.translationSettings.optimizeAiTranslationLayout" />
-												}
-												tooltipTitle={
-													<FormattedMessage id="settings.functionSettings.translationSettings.optimizeAiTranslationLayout.tip" />
-												}
-											/>
-										}
-										layout="vertical"
-									/>
-								</Col>
-							</Row>
-
-							<Row gutter={token.marginLG}>
-								<Col span={24}>
-									<ProFormList
-										name="translationApiConfigList"
-										label={
-											<IconLabel
-												label={
-													<FormattedMessage id="settings.functionSettings.translationSettings.apiConfig" />
-												}
-											/>
-										}
-										creatorButtonProps={{
-											creatorButtonText: intl.formatMessage({
-												id: "settings.functionSettings.translationSettings.apiConfig.add",
-											}),
-										}}
-										className="api-config-list"
-										min={0}
-										itemRender={({ listDom, action }) => (
-											<Flex align="end" justify="space-between">
-												{listDom}
-
-												<div>{action}</div>
-											</Flex>
-										)}
-										creatorRecord={() => ({
-											api_uri: "",
-											api_key: "",
-											api_type: TranslationApiType.DeepL,
-										})}
-									>
-										<Row gutter={token.marginLG} style={{ width: "100%" }}>
-											<Col span={12}>
-												<ProFormSelect
-													name="api_type"
-													label={
-														<IconLabel
-															label={
-																<FormattedMessage id="settings.functionSettings.translationSettings.apiConfig.apiType" />
-															}
-														/>
-													}
-													allowClear={false}
-													options={translationApiTypeOptions}
-												/>
-											</Col>
-											<Col span={12}>
-												<ProFormText
-													name="api_uri"
-													label={
-														<IconLabel
-															label={
-																<FormattedMessage id="settings.functionSettings.translationSettings.apiConfig.apiUri" />
-															}
-															tooltipTitle={
-																<FormattedMessage id="settings.functionSettings.translationSettings.apiConfig.apiUri.tip" />
-															}
-														/>
-													}
-													rules={[
-														{
-															required: true,
-															message: intl.formatMessage({
-																id: "settings.functionSettings.translationSettings.apiConfig.apiUri.required",
-															}),
-														},
-													]}
-												/>
-											</Col>
-											<ProFormDependency<{ api_type: TranslationApiType }>
-												name={["api_type"]}
-											>
-												{({ api_type }) => {
-													if (api_type === TranslationApiType.DeepL) {
-														return (
-															<Col span={12}>
-																<ProFormText.Password
-																	name="api_key"
-																	label={
-																		<IconLabel
-																			label={
-																				<FormattedMessage id="settings.functionSettings.translationSettings.apiConfig.apiKey" />
-																			}
-																			tooltipTitle={
-																				<FormattedMessage id="settings.functionSettings.translationSettings.apiConfig.apiKey.tip" />
-																			}
-																		/>
-																	}
-																	rules={[
-																		{
-																			required: true,
-																			message: intl.formatMessage({
-																				id: "settings.functionSettings.translationSettings.apiConfig.apiKey.required",
-																			}),
-																		},
-																	]}
-																/>
-															</Col>
-														);
-													}
-													return null;
-												}}
-											</ProFormDependency>
-
-											<ProFormDependency<{ api_type: TranslationApiType }>
-												name={["api_type"]}
-											>
-												{({ api_type }) => {
-													if (api_type === TranslationApiType.DeepL) {
-														return (
-															<Col span={12}>
-																<ProFormSwitch
-																	name="deepl_prefer_quality_optimized"
-																	label={
-																		<IconLabel
-																			label={
-																				<FormattedMessage id="settings.functionSettings.translationSettings.apiConfig.deeplPreferQualityOptimized" />
-																			}
-																			tooltipTitle={
-																				<FormattedMessage id="settings.functionSettings.translationSettings.apiConfig.deeplPreferQualityOptimized.tip" />
-																			}
-																		/>
-																	}
-																/>
-															</Col>
-														);
-													}
-
-													if (api_type === TranslationApiType.Custom) {
-														return (
-															<>
-																<Col span={12}>
-																	<ProFormDigit
-																		name="max_requests_per_second"
-																		label={
-																			<IconLabel
-																				label={
-																					<FormattedMessage id="settings.functionSettings.translationSettings.apiConfig.maxRequestsPerSecond" />
-																				}
-																				tooltipTitle={
-																					<FormattedMessage id="settings.functionSettings.translationSettings.apiConfig.maxRequestsPerSecond.tip" />
-																				}
-																			/>
-																		}
-																		min={1}
-																		max={100}
-																		fieldProps={{
-																			precision: 0,
-																		}}
-																	/>
-																</Col>
-																<Col span={12}>
-																	<ProFormDigit
-																		name="max_paragraph_count"
-																		label={
-																			<IconLabel
-																				label={
-																					<FormattedMessage id="settings.functionSettings.translationSettings.apiConfig.maxParagraphCount" />
-																				}
-																				tooltipTitle={
-																					<FormattedMessage id="settings.functionSettings.translationSettings.apiConfig.maxParagraphCount.tip" />
-																				}
-																			/>
-																		}
-																		min={1}
-																		max={100}
-																		fieldProps={{
-																			precision: 0,
-																		}}
-																	/>
-																</Col>
-															</>
-														);
-													}
-
-													return null;
-												}}
-											</ProFormDependency>
-										</Row>
-									</ProFormList>
-								</Col>
-							</Row>
-
-							<Row gutter={token.marginLG}>
-								<Col span={24}>
-									<Alert
-										message={
-											<Typography>
-												<Row>
-													<Col span={24}>
-														<FormattedMessage id="settings.functionSettings.translationSettings.chatPrompt.variables" />
-													</Col>
-													<Col span={12}>
-														<FormattedMessage id="settings.functionSettings.translationSettings.chatPrompt.sourceLanguage" />
-														<code>{SOURCE_LANGUAGE_ENV_VARIABLE}</code>
-													</Col>
-													<Col span={12}>
-														<FormattedMessage id="settings.functionSettings.translationSettings.chatPrompt.targetLanguage" />
-														<code>{TARGET_LANGUAGE_ENV_VARIABLE}</code>
-													</Col>
-													<Col span={12}>
-														<FormattedMessage id="settings.functionSettings.translationSettings.chatPrompt.translationDomain" />
-														<code>{TRANSLATION_DOMAIN_ENV_VARIABLE}</code>
-													</Col>
-												</Row>
-											</Typography>
-										}
-										type="info"
-										style={{ marginBottom: token.margin }}
-									/>
-									<ProFormTextArea
-										label={
-											<IconLabel
-												label={
-													<FormattedMessage id="settings.functionSettings.translationSettings.chatPrompt" />
-												}
-												tooltipTitle={
-													<FormattedMessage id="settings.functionSettings.translationSettings.chatPrompt.tip" />
-												}
-											/>
-										}
-										layout="horizontal"
-										name="translationSystemPrompt"
-										rules={[
-											{
-												required: true,
-												message: intl.formatMessage({
-													id: "settings.functionSettings.translationSettings.chatPrompt.required",
-												}),
-											},
-										]}
-										fieldProps={{
-											rows: 1,
-											style: { resize: "vertical" },
-										}}
-									/>
-								</Col>
-							</Row>
 						</ProForm>
 					</Spin>
 				</>

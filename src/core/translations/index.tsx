@@ -1,8 +1,5 @@
-import { trim } from "es-toolkit";
-import OpenAI from "openai";
-import { useCallback, useContext, useEffect, useRef, useState } from "react";
+import { useCallback, useContext, useEffect, useState } from "react";
 import { useIntl } from "react-intl";
-import { defaultTranslationPrompt } from "@/constants/components/translation";
 import { AntdContext } from "@/contexts/antdContext";
 import { AppSettingsActionContext } from "@/contexts/appSettingsActionContext";
 import { useAppSettingsLoad } from "@/hooks/useAppSettingsLoad";
@@ -11,12 +8,8 @@ import {
 	convertLanguageCodeToDeepLSourceLanguageCode,
 	convertLanguageCodeToDeepLTargetLanguageCode,
 } from "@/pages/settings/functionSettings/extra";
-import { CUSTOM_MODEL_PREFIX } from "@/pages/tools/chat/page";
-import { getTranslationPrompt } from "@/pages/tools/translation/extra";
-import { appFetch, getUrl, type ServiceResponse } from "@/services/tools";
-import { type ChatModel, getChatModelsWithCache } from "@/services/tools/chat";
+import type { ServiceResponse } from "@/services/tools";
 import {
-	getTranslationTypesWithCache,
 	translate,
 	translateTextCustomWithLimits,
 	translateTextDeepL,
@@ -26,7 +19,6 @@ import {
 import {
 	type AppSettingsData,
 	AppSettingsGroup,
-	type ChatApiConfig,
 	type TranslationApiConfig,
 	TranslationApiType,
 } from "@/types/appSettings";
@@ -35,33 +27,26 @@ import {
 	type TranslateData,
 	TranslationDomain,
 	TranslationType,
-	type TranslationTypeOption,
 } from "@/types/servies/translation";
 import { appError } from "@/utils/log";
 
-export type TranslationServiceConfig = (
-	| TranslationTypeOption
+export type TranslationServiceConfig =
 	| {
 			name: string;
-			type: string;
-			apiConfig: ChatApiConfig;
+			type: TranslationType;
+			isOfficial: true;
 	  }
 	| {
 			name: string;
 			type: TranslationApiType;
 			translationApiConfig: TranslationApiConfig;
-	  }
-) & {
-	isOfficial: boolean;
-};
+			isOfficial: false;
+	  };
 
 export const useTranslationRequest = (options?: {
 	/// 配置从 Cache 中加载
 	enableCacheConfig?: boolean;
 	onComplete?: (result: { content: string }[], requestId?: number) => void;
-	onDeltaContent?: (deltaContent: string) => void;
-	/// 懒加载
-	lazyLoad?: boolean;
 }) => {
 	const intl = useIntl();
 	const { message } = useContext(AntdContext);
@@ -80,26 +65,10 @@ export const useTranslationRequest = (options?: {
 	const [targetLanguage, setTargetLanguage, targetLanguageRef] =
 		useStateRef<string>("zh-CHS");
 
-	// 用户自定义的 AI 对话配置
-	const [chatApiConfigList, setChatApiConfigList] = useState<
-		ChatApiConfig[] | undefined
-	>(undefined);
 	/// 用户自定义的翻译 API 配置
 	const [translationApiConfigList, setTranslationApiConfigList] = useState<
 		TranslationApiConfig[] | undefined
 	>(undefined);
-	// Wing Shot 自带的
-	const [
-		officialTranslationTypes,
-		setOfficialTranslationTypes,
-		officialTranslationTypesRef,
-	] = useStateRef<TranslationTypeOption[] | undefined>(undefined);
-	const [officialChatModels, setOfficialChatModels, officialChatModelsRef] =
-		useStateRef<ChatModel[] | undefined>(undefined);
-	const [chatConfig, setChatConfig] =
-		useState<AppSettingsData[AppSettingsGroup.SystemChat]>();
-	const [translationConfig, setTranslationConfig] =
-		useState<AppSettingsData[AppSettingsGroup.FunctionTranslation]>();
 
 	useAppSettingsLoad(
 		useCallback(
@@ -136,16 +105,10 @@ export const useTranslationRequest = (options?: {
 					);
 				}
 
-				setChatApiConfigList(
-					settings[AppSettingsGroup.FunctionChat].chatApiConfigList,
-				);
 				setTranslationApiConfigList(
 					settings[AppSettingsGroup.FunctionTranslation]
 						.translationApiConfigList,
 				);
-
-				setChatConfig(settings[AppSettingsGroup.SystemChat]);
-				setTranslationConfig(settings[AppSettingsGroup.FunctionTranslation]);
 			},
 			[
 				setSourceLanguage,
@@ -158,41 +121,6 @@ export const useTranslationRequest = (options?: {
 		true,
 	);
 	const { updateAppSettings } = useContext(AppSettingsActionContext);
-
-	const reloadOnlineConfigsPromiseRef = useRef<
-		Promise<[undefined, undefined]> | undefined
-	>(undefined);
-	const reloadOnlineConfigs = useCallback(async () => {
-		if (officialTranslationTypesRef.current && officialChatModelsRef.current) {
-			return;
-		}
-
-		const promise = Promise.all([
-			getTranslationTypesWithCache().then((res) => {
-				setOfficialTranslationTypes(res ?? []);
-				return undefined;
-			}),
-			getChatModelsWithCache().then((res) => {
-				setOfficialChatModels(res ?? []);
-				return undefined;
-			}),
-		]);
-		reloadOnlineConfigsPromiseRef.current = promise;
-		await promise;
-	}, [
-		setOfficialChatModels,
-		setOfficialTranslationTypes,
-		officialChatModelsRef,
-		officialTranslationTypesRef,
-	]);
-
-	useEffect(() => {
-		if (options?.lazyLoad) {
-			return;
-		}
-
-		reloadOnlineConfigs();
-	}, [reloadOnlineConfigs, options?.lazyLoad]);
 
 	const [
 		supportedTranslationTypes,
@@ -221,29 +149,21 @@ export const useTranslationRequest = (options?: {
 	useEffect(() => {
 		setSupportedTranslationTypesLoading(true);
 		setSupportedTranslationTypes([
-			// 谷歌翻译（内置）
+			{
+				type: TranslationType.Youdao,
+				name: intl.formatMessage({ id: "tools.translation.type.youdao" }),
+				isOfficial: true,
+			},
 			{
 				type: TranslationType.Google,
 				name: intl.formatMessage({ id: "tools.translation.type.google" }),
 				isOfficial: true,
 			},
-			// 微软翻译（内置）
 			{
 				type: TranslationType.Microsoft,
 				name: intl.formatMessage({ id: "tools.translation.type.microsoft" }),
 				isOfficial: true,
 			},
-			...(chatApiConfigList?.map((item): TranslationServiceConfig => {
-				return {
-					type: `${CUSTOM_MODEL_PREFIX}${item.api_model}`,
-					name: item.model_name,
-					apiConfig: {
-						...item,
-						support_thinking: false,
-					},
-					isOfficial: false,
-				};
-			}) ?? []),
 			...(translationApiConfigList?.map((item): TranslationServiceConfig => {
 				return {
 					type: item.api_type,
@@ -252,38 +172,11 @@ export const useTranslationRequest = (options?: {
 					isOfficial: false,
 				};
 			}) ?? []),
-			...(officialTranslationTypes ?? []).map(
-				(item): TranslationServiceConfig => {
-					return {
-						type: item.type,
-						name: item.name,
-						isOfficial: true,
-					};
-				},
-			),
-			...(officialChatModels ?? []).map((item): TranslationServiceConfig => {
-				return {
-					type: item.model,
-					name: item.name,
-					apiConfig: {
-						api_uri: getUrl("api/v1/"),
-						api_key: "",
-						api_model: item.model,
-						model_name: item.name,
-						support_thinking: false,
-						support_vision: false,
-					},
-					isOfficial: true,
-				};
-			}),
 		]);
 		setSupportedTranslationTypesLoading(false);
 	}, [
-		chatApiConfigList,
 		setSupportedTranslationTypes,
 		translationApiConfigList,
-		officialChatModels,
-		officialTranslationTypes,
 		getTranslationApiConfigTypeName,
 		intl,
 	]);
@@ -291,7 +184,7 @@ export const useTranslationRequest = (options?: {
 	// 请求翻译的加载
 	const [startTranslateLoading, setStartTranslateLoading] = useState(false);
 	// 翻译内容的加载
-	const [deltaTranslateLoading, setDeltaTranslateLoading] = useState(false);
+	const [deltaTranslateLoading] = useState(false);
 	const [translatedContent, setTranslatedContent, translatedContentRef] =
 		useStateRef<string>("");
 
@@ -301,7 +194,6 @@ export const useTranslationRequest = (options?: {
 			sourceLanguage: string;
 			targetLanguage: string;
 			translationType: string;
-			translationDomain: TranslationDomain;
 			requestId?: number;
 		}): Promise<{
 			success: boolean;
@@ -405,92 +297,11 @@ export const useTranslationRequest = (options?: {
 				}
 			}
 
-			if (!("apiConfig" in config)) {
-				return {
-					success: false,
-				};
-			}
-
-			const client = new OpenAI({
-				apiKey: config.apiConfig.api_key,
-				baseURL: config.apiConfig.api_uri,
-				dangerouslyAllowBrowser: true,
-				fetch: appFetch,
-			});
-
-			setStartTranslateLoading(true);
-
-			let responseContent: string = "";
-			try {
-				const streamResponse = await client.chat.completions.create({
-					model: config.apiConfig.api_model.replace(CUSTOM_MODEL_PREFIX, ""),
-					messages: [
-						{
-							role: "system",
-							content: getTranslationPrompt(
-								translationConfig?.translationSystemPrompt ??
-									defaultTranslationPrompt,
-								sourceLanguage,
-								targetLanguage,
-								translationDomain,
-							),
-						},
-						{
-							role: "user",
-							content: params.sourceContent.join("%%"),
-						},
-					],
-					max_completion_tokens: chatConfig?.maxTokens ?? 4096,
-					temperature: chatConfig?.temperature ?? 1,
-					stream: true,
-				});
-
-				setDeltaTranslateLoading(true);
-				try {
-					setTranslatedContent("");
-					for await (const event of streamResponse) {
-						if (event.choices.length > 0 && event.choices[0].delta.content) {
-							setTranslatedContent(
-								(prevContent) =>
-									`${prevContent}${event.choices[0].delta.content}`,
-							);
-							responseContent += event.choices[0].delta.content;
-							options?.onDeltaContent?.(event.choices[0].delta.content);
-						}
-					}
-				} catch (error) {
-					appError("[customTranslation] streamResponse error", error);
-				}
-				setDeltaTranslateLoading(false);
-			} catch (error) {
-				appError("[customTranslation] error", error);
-			} finally {
-				setStartTranslateLoading(false);
-			}
-
-			const result =
-				params.sourceContent.length > 1
-					? responseContent.split("%%").map((item) => ({ content: trim(item) }))
-					: [{ content: responseContent }];
-
-			options?.onComplete?.(result, params.requestId);
-
 			return {
-				success: true,
-				result: [{ content: responseContent }],
+				success: false,
 			};
 		},
-		[
-			sourceLanguage,
-			targetLanguage,
-			translationDomain,
-			supportedTranslationTypesRef,
-			chatConfig?.maxTokens,
-			chatConfig?.temperature,
-			options,
-			translationConfig?.translationSystemPrompt,
-			setTranslatedContent,
-		],
+		[supportedTranslationTypesRef, options],
 	);
 
 	const requestTranslate = useCallback(
@@ -500,32 +311,30 @@ export const useTranslationRequest = (options?: {
 			const sourceLanguage = sourceLanguageRef.current;
 			const targetLanguage = targetLanguageRef.current;
 
-			if (options?.lazyLoad) {
-				await reloadOnlineConfigs();
-				await new Promise((resolve) => setTimeout(resolve, 17));
-			}
-
-			if (reloadOnlineConfigsPromiseRef.current) {
-				await reloadOnlineConfigsPromiseRef.current;
-				await new Promise((resolve) => setTimeout(resolve, 17));
-			}
-
 			if (typeof translationType === "string") {
 				const result = await customTranslation({
 					sourceContent: sourceContent,
 					sourceLanguage: sourceLanguage,
 					targetLanguage: targetLanguage,
 					translationType: translationType,
-					translationDomain: translationDomain,
 					requestId: requestId,
 				});
 				if (result.success) {
 					return;
 				}
+				return;
 			}
 
+			const officialTranslationType = [
+				TranslationType.Youdao,
+				TranslationType.Google,
+				TranslationType.Microsoft,
+			].includes(translationType as TranslationType)
+				? (translationType as TranslationType)
+				: TranslationType.Youdao;
+
 			// 谷歌翻译
-			if (translationType === TranslationType.Google) {
+			if (officialTranslationType === TranslationType.Google) {
 				setStartTranslateLoading(true);
 				const result = await translateTextGoogle(
 					sourceContent,
@@ -547,7 +356,7 @@ export const useTranslationRequest = (options?: {
 			}
 
 			// 微软翻译
-			if (translationType === TranslationType.Microsoft) {
+			if (officialTranslationType === TranslationType.Microsoft) {
 				setStartTranslateLoading(true);
 				const result = await translateTextMicrosoft(
 					sourceContent,
@@ -578,7 +387,7 @@ export const useTranslationRequest = (options?: {
 					from: sourceLanguage,
 					to: targetLanguage,
 					domain: translationDomain,
-					type: translationType as TranslationType, // 如果没找到自定义模型，则报错
+					type: officialTranslationType,
 				});
 			} catch (error) {
 				appError("[requestTranslate] error", error);
@@ -610,7 +419,6 @@ export const useTranslationRequest = (options?: {
 			translationDomainRef,
 			translationTypeRef,
 			setTranslatedContent,
-			reloadOnlineConfigs,
 		],
 	);
 

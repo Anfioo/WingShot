@@ -328,12 +328,6 @@ const MenuLayoutCore: React.FC<{ children: React.ReactNode }> = ({
 								}),
 							},
 							{
-								key: "translationSettings",
-								label: intl.formatMessage({
-									id: "settings.functionSettings.translationSettings",
-								}),
-							},
-							{
 								key: "chatSettings",
 								label: intl.formatMessage({
 									id: "settings.functionSettings.chatSettings",
@@ -374,10 +368,6 @@ const MenuLayoutCore: React.FC<{ children: React.ReactNode }> = ({
 								return isReadyStatus?.(PLUGIN_ID_FFMPEG);
 							}
 
-							if (item.key === "translationSettings") {
-								return isReadyStatus?.(PLUGIN_ID_TRANSLATE);
-							}
-
 							if (item.key === "chatSettings") {
 								return isReadyStatus?.(PLUGIN_ID_AI_CHAT);
 							}
@@ -385,6 +375,26 @@ const MenuLayoutCore: React.FC<{ children: React.ReactNode }> = ({
 							return true;
 						}),
 					},
+					...(isReadyStatus?.(PLUGIN_ID_TRANSLATE)
+						? [
+								{
+									key: "/settings/translationSettings",
+									path: "/settings/translationSettings",
+									label: intl.formatMessage({
+										id: "menu.settings.translationSettings",
+									}),
+									hideTabs: true,
+									tabs: [
+										{
+											key: "translationSettings",
+											label: intl.formatMessage({
+												id: "settings.functionSettings.translationSettings",
+											}),
+										},
+									],
+								},
+							]
+						: []),
 					{
 						key: "/settings/hotKeySettings",
 						path: "/settings/hotKeySettings",
