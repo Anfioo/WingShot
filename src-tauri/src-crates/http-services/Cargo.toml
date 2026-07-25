@@ -1,0 +1,22 @@
+[package]
+name = "snow-shot-http-services"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# S3 客户端（使用更轻量的实现）
+rust-s3 = { version = "0.35", default-features = false, features = ["tokio-rustls-tls"] }
+
+# 异步运行时
+tokio = { version = "1.47", features = ["full"] }
+
+# 序列化
+serde = { version = "1.0", features = ["derive"] }
+
+# 错误处理
+anyhow = "1.0"
+thiserror = "2.0"
+
+# 日志
+log = "0.4"
+

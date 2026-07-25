@@ -1,0 +1,17 @@
+export const menu = {
+	"menu.functions": "Quick Functions",
+	"menu.screenshot": "Screenshot",
+	"menu.settings": "Settings",
+	"menu.settings.generalSettings": "Interface Settings",
+	"menu.settings.functionSettings": "Function Settings",
+	"menu.settings.hotKeySettings": "Hotkey Settings",
+	"menu.settings.systemSettings": "System Settings",
+	"menu.tools": "Toolbox",
+	"menu.tools.translation": "Translation",
+	"menu.tools.chat": "AI Chat",
+	"menu.tools.captureHistory": "Screenshot History",
+	"menu.personalization": "Personalization",
+	"menu.personalization.plugins": "Plugins",
+	"menu.personalization.appearance": "Appearance",
+	"menu.about": "About",
+};

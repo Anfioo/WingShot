@@ -1,0 +1,149 @@
+# Snow Shot 项目手动构建 Test 版本工作流
+# 将显示在 GitHub 存储库的"操作"选项卡中的工作流名称
+name: Test Build CI
+
+# 指定此工作流的触发器
+on:
+  workflow_dispatch:
+
+jobs:
+  # 编译 Tauri 应用
+  build-app:
+    permissions:
+      contents: read
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      # 获取 Excalidraw 的 commit hash
+      - name: Get Excalidraw Commit Hash
+        id: excalidraw-info
+        run: |
+          $hash = git ls-remote https://github.com/mg-chao/excalidraw.git refs/heads/custom/master | Select-Object -First 1 | ForEach-Object { $_.Split()[0] }
+          echo "hash=$hash" >> $env:GITHUB_OUTPUT
+        shell: pwsh
+
+      # 缓存 Excalidraw 构建
+      - name: Cache Excalidraw Build
+        id: cache-excalidraw
+        uses: actions/cache@v5
+        with:
+          path: excalidraw
+          key: excalidraw-build-${{ steps.excalidraw-info.outputs.hash }}
+
+      # 构建 Excalidraw
+      - name: Build Excalidraw
+        if: steps.cache-excalidraw.outputs.cache-hit != 'true'
+        run: |
+          git clone https://github.com/mg-chao/excalidraw.git
+          cd excalidraw
+          git checkout custom/master
+          npm install -g yarn
+          yarn install --frozen-lockfile
+          yarn build:packages
+        shell: bash
+
+      # 保存 Excalidraw 缓存
+      - name: Save Excalidraw Cache
+        if: steps.cache-excalidraw.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: excalidraw
+          key: excalidraw-build-${{ steps.excalidraw-info.outputs.hash }}
+
+      # 移动 Excalidraw 目录
+      - name: Move Excalidraw to Sibling Directory
+        run: |
+          Move-Item -Path ./excalidraw -Destination ../excalidraw
+        shell: pwsh
+
+      # 安装 Node.js 和 pnpm
+      - name: Setup node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+
+      # 安装 Rust
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install rust target
+        run: rustup target add x86_64-pc-windows-msvc
+
+      # 使用 Rust 缓存，加快安装速度
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+          shared-key: "snow-shot-windows-build"
+          cache-on-failure: true
+
+      # 配置 pnpm 缓存
+      - name: Setup pnpm cache
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      # 创建 .env 文件
+      - name: Create .env file
+        run: echo "PUBLIC_ONLINE_STATUS=true" > .env
+        shell: bash
+
+      # 安装前端依赖并打包
+      - name: Install app dependencies and build web
+        run: pnpm install --frozen-lockfile
+
+      # 链接 Excalidraw
+      - name: Link Excalidraw
+        run: |
+          pnpm update @mg-chao/excalidraw
+        shell: pwsh
+
+      # 下载并配置 onnxruntime (Windows only)
+      - name: Download and setup onnxruntime (Windows)
+        id: onnx-setup
+        run: |
+          # 下载 onnxruntime
+          Invoke-WebRequest -Uri "https://github.com/supertone-inc/onnxruntime-build/releases/download/v1.22.2/onnxruntime-win-x64-static_lib-1.22.2.zip" -OutFile "onnxruntime.zip"
+
+          # 解压文件
+          Expand-Archive -Path "onnxruntime.zip" -DestinationPath "onnxruntime-temp" -Force
+
+          # 查找并移动 lib 文件夹到 src-tauri
+          $libPath = Get-ChildItem -Path "onnxruntime-temp" -Recurse -Directory -Filter "lib" | Select-Object -First 1
+          if ($libPath) {
+            Copy-Item -Path $libPath.FullName -Destination "src-tauri\lib" -Recurse -Force
+            Write-Host "Successfully copied lib folder to src-tauri"
+          } else {
+            Write-Error "lib folder not found in extracted files"
+            exit 1
+          }
+
+          # 清理临时文件
+          Remove-Item -Path "onnxruntime.zip" -Force
+          Remove-Item -Path "onnxruntime-temp" -Recurse -Force
+        shell: pwsh
+
+      # 执行构建
+      - name: Build the app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          CI: false
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          args: --target x86_64-pc-windows-msvc
+
+      # 上传构建产物到 Action 附件
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: snow-shot-windows-test-build
+          path: |
+            src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe

@@ -1,0 +1,20 @@
+[package]
+name = "snow-shot-tauri-commands-http-service"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# 项目内依赖
+snow-shot-http-services = { workspace = true }
+
+# Tauri
+tauri = { workspace = true }
+
+# 异步运行时
+tokio = { workspace = true }
+
+# 日志
+log = { workspace = true }
+
+# 序列化
+serde = { workspace = true }
