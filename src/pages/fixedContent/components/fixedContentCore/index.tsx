@@ -60,6 +60,8 @@ import {
 	saveCanvasToCloud,
 } from "@/pages/draw/actions";
 import type { SelectRectParams } from "@/pages/draw/components/selectLayer";
+import type { ElementRect } from "@/types/commands/screenshot";
+import { CropLayer } from "./components/cropLayer";
 import {
 	type CaptureBoundingBoxInfo,
 	DrawEvent,
@@ -271,6 +273,14 @@ const FixedContentCoreInner: React.FC<{
 	// 贴图首次加载完成时的缩放比例，作为“默认大小”
 	const defaultScaleRef = useRef<{ x: number; y: number } | undefined>(undefined);
 
+	// 记录贴图首次加载完成时的缩放比例作为“默认大小”
+	const captureDefaultScale = useCallback(() => {
+		if (defaultScaleRef.current) {
+			return;
+		}
+		defaultScaleRef.current = { x: scaleRef.current.x, y: scaleRef.current.y };
+	}, [scaleRef]);
+
 	const [enableSaveToCloud, setEnableSaveToCloud] = useState(false);
 	const [fixedContentType, setFixedContentType, fixedContentTypeRef] =
 		useStateRef<FixedContentType | undefined>(undefined);
@@ -278,6 +288,24 @@ const FixedContentCoreInner: React.FC<{
 	const [borderRadius, setBorderRadius] = useState(0);
 	const [enableDraw, setEnableDraw, enableDrawRef] = useStateRef(false);
 	const [enableDrawLayer, setEnableDrawLayer] = useState(false);
+	// 编辑模式（绘制/裁剪）是否处于全屏
+	const drawFullScreenRef = useRef(false);
+	// 进入全屏绘制前保存的窗口大小与位置，退出时恢复
+	const drawFullScreenOriginRef = useRef<
+		| {
+				size: PhysicalSize;
+				position: PhysicalPosition;
+		  }
+		| undefined
+	>(undefined);
+	// 编辑全屏时显示的遮罩（覆盖内容以外的区域，与截图时的遮罩一致）
+	const [showEditFullScreenMask, setShowEditFullScreenMask] = useState(false);
+	// 编辑全屏时内容的偏移，保持内容在屏幕上的视觉位置不变
+	const [editFullScreenOffset, setEditFullScreenOffset] = useState<
+		{ x: number; y: number } | undefined
+	>(undefined);
+	// 容器元素引用，用于全屏切换过渡期间隐藏内容避免闪烁
+	const fixedContainerRef = useRef<HTMLDivElement>(null);
 	const [enableSelectText, setEnableSelectText, enableSelectTextRef] =
 		useStateRef(false);
 	const [contentOpacity, setContentOpacity, contentOpacityRef] = useStateRef(1);
@@ -889,19 +917,19 @@ const FixedContentCoreInner: React.FC<{
 				}
 			}
 
-		captureDefaultScale();
-		onDrawLoad?.();
-	},
-	[
-		setEnableSelectText,
-		setWindowSize,
-		isReady,
-		onDrawLoad,
-		tryInitImageLayer,
-		getAppSettings,
-		captureDefaultScale,
-	],
-);
+			captureDefaultScale();
+			onDrawLoad?.();
+		},
+		[
+			setEnableSelectText,
+			setWindowSize,
+			isReady,
+			onDrawLoad,
+			tryInitImageLayer,
+			getAppSettings,
+			captureDefaultScale,
+		],
+	);
 
 	useEffect(() => {
 		if (ocrResultActionRef.current) {
@@ -1126,21 +1154,13 @@ const FixedContentCoreInner: React.FC<{
 								: textScaleFactorRef.current))),
 			);
 
-		return {
-			width: newWidth,
-			height: newHeight,
-		};
-	},
-	[textScaleFactorRef],
-);
-
-	// 记录贴图首次加载完成时的缩放比例作为“默认大小”
-	const captureDefaultScale = useCallback(() => {
-		if (defaultScaleRef.current) {
-			return;
-		}
-		defaultScaleRef.current = { x: scaleRef.current.x, y: scaleRef.current.y };
-	}, [scaleRef]);
+			return {
+				width: newWidth,
+				height: newHeight,
+			};
+		},
+		[textScaleFactorRef],
+	);
 
 	// 显示隐藏贴图时，若开启了对应设置，将窗口恢复为默认大小
 	const restoreDefaultSize = useCallback(async () => {
@@ -1190,7 +1210,7 @@ const FixedContentCoreInner: React.FC<{
 		setIsThumbnail,
 	]);
 
-const copyToClipboard = useCallback(async () => {
+	const copyToClipboard = useCallback(async () => {
 		if (isThumbnailRef.current) {
 			return;
 		}
@@ -1340,9 +1360,87 @@ const copyToClipboard = useCallback(async () => {
 
 		setEnableSelectText((enable) => !enable);
 	}, [fixedContentTypeRef, setEnableSelectText, processImageConfigRef]);
+	// 进入编辑（绘制/裁剪）全屏：仅把窗口尺寸扩展到当前显示器的最大尺寸，内容偏移到原来的位置，保证内容在窗口中不动
+	const enterEditFullScreen = useCallback(async () => {
+		const appWindow = appWindowRef.current;
+		if (!appWindow || drawFullScreenRef.current) {
+			return;
+		}
+
+		const [size, position] = await Promise.all([
+			appWindow.outerSize(),
+			appWindow.outerPosition(),
+		]);
+		drawFullScreenOriginRef.current = { size, position };
+		const monitorInfo = await getCurrentMonitorInfo();
+
+		// 整窗隐藏：窗口移动与 DOM 偏移无法保证同帧，移动过程隐藏整个窗口，再整窗显示
+		await appWindow.hide();
+		// 同步提交内容偏移与遮罩
+		flushSync(() => {
+			setEditFullScreenOffset({
+				x: (position.x - monitorInfo.monitor_x) / window.devicePixelRatio,
+				y: (position.y - monitorInfo.monitor_y) / window.devicePixelRatio,
+			});
+			setShowEditFullScreenMask(true);
+		});
+
+		// 窗口已隐藏，移动/缩放期间不会绘制任何中间帧，直接 await 完成
+		await appWindow.setPosition(
+			new PhysicalPosition(monitorInfo.monitor_x, monitorInfo.monitor_y),
+		);
+		await appWindow.setSize(
+			new PhysicalSize(monitorInfo.monitor_width, monitorInfo.monitor_height),
+		);
+		drawFullScreenRef.current = true;
+
+		// 窗口已在最终全屏位置且内容偏移正确，整窗显示即一步到位，无任何闪烁
+		await appWindow.show();
+	}, [appWindowRef]);
+
+	// 退出编辑全屏：把窗口还原到内容所在的屏幕位置
+	const exitEditFullScreen = useCallback(async () => {
+		const appWindow = appWindowRef.current;
+		const origin = drawFullScreenOriginRef.current;
+		drawFullScreenRef.current = false;
+		drawFullScreenOriginRef.current = undefined;
+		if (!appWindow || !origin) {
+			setEditFullScreenOffset(undefined);
+			setShowEditFullScreenMask(false);
+			return;
+		}
+
+		// 整窗隐藏后还原，避免移动过程中的中间帧闪烁
+		await appWindow.hide();
+		flushSync(() => {
+			setEditFullScreenOffset(undefined);
+			setShowEditFullScreenMask(false);
+		});
+
+		// 窗口已隐藏，直接 await 还原窗口，无需预先等待渲染帧
+		const targetSize = getWindowPhysicalSize(scaleRef.current.x);
+		await appWindow.setSize(
+			new PhysicalSize(targetSize.width, targetSize.height),
+		);
+		await appWindow.setPosition(
+			new PhysicalPosition(origin.position.x, origin.position.y),
+		);
+
+		// 窗口已还原到内容原位置，整窗显示即一步到位，无任何闪烁
+		await appWindow.show();
+	}, [appWindowRef, getWindowPhysicalSize, scaleRef]);
+
 	const switchDrawCore = useCallback(async () => {
+		const nextEnableDraw = !enableDrawRef.current;
+
+		if (nextEnableDraw) {
+			await enterEditFullScreen();
+		} else {
+			await exitEditFullScreen();
+		}
+
 		setEnableDraw((enable) => !enable);
-	}, [setEnableDraw]);
+	}, [setEnableDraw, enterEditFullScreen, exitEditFullScreen]);
 
 	const switchSelectText = useCallback(async () => {
 		if (isThumbnailRef.current) {
@@ -1723,6 +1821,243 @@ const copyToClipboard = useCallback(async () => {
 		hideLoading();
 	}, [getAppSettings, message, renderToCanvas]);
 
+	// ===================== 裁剪相关 =====================
+	const [enableCrop, setEnableCrop] = useState(false);
+	const cropSourceRef = useRef<HTMLCanvasElement | undefined>(undefined);
+	const [cropCanvasSize, setCropCanvasSize] = useState<{
+		width: number;
+		height: number;
+	}>({ width: 0, height: 0 });
+	const [cropDisplaySize, setCropDisplaySize] = useState<{
+		width: number;
+		height: number;
+	}>({ width: 0, height: 0 });
+
+	const isCropSupported = useCallback(() => {
+		return (
+			!isThumbnailRef.current &&
+			(fixedContentTypeRef.current === FixedContentType.Image ||
+				fixedContentTypeRef.current === FixedContentType.DrawCanvas) &&
+			hasInitImageLayerRef.current
+		);
+	}, [fixedContentTypeRef, isThumbnailRef]);
+
+	const startCrop = useCallback(async () => {
+		if (!isCropSupported() || enableCrop) {
+			return;
+		}
+
+		const canvas = await renderToCanvas(false);
+		if (!canvas) {
+			return;
+		}
+
+		// 进入裁剪：扩展到全屏，让裁剪控制按钮可在整个屏幕范围内定位
+		// （从绘制模式进入时窗口已全屏，此调用为 no-op）
+		await enterEditFullScreen();
+
+		cropSourceRef.current = canvas;
+		setCropCanvasSize({
+			width: canvas.width,
+			height: canvas.height,
+		});
+		setCropDisplaySize({
+			width:
+				(windowSizeRef.current.width / contentScaleFactor) *
+				scaleRef.current.x /
+				100,
+			height:
+				(windowSizeRef.current.height / contentScaleFactor) *
+				scaleRef.current.y /
+				100,
+		});
+		setEnableCrop(true);
+	}, [
+		isCropSupported,
+		enableCrop,
+		renderToCanvas,
+		contentScaleFactor,
+		enterEditFullScreen,
+	]);
+
+	const cancelCrop = useCallback(() => {
+		setEnableCrop(false);
+		cropSourceRef.current = undefined;
+		// 若非绘制模式（右键菜单直接进入裁剪），退出时恢复窗口
+		if (!enableDrawRef.current) {
+			exitEditFullScreen();
+		}
+	}, [enableDrawRef, exitEditFullScreen]);
+
+	// 编辑全屏（绘制/裁剪）下的取消，退出绘制/裁剪并回到浮窗状态
+	const cancelEditFullScreen = useCallback(() => {
+		if (enableCrop) {
+			cancelCrop();
+		}
+		if (enableDraw) {
+			switchDraw();
+		}
+	}, [enableCrop, enableDraw, cancelCrop, switchDraw]);
+
+	const confirmCrop = useCallback(
+		async (cropRect: ElementRect) => {
+			try {
+			const source = cropSourceRef.current;
+			if (!source) {
+				setEnableCrop(false);
+				return;
+			}
+
+			const cropW = Math.max(
+				1,
+				Math.round(cropRect.max_x - cropRect.min_x),
+			);
+			const cropH = Math.max(
+				1,
+				Math.round(cropRect.max_y - cropRect.min_y),
+			);
+
+			const out = document.createElement("canvas");
+			out.width = cropW;
+			out.height = cropH;
+			const ctx = out.getContext("2d");
+			if (!ctx) {
+				setEnableCrop(false);
+				return;
+			}
+			ctx.drawImage(
+				source,
+				cropRect.min_x,
+				cropRect.min_y,
+				cropW,
+				cropH,
+				0,
+				0,
+				cropW,
+				cropH,
+			);
+
+			let bitmap: ImageBitmap;
+			try {
+				bitmap = await createImageBitmap(out);
+			} catch {
+				setEnableCrop(false);
+				return;
+			}
+
+			// 重置图像处理配置（旋转、翻转已通过裁剪固化为内容本身）
+			setProcessImageConfig({
+				angle: 0,
+				horizontalFlip: false,
+				verticalFlip: false,
+			});
+			// 清除绘制层中的元素（裁剪会丢弃选区外内容）
+			drawActionRef.current?.clearElements?.();
+
+			const imageLayerAction =
+				imageLayerActionRef.current?.getImageLayerAction();
+			if (!imageLayerAction) {
+				setEnableCrop(false);
+				return;
+			}
+			await imageLayerActionRef.current?.setBaseImage(bitmap);
+			await imageLayerAction.applyProcessImageConfigToCanvas(
+				INIT_CONTAINER_KEY,
+				{ angle: 0, horizontalFlip: false, verticalFlip: false },
+				cropW,
+				cropH,
+			);
+
+			const scaleFactor = canvasPropsRef.current.scaleFactor;
+			canvasPropsRef.current = {
+				...canvasPropsRef.current,
+				width: cropW,
+				height: cropH,
+			};
+			setWindowSize({
+				width: cropW / scaleFactor,
+				height: cropH / scaleFactor,
+			});
+
+			// 保持窗口中心不变，调整窗口大小
+			const appWindow = appWindowRef.current;
+			if (enableDrawRef.current && drawFullScreenRef.current) {
+				// 全屏绘制模式下继续绘制，保持全屏，无需调整窗口
+			} else if (drawFullScreenRef.current) {
+				// 右键菜单直接进入的裁剪（非绘制模式）：退出全屏，
+				// 按裁剪后的内容尺寸恢复窗口并保持原窗口中心
+				await exitEditFullScreen();
+			} else if (appWindow) {
+				const newPhysicalSize = getWindowPhysicalSize(scaleRef.current.x);
+				// 与 updateDrawWindowSize 一致的窗口尺寸计算，确保窗口包含工具栏和绘制菜单空间
+				const toolbarSize =
+					drawActionRef.current?.getToolbarSize() ?? {
+						width: 0,
+						height: 0,
+					};
+				const drawMenuSize =
+					drawActionRef.current?.getDrawMenuSize() ?? {
+						width: 0,
+						height: 0,
+					};
+				const dpr = window.devicePixelRatio;
+				let totalPhysicalWidth = newPhysicalSize.width;
+				let totalPhysicalHeight = newPhysicalSize.height;
+				if (enableDrawRef.current) {
+					const toolbarPhysicalWidth = Math.ceil(
+						toolbarSize.width * dpr,
+					);
+					const toolbarPhysicalHeight = Math.ceil(
+						toolbarSize.height * dpr,
+					);
+					const drawMenuPhysicalWidth = Math.ceil(
+						drawMenuSize.width * dpr,
+					);
+					const drawMenuPhysicalHeight = Math.ceil(
+						drawMenuSize.height * dpr,
+					);
+					totalPhysicalHeight = Math.max(
+						newPhysicalSize.height + toolbarPhysicalHeight,
+						drawMenuPhysicalHeight,
+					);
+					totalPhysicalWidth = Math.max(
+						drawMenuPhysicalWidth + newPhysicalSize.width,
+						toolbarPhysicalWidth,
+					);
+				}
+				const [currentSize, currentPosition] = await Promise.all([
+					appWindow.outerSize(),
+					appWindow.outerPosition(),
+				]);
+				const centerX = currentPosition.x + currentSize.width / 2;
+				const centerY = currentPosition.y + currentSize.height / 2;
+				const newX = Math.round(centerX - totalPhysicalWidth / 2);
+				const newY = Math.round(centerY - totalPhysicalHeight / 2);
+				await setWindowRect(
+					newX,
+					newY,
+					newX + totalPhysicalWidth,
+					newY + totalPhysicalHeight,
+				);
+			}
+
+			} catch (error) {
+				appError("[confirmCrop] crop failed", error);
+			} finally {
+				setEnableCrop(false);
+				cropSourceRef.current = undefined;
+			}
+		},
+		[
+			scaleRef,
+			setProcessImageConfig,
+			setWindowSize,
+			appWindowRef,
+			enableDrawRef,
+			exitEditFullScreen,
+		],
+	);
+
 	const createRightClickMenu = useCallback(async (): Promise<
 		| {
 				mainMenu: Menu | undefined;
@@ -2034,6 +2369,14 @@ const copyToClipboard = useCallback(async () => {
 				{
 					item: "Separator",
 				},
+				isCropSupported() && !enableCrop
+					? {
+							id: `${appWindow.label}-cropTool`,
+							text: intl.formatMessage({ id: "draw.crop" }),
+							enabled: !isThumbnail,
+							action: startCrop,
+						}
+					: undefined,
 				{
 					id: `${appWindow.label}-switchThumbnailTool`,
 					text: intl.formatMessage({ id: "draw.switchThumbnail" }),
@@ -2184,6 +2527,9 @@ const copyToClipboard = useCallback(async () => {
 		enableSaveToCloud,
 		onSaveToCloud,
 		enableTrayIcon,
+		startCrop,
+		isCropSupported,
+		enableCrop,
 	]);
 
 	const onWheel = useCallback(
@@ -2295,11 +2641,11 @@ const copyToClipboard = useCallback(async () => {
 					htmlContentContainerRef.current.style.width = `${width}px`;
 					htmlContentContainerRef.current.style.height = `${height}px`;
 				}
-			captureDefaultScale();
-			onHtmlLoad?.({
-				width: width * window.devicePixelRatio,
-				height: height * window.devicePixelRatio,
-			});
+				captureDefaultScale();
+				onHtmlLoad?.({
+					width: width * window.devicePixelRatio,
+					height: height * window.devicePixelRatio,
+				});
 
 				setWindowSize({
 					width: width,
@@ -2536,6 +2882,13 @@ const copyToClipboard = useCallback(async () => {
 			return;
 		}
 
+		// 编辑全屏（绘制/裁剪）下窗口已覆盖整个显示器，
+		// 不调整窗口大小（窗口由 enterEditFullScreen/exitEditFullScreen 管理）
+		if (drawFullScreenRef.current) {
+			setEnableDrawLayer(enableDraw);
+			return;
+		}
+
 		const currentWindowSize = getWindowPhysicalSize(scale.x);
 		const targetWindowSize = {
 			...currentWindowSize,
@@ -2677,8 +3030,12 @@ const copyToClipboard = useCallback(async () => {
 	return (
 		<div
 			className="fixed-image-container"
+			ref={fixedContainerRef}
 			style={{
 				position: "absolute",
+				// 编辑全屏时窗口覆盖整个显示器，用偏移保持内容在屏幕上的原视觉位置
+				left: editFullScreenOffset ? `${editFullScreenOffset.x}px` : undefined,
+				top: editFullScreenOffset ? `${editFullScreenOffset.y}px` : undefined,
 				width: `${documentSize.width}px`,
 				height: `${documentSize.height}px`,
 				zIndex: zIndexs.Draw_FixedImage,
@@ -2693,6 +3050,38 @@ const copyToClipboard = useCallback(async () => {
 			onMouseMove={!enableDraw ? onDragRegionMouseMove : undefined}
 			onMouseUp={!enableDraw ? onDragRegionMouseUp : undefined}
 		>
+			{showEditFullScreenMask && (
+				<div
+					className="fixed-image-edit-full-screen-mask"
+					style={{
+						position: "fixed",
+						top: 0,
+						left: 0,
+						width: "100vw",
+						height: "100vh",
+						backgroundColor: token.colorBgMask,
+						zIndex: -1,
+						pointerEvents: "auto",
+						cursor: "default",
+					}}
+					onMouseDown={(event) => {
+						// 阻止触发容器的拖拽逻辑
+						event.stopPropagation();
+					}}
+					onMouseMove={(event) => {
+						event.stopPropagation();
+					}}
+					onMouseUp={(event) => {
+						event.stopPropagation();
+					}}
+					onDoubleClick={(event) => {
+						event.stopPropagation();
+					}}
+					onWheel={(event) => {
+						event.stopPropagation();
+					}}
+				/>
+			)}
 			<HandleFocusMode
 				disabled={disabled}
 				onToggleVisibility={onToggleVisibility}
@@ -2898,7 +3287,7 @@ const copyToClipboard = useCallback(async () => {
 					actionRef={drawActionRef}
 					documentSize={documentSize}
 					scaleInfo={scale}
-					disabled={!enableDraw || !enableDrawLayer}
+					disabled={!enableDraw || !enableDrawLayer || enableCrop}
 					hidden={enableSelectText}
 					onConfirm={switchDraw}
 					getImageLayerAction={getImageLayerAction}
@@ -2909,6 +3298,18 @@ const copyToClipboard = useCallback(async () => {
 					getZoom={getZoom}
 					switchDraw={switchDraw}
 					isImageLayerReady={isImageLayerReady}
+					onCrop={startCrop}
+					contentOffset={editFullScreenOffset}
+				/>
+			)}
+
+			{enableCrop && cropSourceRef.current && (
+				<CropLayer
+					sourceCanvas={cropSourceRef.current}
+					canvasSize={cropCanvasSize}
+					displaySize={cropDisplaySize}
+					onConfirm={confirmCrop}
+					onCancel={cancelCrop}
 				/>
 			)}
 
@@ -2940,6 +3341,7 @@ const copyToClipboard = useCallback(async () => {
 						display:
 							isThumbnail ||
 							enableDraw ||
+							enableCrop ||
 							(enableSelectText && !enableOcrTranslate)
 								? "none"
 								: undefined,
@@ -2998,9 +3400,31 @@ const copyToClipboard = useCallback(async () => {
 							/>
 						</>
 					)}
-				</Space>
+			</Space>
 
-				<div className="scale-info" style={{ opacity: showScaleInfo ? 1 : 0 }}>
+			{/* 编辑全屏（绘制/裁剪）下的取消按钮，与截图取消 X 一致 */}
+			{(enableDraw || enableCrop) && (
+				<Button
+					icon={<CloseOutlined style={{ color: token.colorError }} />}
+					style={{
+						position: "fixed",
+						top: token.margin,
+						right: token.margin,
+						backgroundColor: token.colorBgMask,
+						zIndex: zIndexs.FixedToScreen_CloseButton,
+						transition: `background-color ${token.motionDurationFast} ${token.motionEaseInOut}`,
+					}}
+					className="fixed-image-edit-cancel-button"
+					type="primary"
+					shape="circle"
+					variant="solid"
+					onClick={() => {
+						cancelEditFullScreen();
+					}}
+				/>
+			)}
+
+			<div className="scale-info" style={{ opacity: showScaleInfo ? 1 : 0 }}>
 					<FormattedMessage
 						id="settings.hotKeySettings.fixedContent.scaleInfo"
 						values={{ scale: scale.x.toFixed(0) }}
@@ -3063,8 +3487,8 @@ const copyToClipboard = useCallback(async () => {
 
                 .fixed-image-container-inner-border {
                     position: fixed;
-                    top: 0;
-                    left: 0;
+                    top: ${editFullScreenOffset ? `${editFullScreenOffset.y}px` : 0};
+                    left: ${editFullScreenOffset ? `${editFullScreenOffset.x}px` : 0};
                     width: calc(${isThumbnail ? "100vw" : `${documentSize.width}px`});
                     height: calc(${isThumbnail ? "100vh" : `${documentSize.height}px`});
                     border: 2px solid ${fixedBorderColor ?? token.colorBorder};
@@ -3077,13 +3501,13 @@ const copyToClipboard = useCallback(async () => {
 
                 .fixed-image-container-inner-resize-window {
                     position: fixed;
-                    top: 0;
-                    left: 0;
+                    top: ${editFullScreenOffset ? `${editFullScreenOffset.y}px` : 0};
+                    left: ${editFullScreenOffset ? `${editFullScreenOffset.x}px` : 0};
                     width: calc(${isThumbnail ? "100vw" : `${documentSize.width}px`});
                     height: calc(${isThumbnail ? "100vh" : `${documentSize.height}px`});
                     pointer-events: none;
                     z-index: ${zIndexs.FixedToScreen_ResizeWindow};
-                    display: ${isThumbnail || enableDraw || enableSelectText ? "none" : "block"};
+                    display: ${isThumbnail || enableDraw || enableCrop || enableSelectText ? "none" : "block"};
                 }
 
                 .fixed-image-container-inner:active {
@@ -3140,7 +3564,7 @@ const copyToClipboard = useCallback(async () => {
                     font-size: ${token.fontSizeSM}px;
                     z-index: ${zIndexs.FixedToScreen_ScaleInfo};
                     transition: opacity ${token.motionDurationFast} ${token.motionEaseInOut};
-                    display: ${isThumbnail || enableDraw || enableSelectText ? "none" : "block"};
+                    display: ${isThumbnail || enableDraw || enableCrop || enableSelectText ? "none" : "block"};
                 }
 
                 /* 
