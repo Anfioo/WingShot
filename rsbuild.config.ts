@@ -3,7 +3,7 @@ import { pluginNodePolyfill } from "@rsbuild/plugin-node-polyfill";
 import { pluginReact } from "@rsbuild/plugin-react";
 import { tanstackRouter } from "@tanstack/router-plugin/rspack";
 
-export default defineConfig({
+export default defineConfig(({ command }) => ({
 	plugins: [pluginReact(), pluginNodePolyfill()],
 	resolve: {
 		alias: {
@@ -15,7 +15,10 @@ export default defineConfig({
 	},
 	performance: {
 		chunkSplit: {
-			strategy: "split-by-module",
+			// Pixi 在模块顶层注册全局 extension handler。
+			// dev + HMR + split-by-module 可能重复执行 Pixi 子模块，触发
+			// "Extension type application already has a handler"。
+			strategy: command === "dev" ? "all-in-one" : "split-by-module",
 		},
 	},
 	html: {
@@ -55,4 +58,4 @@ export default defineConfig({
 			optimization: {},
 		},
 	},
-});
+}));

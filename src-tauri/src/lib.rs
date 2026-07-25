@@ -106,9 +106,40 @@ fn restore_main_window_geometry(app: &tauri::AppHandle) {
     let Ok(geo) = serde_json::from_str::<MainWindowGeometry>(&content) else {
         return;
     };
-    if geo.width > 0 && geo.height > 0 {
-        let _ = window.set_size(tauri::PhysicalSize::new(geo.width, geo.height));
+    if geo.width == 0 || geo.height == 0 {
+        return;
+    }
+
+    let _ = window.set_size(tauri::PhysicalSize::new(geo.width, geo.height));
+
+    let saved_position_is_visible = window
+        .available_monitors()
+        .map(|monitors| {
+            monitors.iter().any(|monitor| {
+                let monitor_pos = monitor.position();
+                let monitor_size = monitor.size();
+                let monitor_left = monitor_pos.x;
+                let monitor_top = monitor_pos.y;
+                let monitor_right = monitor_left + monitor_size.width as i32;
+                let monitor_bottom = monitor_top + monitor_size.height as i32;
+
+                let window_left = geo.x;
+                let window_top = geo.y;
+                let window_right = window_left + geo.width as i32;
+                let window_bottom = window_top + geo.height as i32;
+
+                window_left < monitor_right
+                    && window_right > monitor_left
+                    && window_top < monitor_bottom
+                    && window_bottom > monitor_top
+            })
+        })
+        .unwrap_or(false);
+
+    if saved_position_is_visible {
         let _ = window.set_position(tauri::PhysicalPosition::new(geo.x, geo.y));
+    } else {
+        let _ = window.center();
     }
 }
 
@@ -485,12 +516,6 @@ pub fn run() {
                         log::error!("[listen_mouse_service:stop] Failed to emit event: {}", e);
                     }
                 }
-            }
-        })
-        .on_run_event(move |app, event| {
-            // 应用退出时持久化主窗口几何信息，确保即使未触发关闭按钮也能保存
-            if let tauri::RunEvent::Exit = event {
-                save_main_window_geometry(app);
             }
         });
 
