@@ -855,6 +855,7 @@ pub async fn is_admin() -> Result<bool, String> {
     Ok(snow_shot_app_os::utils::is_admin())
 }
 
+#[cfg(target_os = "windows")]
 pub async fn set_process_priority(enable: bool) -> Result<(), String> {
     snow_shot_app_os::utils::set_process_priority(enable)
 }
