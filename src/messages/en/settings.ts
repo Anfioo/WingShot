@@ -168,7 +168,7 @@ export const settings = {
 		"Auto-create new session on window close",
 	"settings.functionSettings.chatSettings.apiConfig": "LLM Configuration",
 	"settings.functionSettings.chatSettings.apiConfig.tip":
-		"Only supports OpenAI SDK compatible API configurations. Adding a new config will automatically enable AI translation",
+		"Only supports OpenAI SDK compatible API configurations",
 	"settings.functionSettings.chatSettings.apiConfig.add":
 		"Add LLM Configuration",
 	"settings.functionSettings.chatSettings.apiConfig.apiKey": "API Key",
@@ -520,6 +520,55 @@ export const settings = {
 		"Max Paragraphs Per Request",
 	"settings.functionSettings.translationSettings.apiConfig.maxParagraphCount.tip":
 		"Number of paragraphs sent to the translation service per request, too many paragraphs may slow down the interface response",
+	"settings.translationSettings.services": "Translation Services",
+	"settings.translationSettings.addBuiltinService": "Add Built-in Service",
+	"settings.translationSettings.service.deepl": "DeepL",
+	"settings.translationSettings.service.bing": "Bing Translator",
+	"settings.translationSettings.service.lingva": "Lingva",
+	"settings.translationSettings.service.yandex": "Yandex",
+	"settings.translationSettings.service.google": "Google Translate",
+	"settings.translationSettings.service.ecdict": "ECDict (Online)",
+	"settings.translationSettings.service.alibaba": "Alibaba Translate",
+	"settings.translationSettings.service.baidu": "Baidu Translate",
+	"settings.translationSettings.service.baiduField": "Baidu Field Translate",
+	"settings.translationSettings.service.bingDict": "Bing Dictionary",
+	"settings.translationSettings.service.caiyun": "Caiyun Translate",
+	"settings.translationSettings.service.cambridgeDict": "Cambridge Dictionary",
+	"settings.translationSettings.service.tencent": "Tencent Translate",
+	"settings.translationSettings.service.volcengine": "Volcengine Translate",
+	"settings.translationSettings.service.niutrans": "NiuTrans",
+	"settings.translationSettings.service.youdao": "Youdao Translate",
+	"settings.translationSettings.service.custom": "Custom API",
+	"settings.translationSettings.serviceConfig.name": "Display Name",
+	"settings.translationSettings.serviceConfig.required":
+		"Please fill in required fields",
+	"settings.translationSettings.serviceConfig.apiUri": "API URI",
+	"settings.translationSettings.serviceConfig.apiKey": "API Key / Token",
+	"settings.translationSettings.serviceConfig.secretKey": "Secret Key",
+	"settings.translationSettings.serviceConfig.appId": "App ID",
+	"settings.translationSettings.serviceConfig.accessKeyId": "AccessKey ID",
+	"settings.translationSettings.serviceConfig.accessKeySecret":
+		"AccessKey Secret",
+	"settings.translationSettings.serviceConfig.region": "Region",
+	"settings.translationSettings.serviceConfig.domain": "Domain",
+	"settings.translationSettings.serviceConfig.deeplType": "DeepL Type",
+	"settings.translationSettings.serviceConfig.deeplType.free": "Free Endpoint",
+	"settings.translationSettings.serviceConfig.deeplType.api": "Official API",
+	"settings.translationSettings.serviceConfig.deeplType.deeplx": "DeepLX",
+	"settings.translationSettings.serviceConfig.deeplApiUriTip":
+		"Official API can be left empty. For DeepLX, enter the full service URL",
+	"settings.translationSettings.serviceConfig.lingvaApiUriTip":
+		"Leave empty to use https://lingva.pot-app.com/api/v1",
+	"settings.translationSettings.serviceConfig.ecdictApiUriTip":
+		"Leave empty to use https://pot-app.com/api/dict",
+	"settings.translationSettings.serviceConfig.deeplPreferQualityOptimized":
+		"Prefer high quality model",
+	"settings.translationSettings.serviceConfig.maxRequestsPerSecond":
+		"Max requests per second",
+	"settings.translationSettings.serviceConfig.maxParagraphCount":
+		"Max paragraphs per request",
+	"settings.translationSettings.serviceConfig.guide": "Configuration Guide",
+	"settings.translationSettings.serviceConfig.openGuide": "Open Guide",
 	"settings.functionSettings.trayIconSettings": "Tray Icon",
 	"settings.functionSettings.trayIconSettings.iconClickAction":
 		"Left Click Action",

@@ -19,6 +19,7 @@ import {
 	OcrDetectAfterAction,
 	OcrModel,
 	RunLogLevel,
+	TranslationServiceType,
 	TrayIconClickAction,
 	TrayIconDefaultIcon,
 	VideoMaxSize,
@@ -35,6 +36,43 @@ import { defaultCommonKeyEventSettings } from "./commonKeyEvent";
 import { FOCUS_WINDOW_APP_NAME_ENV_VARIABLE } from "./components/chat";
 import { defaultTranslationPrompt } from "./components/translation";
 import { defaultDrawToolbarKeyEventSettings } from "./drawToolbarKeyEvent";
+
+export const defaultTranslationServices: AppSettingsData[AppSettingsGroup.FunctionTranslation]["translationServices"] =
+	[
+		{
+			id: TranslationServiceType.DeepL,
+			type: TranslationServiceType.DeepL,
+			enabled: true,
+			config: {
+				deeplType: "free",
+			},
+		},
+		{
+			id: TranslationServiceType.Bing,
+			type: TranslationServiceType.Bing,
+			enabled: true,
+		},
+		{
+			id: TranslationServiceType.Lingva,
+			type: TranslationServiceType.Lingva,
+			enabled: true,
+		},
+		{
+			id: TranslationServiceType.Yandex,
+			type: TranslationServiceType.Yandex,
+			enabled: true,
+		},
+		{
+			id: TranslationServiceType.Google,
+			type: TranslationServiceType.Google,
+			enabled: true,
+		},
+		{
+			id: TranslationServiceType.ECDict,
+			type: TranslationServiceType.ECDict,
+			enabled: true,
+		},
+	];
 
 export const defaultAppSettingsData: AppSettingsData = {
 	[AppSettingsGroup.Common]: {
@@ -149,6 +187,7 @@ export const defaultAppSettingsData: AppSettingsData = {
 		targetLanguage: "zh-CHS",
 		translationDomain: TranslationDomain.General,
 		translationType: TranslationType.Youdao,
+		translationServices: defaultTranslationServices,
 	},
 	[AppSettingsGroup.FunctionTranslationCache]: {
 		cacheSourceLanguage: "auto",

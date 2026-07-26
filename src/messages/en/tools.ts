@@ -16,6 +16,7 @@ export const tools = {
 	"tools.translation.language.turkish": "Turkish",
 	"tools.translation.language.japanese": "Japanese",
 	"tools.translation.placeholder": "Enter text to translate",
+	"tools.translation.usedService": "Using: {service}",
 	"tools.translation.copyAndHide": "Copy and Hide",
 	"tools.translation.copy": "Copy",
 	"tools.translation.replace": "Replace",

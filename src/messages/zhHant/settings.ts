@@ -159,7 +159,7 @@ export const settings = {
 		"關閉視窗時自動建立新工作階段",
 	"settings.functionSettings.chatSettings.apiConfig": "LLM 配置",
 	"settings.functionSettings.chatSettings.apiConfig.tip":
-		"僅支援相容 OpenAI SDK 的 API 配置，新增配置後將自動支援 AI 翻譯",
+		"僅支援相容 OpenAI SDK 的 API 配置",
 	"settings.functionSettings.chatSettings.apiConfig.add": "新增 LLM 配置",
 	"settings.functionSettings.chatSettings.apiConfig.apiKey": "API Key",
 	"settings.functionSettings.chatSettings.apiConfig.apiKey.tip":
@@ -493,6 +493,54 @@ export const settings = {
 		"每次請求最大段落數",
 	"settings.functionSettings.translationSettings.apiConfig.maxParagraphCount.tip":
 		"每次傳送給翻譯服務的段落數量，如果段落數量過多，可能會導致介面的回應變慢",
+	"settings.translationSettings.services": "翻譯服務",
+	"settings.translationSettings.addBuiltinService": "新增內建服務",
+	"settings.translationSettings.service.deepl": "DeepL",
+	"settings.translationSettings.service.bing": "必應翻譯",
+	"settings.translationSettings.service.lingva": "Lingva",
+	"settings.translationSettings.service.yandex": "Yandex",
+	"settings.translationSettings.service.google": "Google 翻譯",
+	"settings.translationSettings.service.ecdict": "ECDict(線上)",
+	"settings.translationSettings.service.alibaba": "阿里翻譯",
+	"settings.translationSettings.service.baidu": "百度翻譯",
+	"settings.translationSettings.service.baiduField": "百度領域翻譯",
+	"settings.translationSettings.service.bingDict": "必應詞典",
+	"settings.translationSettings.service.caiyun": "彩雲小譯",
+	"settings.translationSettings.service.cambridgeDict": "劍橋詞典",
+	"settings.translationSettings.service.tencent": "騰訊翻譯",
+	"settings.translationSettings.service.volcengine": "火山翻譯",
+	"settings.translationSettings.service.niutrans": "小牛翻譯",
+	"settings.translationSettings.service.youdao": "有道翻譯",
+	"settings.translationSettings.service.custom": "自訂 API",
+	"settings.translationSettings.serviceConfig.name": "顯示名稱",
+	"settings.translationSettings.serviceConfig.required": "請填寫必填項",
+	"settings.translationSettings.serviceConfig.apiUri": "API 位址",
+	"settings.translationSettings.serviceConfig.apiKey": "API Key / Token",
+	"settings.translationSettings.serviceConfig.secretKey": "Secret Key",
+	"settings.translationSettings.serviceConfig.appId": "App ID",
+	"settings.translationSettings.serviceConfig.accessKeyId": "AccessKey ID",
+	"settings.translationSettings.serviceConfig.accessKeySecret":
+		"AccessKey Secret",
+	"settings.translationSettings.serviceConfig.region": "區域",
+	"settings.translationSettings.serviceConfig.domain": "領域",
+	"settings.translationSettings.serviceConfig.deeplType": "DeepL 類型",
+	"settings.translationSettings.serviceConfig.deeplType.free": "免費介面",
+	"settings.translationSettings.serviceConfig.deeplType.api": "官方 API",
+	"settings.translationSettings.serviceConfig.deeplType.deeplx": "DeepLX",
+	"settings.translationSettings.serviceConfig.deeplApiUriTip":
+		"官方 API 可留空；DeepLX 請填寫完整服務位址",
+	"settings.translationSettings.serviceConfig.lingvaApiUriTip":
+		"可留空，預設使用 https://lingva.pot-app.com/api/v1",
+	"settings.translationSettings.serviceConfig.ecdictApiUriTip":
+		"可留空，預設使用 https://pot-app.com/api/dict",
+	"settings.translationSettings.serviceConfig.deeplPreferQualityOptimized":
+		"優先高品質模型",
+	"settings.translationSettings.serviceConfig.maxRequestsPerSecond":
+		"每秒最大請求數",
+	"settings.translationSettings.serviceConfig.maxParagraphCount":
+		"每次請求最大段落數",
+	"settings.translationSettings.serviceConfig.guide": "配置指南",
+	"settings.translationSettings.serviceConfig.openGuide": "開啟配置指南",
 	"settings.functionSettings.trayIconSettings": "系統匣",
 	"settings.functionSettings.trayIconSettings.iconClickAction": "左鍵點擊後",
 	"settings.functionSettings.trayIconSettings.iconClickAction.screenshot":

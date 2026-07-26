@@ -8,6 +8,7 @@ import {
 	Select,
 	type SelectProps,
 	Spin,
+	Tag,
 	theme,
 } from "antd";
 import TextArea, { type TextAreaRef } from "antd/es/input/TextArea";
@@ -20,13 +21,9 @@ import React, {
 	useRef,
 } from "react";
 import { FormattedMessage, useIntl } from "react-intl";
-import {
-	type TranslationServiceConfig,
-	useTranslationRequest,
-} from "@/core/translations";
+import { useTranslationRequest } from "@/core/translations";
+import { translationServiceMetaMap } from "@/core/translations/services";
 import { useStateRef } from "@/hooks/useStateRef";
-import { ModelSelectLabel } from "@/pages/tools/chat/components/modelSelectLabel";
-import { TranslationApiType } from "@/types/appSettings";
 import { TranslationDomain } from "@/types/servies/translation";
 import { writeTextToClipboard } from "@/utils/clipboard";
 
@@ -210,46 +207,6 @@ export const useLanguageOptions = () => {
 	};
 };
 
-export const useTranslationTypeOptions = (
-	supportedTranslationTypes: TranslationServiceConfig[],
-) => {
-	const translationTypeOptions = useMemo((): SelectProps["options"] => {
-		const customTranslationTypeOptions: SelectProps["options"] = [];
-		const officialTranslationTypeOptions: SelectProps["options"] = [];
-
-		supportedTranslationTypes.forEach((item) => {
-			if (item.isOfficial) {
-				officialTranslationTypeOptions.push({
-					label: <ModelSelectLabel modelName={item.name} />,
-					value: item.type,
-				});
-			} else {
-				customTranslationTypeOptions.push({
-					label: <ModelSelectLabel modelName={item.name} />,
-					value: item.type,
-				});
-			}
-		});
-
-		return [
-			customTranslationTypeOptions.length > 0
-				? {
-						label: <FormattedMessage id="tools.translation.type.custom" />,
-						options: customTranslationTypeOptions,
-					}
-				: undefined,
-			{
-				label: <FormattedMessage id="tools.translation.type.official" />,
-				options: officialTranslationTypeOptions,
-			},
-		].filter(Boolean) as SelectProps["options"];
-	}, [supportedTranslationTypes]);
-
-	return {
-		translationTypeOptions,
-	};
-};
-
 export const useTranslationDomainOptions = () => {
 	const intl = useIntl();
 
@@ -304,18 +261,16 @@ const TranslatorCore: React.FC<{
 	const {
 		sourceLanguage,
 		targetLanguage,
-		translationType,
 		translationDomain,
-		supportedTranslationTypes,
+		translationServices,
 		startTranslateLoading,
 		deltaTranslateLoading,
 		updateSourceLanguage,
 		updateTargetLanguage,
-		updateTranslationType,
 		updateTranslationDomain,
-		supportedTranslationTypesLoading,
 		requestTranslate,
 		translatedContent,
+		usedTranslationService,
 		getTranslatedContent,
 	} = useTranslationRequest(
 		useMemo(() => {
@@ -354,19 +309,11 @@ const TranslatorCore: React.FC<{
 		sourceContent,
 		requestTranslateDebounce,
 		requestTranslate,
-		translationType,
 		sourceLanguage,
 		targetLanguage,
 		translationDomain,
+		translationServices,
 	]);
-
-	const supportDomain = useMemo(() => {
-		if (translationType === TranslationApiType.DeepL) {
-			return false;
-		}
-
-		return true;
-	}, [translationType]);
 
 	const onCopy = useCallback(() => {
 		if (!getTranslatedContent()) {
@@ -377,10 +324,13 @@ const TranslatorCore: React.FC<{
 
 	const hasSourceContent = !!sourceContent;
 	const hasTranslatedContent = !!translatedContent;
-
-	const { translationTypeOptions } = useTranslationTypeOptions(
-		supportedTranslationTypes,
-	);
+	const usedServiceName = useMemo(() => {
+		if (!usedTranslationService) return "";
+		const meta = translationServiceMetaMap[usedTranslationService.type];
+		return usedTranslationService.name?.trim()
+			? usedTranslationService.name
+			: intl.formatMessage({ id: meta.messageId });
+	}, [intl, usedTranslationService]);
 
 	const sourceContentRef = useRef<TextAreaRef>(null);
 	useImperativeHandle(
@@ -462,31 +412,7 @@ const TranslatorCore: React.FC<{
 					<Flex gap={token.margin}>
 						<Form.Item
 							style={{ marginBottom: token.marginXS }}
-							label={<FormattedMessage id="tools.translation.type" />}
-						>
-							<Select
-								showSearch
-								value={translationType}
-								onChange={(value) => {
-									updateTranslationType(value);
-								}}
-								options={translationTypeOptions}
-								loading={supportedTranslationTypesLoading}
-								filterOption={selectFilterOption}
-								styles={{
-									popup: {
-										root: {
-											minWidth: 200,
-										},
-									},
-								}}
-								variant="underlined"
-							/>
-						</Form.Item>
-						<Form.Item
-							style={{ marginBottom: token.marginXS }}
 							label={<FormattedMessage id="tools.translation.domain" />}
-							hidden={!supportDomain}
 						>
 							<Select
 								showSearch
@@ -545,6 +471,15 @@ const TranslatorCore: React.FC<{
 										right: token.marginLG,
 									}}
 								/>
+								{hasTranslatedContent && usedServiceName ? (
+									<Tag className="tool-translator-container-used-service">
+										<FormattedMessage
+											id="tools.translation.usedService"
+											values={{ service: usedServiceName }}
+										/>
+									</Tag>
+								) : null}
+
 								<TextArea
 									rows={12}
 									variant="filled"
@@ -595,6 +530,17 @@ const TranslatorCore: React.FC<{
                     pointer-events: ${hasSourceContent ? "auto" : "none"};
                     opacity: ${hasSourceContent ? 1 : 0};
                     transition: opacity ${token.motionDurationMid} ${token.motionEaseInOut};
+                }
+
+                :global(.tool-translator-container-used-service) {
+                    position: absolute;
+                    top: ${token.marginXXS}px;
+                    right: ${token.marginXXS}px;
+                    z-index: 1;
+                    max-width: calc(100% - ${token.marginXXS * 2}px);
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    white-space: nowrap;
                 }
 
                 :global(.tool-translator-container-translate-button-container) {

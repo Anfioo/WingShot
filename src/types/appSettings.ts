@@ -89,6 +89,72 @@ export enum TranslationApiType {
 	Custom = "translation_api_custom",
 }
 
+export enum TranslationServiceType {
+	DeepL = "deepl",
+	Bing = "bing",
+	Lingva = "lingva",
+	Yandex = "yandex",
+	Google = "google",
+	ECDict = "ecdict",
+	Alibaba = "alibaba",
+	Baidu = "baidu",
+	BaiduField = "baidu_field",
+	BingDict = "bing_dict",
+	Caiyun = "caiyun",
+	CambridgeDict = "cambridge_dict",
+	Tencent = "tencent",
+	Volcengine = "volcengine",
+	NiuTrans = "niutrans",
+	Youdao = "youdao",
+	Custom = "custom",
+}
+
+export type TranslationServiceConfig = {
+	apiUri?: string;
+	apiKey?: string;
+	secretKey?: string;
+	appId?: string;
+	accessKeyId?: string;
+	accessKeySecret?: string;
+	region?: string;
+	domain?: string;
+	deeplType?: "free" | "api" | "deeplx";
+	deeplPreferQualityOptimized?: boolean;
+	maxRequestsPerSecond?: number;
+	maxParagraphCount?: number;
+};
+
+export type TranslationServiceInstance = {
+	id: string;
+	type: TranslationServiceType;
+	enabled: boolean;
+	name?: string;
+	config?: TranslationServiceConfig;
+};
+
+export type FunctionTranslationSettings = {
+	/** 兼容旧版本字段，新流程不再使用 AI 翻译 */
+	optimizeAiTranslationLayout: boolean;
+	/** 兼容旧版本字段，新流程不再使用 AI 翻译 */
+	translationSystemPrompt: string;
+	/** 兼容旧版本字段，会迁移为 translationServices */
+	translationApiConfigList: TranslationApiConfig[];
+	sourceLanguage: string;
+	targetLanguage: string;
+	translationDomain: TranslationDomain;
+	/** 兼容旧版本字段，新流程使用 translationServices */
+	translationType: TranslationType | string;
+	translationServices: TranslationServiceInstance[];
+};
+
+export type FunctionTranslationCacheSettings = {
+	cacheSourceLanguage: string;
+	cacheTargetLanguage: string;
+	cacheTranslationDomain: TranslationDomain;
+	/** 兼容旧版本字段，新流程不再使用 */
+	cacheTranslationType: TranslationType | string;
+};
+
 export type DeepLApiConfig = {
 	api_type: TranslationApiType.DeepL;
 	api_uri: string;
@@ -452,22 +518,8 @@ export type AppSettingsData = {
 		/** 图片转为 Markdown 的 System 提示词 */
 		markdownVisionModelSystemPrompt: string;
 	};
-	[AppSettingsGroup.FunctionTranslation]: {
-		/** 优化 AI 翻译的排版 */
-		optimizeAiTranslationLayout: boolean;
-		translationSystemPrompt: string;
-		translationApiConfigList: TranslationApiConfig[];
-		sourceLanguage: string;
-		targetLanguage: string;
-		translationDomain: TranslationDomain;
-		translationType: TranslationType | string;
-	};
-	[AppSettingsGroup.FunctionTranslationCache]: {
-		cacheSourceLanguage: string;
-		cacheTargetLanguage: string;
-		cacheTranslationDomain: TranslationDomain;
-		cacheTranslationType: TranslationType | string;
-	};
+	[AppSettingsGroup.FunctionTranslation]: FunctionTranslationSettings;
+	[AppSettingsGroup.FunctionTranslationCache]: FunctionTranslationCacheSettings;
 	[AppSettingsGroup.FunctionScreenshot]: {
 		/** 选取窗口子元素 */
 		findChildrenElements: boolean;
