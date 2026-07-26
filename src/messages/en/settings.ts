@@ -72,6 +72,9 @@ export const settings = {
 	"settings.customToolbarToolList": "Hide Toolbar Tools",
 	"settings.customToolbarToolList.tip":
 		"Tools can still be used via hotkeys when hidden",
+	"settings.toolbarActionOrder": "Action Button Order",
+	"settings.toolbarActionOrder.save": "Save Order",
+	"settings.toolbarActionOrder.dragHandle": "Drag to reorder",
 	"settings.enableQrcodeScan": "Enable QR Code Scan",
 	"settings.findChildrenElements": "Find Window Child Elements",
 	"settings.performanceMode": "Performance Mode",

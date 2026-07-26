@@ -706,6 +706,11 @@ const AppSettingsContextProviderCore: React.FC<{
 							? newSettings.toolbarHiddenToolList
 							: (prevSettings?.toolbarHiddenToolList ??
 								defaultAppSettingsData[group].toolbarHiddenToolList),
+					toolbarActionOrder:
+						typeof newSettings?.toolbarActionOrder === "object"
+							? newSettings.toolbarActionOrder
+							: (prevSettings?.toolbarActionOrder ??
+								defaultAppSettingsData[group].toolbarActionOrder),
 				};
 			} else if (group === AppSettingsGroup.FunctionDraw) {
 				newSettings = newSettings as AppSettingsData[typeof group];

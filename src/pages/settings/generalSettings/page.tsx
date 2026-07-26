@@ -1,6 +1,14 @@
 "use client";
 
 import {
+	ArrowDownOutlined,
+	ArrowUpOutlined,
+	CloseOutlined,
+	CopyOutlined,
+	DragOutlined,
+	ScanOutlined,
+} from "@ant-design/icons";
+import {
 	ProForm,
 	ProFormRadio,
 	ProFormSelect,
@@ -9,6 +17,7 @@ import {
 } from "@ant-design/pro-components";
 import { resourceDir } from "@tauri-apps/api/path";
 import {
+	Button,
 	type CheckboxOptionType,
 	Col,
 	ColorPicker,
@@ -19,30 +28,53 @@ import {
 	Select,
 	Space,
 	Spin,
+	Typography,
 	theme,
 } from "antd";
 import type { AggregationColor } from "antd/es/color-picker/color";
-import { useCallback, useContext, useEffect, useMemo, useState } from "react";
+import {
+	useCallback,
+	useContext,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
 import { FormattedMessage, useIntl } from "react-intl";
 import { ContentWrap } from "@/components/contentWrap";
 import { GroupTitle } from "@/components/groupTitle";
 import { IconLabel } from "@/components/iconLable";
-import { DarkModeIcon, LanguageIcon } from "@/components/icons";
+import {
+	DarkModeIcon,
+	FixedIcon,
+	LanguageIcon,
+	OcrDetectIcon,
+	OcrTranslateIcon,
+	SaveIcon,
+	ScrollScreenshotIcon,
+	TranslationIcon,
+} from "@/components/icons";
 import { PathInput } from "@/components/pathInput";
 import { ResetSettingsButton } from "@/components/resetSettingsButton";
 import { getDefaultIconPath } from "@/components/trayIconLoader";
-import { PLUGIN_ID_RAPID_OCR } from "@/constants/pluginService";
+import {
+	PLUGIN_ID_FFMPEG,
+	PLUGIN_ID_RAPID_OCR,
+	PLUGIN_ID_TRANSLATE,
+} from "@/constants/pluginService";
 import { AppSettingsActionContext } from "@/contexts/appSettingsActionContext";
 import { usePluginServiceContext } from "@/contexts/pluginServiceContext";
 import { useAppSettingsLoad } from "@/hooks/useAppSettingsLoad";
 import { useStateRef } from "@/hooks/useStateRef";
 import {
+	ACTION_TOOLBAR_STATES,
 	AppSettingsControlNode,
 	type AppSettingsData,
 	AppSettingsGroup,
 	AppSettingsLanguage,
 	AppSettingsTheme,
 	ColorPickerShowMode,
+	normalizeToolbarActionOrder,
 	TrayIconDefaultIcon,
 } from "@/types/appSettings";
 import { DrawState } from "@/types/draw";
@@ -115,12 +147,28 @@ export const GeneralSettingsPage = () => {
 	);
 
 	const { isReadyStatus } = usePluginServiceContext();
+	const rapidOcrReady = isReadyStatus?.(PLUGIN_ID_RAPID_OCR) ?? false;
+	const translateReady = isReadyStatus?.(PLUGIN_ID_TRANSLATE) ?? false;
+	const ffmpegReady = isReadyStatus?.(PLUGIN_ID_FFMPEG) ?? false;
+	const extraToolLabel = ffmpegReady
+		? intl.formatMessage({ id: "draw.extraTool.combo" })
+		: intl.formatMessage({ id: "draw.extraTool.scanQrcode" });
+
+	const availableToolbarActionStates = useMemo(() => {
+		return ACTION_TOOLBAR_STATES.filter((item) => {
+			switch (item) {
+				case DrawState.OcrDetect:
+					return rapidOcrReady;
+				case DrawState.OcrTranslate:
+				case DrawState.LaserPointer:
+					return rapidOcrReady && translateReady;
+				default:
+					return true;
+			}
+		});
+	}, [rapidOcrReady, translateReady]);
 
 	const customToolbarToolListOptions = useMemo(() => {
-		if (!isReadyStatus) {
-			return [];
-		}
-
 		return [
 			{
 				label: intl.formatMessage({ id: "draw.selectTool" }),
@@ -182,17 +230,50 @@ export const GeneralSettingsPage = () => {
 				label: intl.formatMessage({ id: "draw.scrollScreenshotTool" }),
 				value: DrawState.ScrollScreenshot,
 			},
+			{
+				label: extraToolLabel,
+				value: DrawState.ExtraTools,
+			},
 		].filter((item) => {
-			if (
-				item.value === DrawState.OcrDetect ||
-				item.value === DrawState.OcrTranslate
-			) {
-				return isReadyStatus(PLUGIN_ID_RAPID_OCR);
+			if (item.value === DrawState.OcrDetect) {
+				return rapidOcrReady;
+			}
+
+			if (item.value === DrawState.OcrTranslate) {
+				return rapidOcrReady && translateReady;
 			}
 
 			return true;
 		});
-	}, [intl, isReadyStatus]);
+	}, [extraToolLabel, intl, rapidOcrReady, translateReady]);
+
+	const actionToolbarStateLabelMap = useMemo(() => {
+		const map: Record<number, string> = {};
+		const labels: [DrawState, string][] = [
+			[DrawState.Fixed, intl.formatMessage({ id: "draw.fixedTool" })],
+			[DrawState.OcrDetect, intl.formatMessage({ id: "draw.ocrDetectTool" })],
+			[
+				DrawState.OcrTranslate,
+				intl.formatMessage({ id: "draw.ocrTranslateTool" }),
+			],
+			[
+				DrawState.LaserPointer,
+				intl.formatMessage({ id: "draw.openTranslationTool" }),
+			],
+			[
+				DrawState.ScrollScreenshot,
+				intl.formatMessage({ id: "draw.scrollScreenshotTool" }),
+			],
+			[DrawState.ExtraTools, extraToolLabel],
+			[DrawState.Save, intl.formatMessage({ id: "draw.saveTool" })],
+			[DrawState.Cancel, intl.formatMessage({ id: "draw.close" })],
+			[DrawState.Copy, intl.formatMessage({ id: "draw.copyTool" })],
+		];
+		for (const [state, label] of labels) {
+			map[state] = label;
+		}
+		return map;
+	}, [extraToolLabel, intl]);
 
 	const [defaultIconsOptions, setDefaultIconsOptions] = useState<
 		CheckboxOptionType<TrayIconDefaultIcon>[]
@@ -440,7 +521,20 @@ export const GeneralSettingsPage = () => {
 				className="settings-form screenshot-settings-form"
 				form={screenshotForm}
 				submitter={false}
-				onValuesChange={(_, values) => {
+				onValuesChange={(changedValues, values) => {
+					if ("toolbarHiddenToolList" in changedValues) {
+						values.toolbarActionOrder = normalizeToolbarActionOrder(
+							values.toolbarActionOrder ??
+								screenshotForm.getFieldValue("toolbarActionOrder"),
+							values.toolbarHiddenToolList,
+							availableToolbarActionStates,
+						);
+						screenshotForm.setFieldValue(
+							"toolbarActionOrder",
+							values.toolbarActionOrder,
+						);
+					}
+
 					if (typeof values.fullScreenAuxiliaryLineColor === "object") {
 						values.fullScreenAuxiliaryLineColor = (
 							values.fullScreenAuxiliaryLineColor as AggregationColor
@@ -688,6 +782,16 @@ export const GeneralSettingsPage = () => {
 							/>
 						</Col>
 					</Row>
+
+					<Row gutter={token.marginLG}>
+						<Col span={24}>
+							<ToolbarActionOrderSetting
+								form={screenshotForm}
+								labelMap={actionToolbarStateLabelMap}
+								availableActionStates={availableToolbarActionStates}
+							/>
+						</Col>
+					</Row>
 				</Spin>
 			</ProForm>
 
@@ -879,5 +983,255 @@ export const GeneralSettingsPage = () => {
                 }
             `}</style>
 		</ContentWrap>
+	);
+};
+
+const actionIconMap: Record<number, React.ReactNode> = {
+	[DrawState.Fixed]: <FixedIcon />,
+	[DrawState.OcrDetect]: <OcrDetectIcon />,
+	[DrawState.OcrTranslate]: <OcrTranslateIcon />,
+	[DrawState.LaserPointer]: <TranslationIcon />,
+	[DrawState.ScrollScreenshot]: <ScrollScreenshotIcon />,
+	[DrawState.ExtraTools]: <ScanOutlined />,
+	[DrawState.Save]: <SaveIcon />,
+	[DrawState.Cancel]: <CloseOutlined />,
+	[DrawState.Copy]: <CopyOutlined />,
+};
+
+const ToolbarActionOrderSetting: React.FC<{
+	form: ReturnType<
+		typeof Form.useForm<AppSettingsData[AppSettingsGroup.Screenshot]>
+	>[0];
+	labelMap: Record<number, string>;
+	availableActionStates: readonly DrawState[];
+}> = ({ form, labelMap, availableActionStates }) => {
+	const { updateAppSettings } = useContext(AppSettingsActionContext);
+
+	const watchedToolbarActionOrder = Form.useWatch("toolbarActionOrder", {
+		form,
+		preserve: true,
+	}) as DrawState[] | undefined;
+	const watchedToolbarHiddenToolList = Form.useWatch("toolbarHiddenToolList", {
+		form,
+		preserve: true,
+	}) as DrawState[] | undefined;
+	const getInitialItems = useCallback(() => {
+		return normalizeToolbarActionOrder(
+			form.getFieldValue("toolbarActionOrder"),
+			form.getFieldValue("toolbarHiddenToolList"),
+			availableActionStates,
+		);
+	}, [availableActionStates, form]);
+	const [items, setItems] = useState<number[]>(getInitialItems);
+	const dragIndexRef = useRef<number>(-1);
+	const [draggingItem, setDraggingItem] = useState<number>();
+
+	const [dirty, setDirty] = useState(false);
+
+	useEffect(() => {
+		if (!dirty) {
+			setItems(
+				normalizeToolbarActionOrder(
+					watchedToolbarActionOrder,
+					watchedToolbarHiddenToolList,
+					availableActionStates,
+				),
+			);
+		}
+	}, [
+		availableActionStates,
+		dirty,
+		watchedToolbarActionOrder,
+		watchedToolbarHiddenToolList,
+	]);
+
+	const saveOrder = useCallback(() => {
+		const order = normalizeToolbarActionOrder(
+			items,
+			watchedToolbarHiddenToolList,
+			availableActionStates,
+		);
+		form.setFieldValue("toolbarActionOrder", order);
+		updateAppSettings(
+			AppSettingsGroup.Screenshot,
+			{ toolbarActionOrder: order },
+			false,
+			true,
+			true,
+			true,
+			false,
+		);
+		setDirty(false);
+	}, [
+		availableActionStates,
+		form,
+		updateAppSettings,
+		items,
+		watchedToolbarHiddenToolList,
+	]);
+
+	const moveItem = useCallback((from: number, to: number) => {
+		if (from === to || from < 0 || to < 0) return;
+		setItems((current) => {
+			if (from >= current.length || to >= current.length) return current;
+			const next = [...current];
+			const [moved] = next.splice(from, 1);
+			next.splice(to, 0, moved);
+			return next;
+		});
+		setDirty(true);
+	}, []);
+
+	const moveUp = useCallback(
+		(index: number) => {
+			if (index === 0) return;
+			moveItem(index, index - 1);
+		},
+		[moveItem],
+	);
+
+	const moveDown = useCallback(
+		(index: number) => {
+			if (index >= items.length - 1) return;
+			moveItem(index, index + 1);
+		},
+		[items.length, moveItem],
+	);
+
+	const handlePointerDown = useCallback(
+		(e: React.PointerEvent, index: number, item: number) => {
+			if (e.button !== 0) return;
+			e.preventDefault();
+			dragIndexRef.current = index;
+			setDraggingItem(item);
+		},
+		[],
+	);
+
+	const finishDrag = useCallback(() => {
+		dragIndexRef.current = -1;
+		setDraggingItem(undefined);
+	}, []);
+
+	const handlePointerMove = useCallback(
+		(e: PointerEvent) => {
+			if (dragIndexRef.current === -1) return;
+			const target = document.elementFromPoint(e.clientX, e.clientY);
+			const row = target?.closest("[data-toolbar-action-index]");
+			const to = Number(row?.getAttribute("data-toolbar-action-index"));
+			if (Number.isNaN(to)) return;
+			const from = dragIndexRef.current;
+			if (from === to) return;
+			moveItem(from, to);
+			dragIndexRef.current = to;
+		},
+		[moveItem],
+	);
+
+	useEffect(() => {
+		if (draggingItem === undefined) return;
+		const originalCursor = document.body.style.cursor;
+		const originalUserSelect = document.body.style.userSelect;
+		document.body.style.cursor = "grabbing";
+		document.body.style.userSelect = "none";
+		window.addEventListener("pointermove", handlePointerMove);
+		window.addEventListener("pointerup", finishDrag);
+		window.addEventListener("pointercancel", finishDrag);
+		return () => {
+			document.body.style.cursor = originalCursor;
+			document.body.style.userSelect = originalUserSelect;
+			window.removeEventListener("pointermove", handlePointerMove);
+			window.removeEventListener("pointerup", finishDrag);
+			window.removeEventListener("pointercancel", finishDrag);
+		};
+	}, [draggingItem, finishDrag, handlePointerMove]);
+
+	return (
+		<div>
+			<Typography.Text strong style={{ display: "block", marginBottom: 8 }}>
+				<FormattedMessage id="settings.toolbarActionOrder" />
+			</Typography.Text>
+			<div
+				style={{
+					border: "1px solid rgba(0,0,0,0.06)",
+					borderRadius: 6,
+					overflow: "hidden",
+				}}
+			>
+				{items.map((item, index) => (
+					<div
+						key={item}
+						data-toolbar-action-index={index}
+						style={{
+							padding: "4px 8px",
+							display: "flex",
+							alignItems: "center",
+							gap: 4,
+							fontSize: 14,
+							borderBottom:
+								index < items.length - 1
+									? "1px solid rgba(0,0,0,0.06)"
+									: "none",
+							userSelect: "none",
+							background:
+								draggingItem === item ? "rgba(0,0,0,0.03)" : undefined,
+						}}
+					>
+						<Button
+							type="text"
+							size="small"
+							disabled={index === 0}
+							onClick={() => moveUp(index)}
+							icon={<ArrowUpOutlined />}
+						/>
+						<Button
+							type="text"
+							size="small"
+							disabled={index >= items.length - 1}
+							onClick={() => moveDown(index)}
+							icon={<ArrowDownOutlined />}
+						/>
+						<span
+							style={{
+								color: "#999",
+								fontSize: 12,
+								width: 20,
+								textAlign: "right",
+							}}
+						>
+							{index + 1}
+						</span>
+						<span style={{ display: "inline-flex", alignItems: "center" }}>
+							{actionIconMap[item] ?? null}
+						</span>
+						<span style={{ flex: 1 }}>
+							{labelMap[item] ?? `Unknown (${item})`}
+						</span>
+						<div
+							onPointerDown={(e) => handlePointerDown(e, index, item)}
+							style={{
+								cursor: draggingItem === item ? "grabbing" : "grab",
+								padding: "4px 8px",
+								color: "#bbb",
+								display: "flex",
+								alignItems: "center",
+							}}
+							title="拖动排序"
+						>
+							<DragOutlined />
+						</div>
+					</div>
+				))}
+			</div>
+			<Button
+				type="primary"
+				size="small"
+				disabled={!dirty}
+				onClick={saveOrder}
+				style={{ marginTop: 8 }}
+			>
+				<FormattedMessage id="settings.toolbarActionOrder.save" />
+			</Button>
+		</div>
 	);
 };

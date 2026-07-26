@@ -115,6 +115,7 @@ export const defaultAppSettingsData: AppSettingsData = {
 		hotKeyTipOpacity: 100,
 		colorPickerCenterAuxiliaryLineColor: "#00000000",
 		toolbarHiddenToolList: [],
+		toolbarActionOrder: [],
 	},
 	[AppSettingsGroup.FixedContent]: {
 		borderColor: "#dbdbdb",

@@ -446,6 +446,8 @@ export type AppSettingsData = {
 		disableAnimation: boolean;
 		/** 隐藏工具栏工具 */
 		toolbarHiddenToolList: DrawState[];
+		/** 操作按钮排序（仅非绘图工具） */
+		toolbarActionOrder: DrawState[];
 	};
 	[AppSettingsGroup.FixedContent]: {
 		/** 边框颜色 */
@@ -748,4 +750,43 @@ export const CanHiddenToolSet: Set<DrawState> = new Set([
 	DrawState.OcrDetect,
 	DrawState.OcrTranslate,
 	DrawState.ScrollScreenshot,
+	DrawState.ExtraTools,
 ]);
+
+/** 可排序的操作按钮列表（非绘图工具）*/
+export const ACTION_TOOLBAR_STATES: readonly DrawState[] = [
+	DrawState.Fixed,
+	DrawState.OcrDetect,
+	DrawState.OcrTranslate,
+	DrawState.LaserPointer,
+	DrawState.ScrollScreenshot,
+	DrawState.ExtraTools,
+	DrawState.Save,
+	DrawState.Cancel,
+	DrawState.Copy,
+] as const;
+
+export const normalizeToolbarActionOrder = (
+	value?: readonly DrawState[],
+	hiddenToolList?: readonly DrawState[],
+	availableActionStates: readonly DrawState[] = ACTION_TOOLBAR_STATES,
+) => {
+	const actionStateSet = new Set<DrawState>(availableActionStates);
+	const hiddenToolSet = new Set<DrawState>(hiddenToolList ?? []);
+	const configuredOrder = Array.isArray(value)
+		? value.reduce<DrawState[]>((acc, item) => {
+				if (
+					actionStateSet.has(item) &&
+					!hiddenToolSet.has(item) &&
+					!acc.includes(item)
+				) {
+					acc.push(item);
+				}
+				return acc;
+			}, [])
+		: [];
+	const missingOrder = availableActionStates.filter(
+		(item) => !configuredOrder.includes(item) && !hiddenToolSet.has(item),
+	);
+	return [...configuredOrder, ...missingOrder];
+};
