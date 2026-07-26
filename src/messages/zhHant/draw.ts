@@ -214,6 +214,7 @@ export const draw = {
 	"draw.ocrResultEmpty": "文字辨識結果為空",
 	"draw.ocrResult.translating": "翻譯中",
 	"draw.ocrResult.translateError": "翻譯失敗",
+	"draw.ocrResult.translationService": "翻譯服務：{service}",
 	"draw.ocrToolModalSettings.title": "文字辨識設定",
 	"draw.ocrResult.visionModelListEmpty": "視覺理解模型無效，請檢查應用程式設定",
 	"draw.ocrResult.imageTooSmall": "所選區域過小，無法進行視覺理解",

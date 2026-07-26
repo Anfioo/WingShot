@@ -67,9 +67,9 @@ pub struct Plugin {
      */
     plugin_download_dir: PathBuf,
     /**
-     * 插件下载服务 URL
+     * 插件下载 URL 模板列表
      */
-    plugin_download_service_url: Url,
+    plugin_download_url_templates: Arc<RwLock<Vec<String>>>,
     /**
      * 应用句柄
      */
@@ -94,7 +94,7 @@ impl Plugin {
             .with_extension("zip")
     }
 
-    fn get_plugin_download_url(&self) -> Url {
+    async fn get_plugin_download_urls(&self) -> Vec<String> {
         let os_dir_name;
         #[cfg(target_os = "windows")]
         {
@@ -104,13 +104,22 @@ impl Plugin {
         {
             os_dir_name = "macos_aarch64";
         }
+        #[cfg(target_os = "linux")]
+        {
+            os_dir_name = "linux_x64";
+        }
 
-        self.plugin_download_service_url
-            .join(&format!(
-                "{}/{}/{}.zip",
-                self.version, os_dir_name, self.name
-            ))
-            .unwrap()
+        self.plugin_download_url_templates
+            .read()
+            .await
+            .iter()
+            .map(|template| {
+                template
+                    .replace("{version}", &self.version)
+                    .replace("{platform}", os_dir_name)
+                    .replace("{plugin}", &self.name)
+            })
+            .collect()
     }
 
     async fn set_status(&self, status: PluginStatus) {
@@ -164,7 +173,7 @@ impl Plugin {
         name: String,
         file_list: Vec<PathBuf>,
         version: String,
-        plugin_download_service_url: Url,
+        plugin_download_url_templates: Arc<RwLock<Vec<String>>>,
         app_handle: Arc<RwLock<Option<AppHandle>>>,
     ) -> Self {
         let relative_path = PathBuf::from(&version).join(&name);
@@ -177,7 +186,7 @@ impl Plugin {
             relative_path,
             plugin_install_dir: plugin_install_dir.to_path_buf(),
             plugin_download_dir: plugin_download_dir.to_path_buf(),
-            plugin_download_service_url,
+            plugin_download_url_templates,
             app_handle,
         };
 
@@ -333,16 +342,18 @@ impl Plugin {
     }
 
     async fn download(&self) -> Result<(), String> {
-        let download_url = self.get_plugin_download_url();
+        let download_urls = self.get_plugin_download_urls().await;
 
-        // 获取下载文件路径
+        if download_urls.len() == 0 {
+            return Err("[Plugin::download] Download URL list is empty".to_string());
+        }
+
         let download_file_path = self.get_plugin_download_file_path();
 
         if download_file_path.exists() && download_file_path.is_file() {
             return Ok(());
         }
 
-        // 确保下载目录存在
         let download_dir = download_file_path.parent().unwrap();
         if !download_dir.exists() {
             match tokio::fs::create_dir_all(download_dir).await {
@@ -357,88 +368,113 @@ impl Plugin {
             }
         }
 
-        // 创建 HTTP 客户端
         let client = Client::new();
+        let temp_file_path = download_file_path.with_extension("temp");
+        let mut errors = Vec::new();
 
-        // 发送下载请求
-        let response = match client.get(download_url.clone()).send().await {
-            Ok(resp) => resp,
-            Err(e) => {
-                return Err(format!(
-                    "[Plugin::download] Failed to send download request to {}: {}",
-                    download_url, e
-                ));
-            }
-        };
-
-        // 检查响应状态
-        if !response.status().is_success() {
-            return Err(format!(
-                "[Plugin::download] Download request failed with status {} for URL: {}",
-                response.status(),
-                download_url
-            ));
-        }
-
-        // 创建目标文件
-        let temp_file_path = download_file_path.with_extension("temp"); // 写入临时文件避免文件传输终端
-        let mut file = match tokio::fs::File::create(&temp_file_path).await {
-            Ok(file) => file,
-            Err(e) => {
-                return Err(format!(
-                    "[Plugin::download] Failed to create download file {}: {}",
-                    temp_file_path.display(),
-                    e
-                ));
-            }
-        };
-
-        // 获取响应字节流并复制到文件
-        use tokio::io::AsyncWriteExt;
-
-        let mut stream = response.bytes_stream();
-        while let Some(chunk_result) = stream.next().await {
-            let chunk = match chunk_result {
-                Ok(chunk) => chunk,
+        for download_url in download_urls {
+            let download_url = match Url::parse(&download_url) {
+                Ok(url) => url,
                 Err(e) => {
-                    return Err(format!(
-                        "[Plugin::download] Failed to read chunk from download stream: {}",
-                        e
+                    errors.push(format!(
+                        "Invalid download URL {}: {}",
+                        download_url, e
                     ));
+                    continue;
                 }
             };
 
-            if let Err(e) = file.write_all(&chunk).await {
-                return Err(format!(
-                    "[Plugin::download] Failed to write chunk to file {}: {}",
-                    temp_file_path.display(),
-                    e
-                ));
+            let result = async {
+                let response = client
+                    .get(download_url.clone())
+                    .send()
+                    .await
+                    .map_err(|e| {
+                        format!(
+                            "[Plugin::download] Failed to send download request to {}: {}",
+                            download_url, e
+                        )
+                    })?;
+
+                if !response.status().is_success() {
+                    return Err(format!(
+                        "[Plugin::download] Download request failed with status {} for URL: {}",
+                        response.status(),
+                        download_url
+                    ));
+                }
+
+                let mut file = tokio::fs::File::create(&temp_file_path).await.map_err(|e| {
+                    format!(
+                        "[Plugin::download] Failed to create download file {}: {}",
+                        temp_file_path.display(),
+                        e
+                    )
+                })?;
+
+                use tokio::io::AsyncWriteExt;
+
+                let mut stream = response.bytes_stream();
+                while let Some(chunk_result) = stream.next().await {
+                    let chunk = chunk_result.map_err(|e| {
+                        format!(
+                            "[Plugin::download] Failed to read chunk from download stream: {}",
+                            e
+                        )
+                    })?;
+
+                    file.write_all(&chunk).await.map_err(|e| {
+                        format!(
+                            "[Plugin::download] Failed to write chunk to file {}: {}",
+                            temp_file_path.display(),
+                            e
+                        )
+                    })?;
+                }
+
+                file.flush().await.map_err(|e| {
+                    format!(
+                        "[Plugin::download] Failed to flush download file {}: {}",
+                        temp_file_path.display(),
+                        e
+                    )
+                })?;
+
+                tokio::fs::rename(&temp_file_path, &download_file_path)
+                    .await
+                    .map_err(|e| {
+                        format!(
+                            "[Plugin::download] Failed to rename download file {} to {}: {}",
+                            temp_file_path.display(),
+                            download_file_path.display(),
+                            e
+                        )
+                    })?;
+
+                Ok::<(), String>(())
+            }
+            .await;
+
+            match result {
+                Ok(_) => {
+                    log::info!("[Plugin::download] Downloaded from {}", download_url);
+                    return Ok(());
+                }
+                Err(error) => {
+                    log::warn!(
+                        "[Plugin::download] Download source failed, trying next source: {}",
+                        error
+                    );
+                    let _ = tokio::fs::remove_file(&temp_file_path).await;
+                    errors.push(error);
+                }
             }
         }
 
-        // 确保文件写入完成
-        if let Err(e) = file.flush().await {
-            return Err(format!(
-                "[Plugin::download] Failed to flush download file {}: {}",
-                temp_file_path.display(),
-                e
-            ));
-        }
-
-        match tokio::fs::rename(&temp_file_path, &download_file_path).await {
-            Ok(_) => (),
-            Err(e) => {
-                return Err(format!(
-                    "[Plugin::download] Failed to rename download file {} to {}: {}",
-                    temp_file_path.display(),
-                    download_file_path.display(),
-                    e
-                ));
-            }
-        }
-
-        Ok(())
+        Err(format!(
+            "[Plugin::download] All download sources failed: {}",
+            errors.join("; ")
+        ))
     }
 
     /**
@@ -477,8 +513,8 @@ impl Plugin {
         }
 
         log::info!(
-            "[Plugin::install] download: {:?}",
-            self.get_plugin_download_url()
+            "[Plugin::install] download sources: {:?}",
+            self.get_plugin_download_urls().await
         );
 
         // 下载插件

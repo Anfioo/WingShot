@@ -1,6 +1,7 @@
 import { createContext, useContext } from "react";
 import {
 	PluginConfig,
+	type PluginDownloadSource,
 	type PluginStatusRecord,
 } from "@/types/components/pluginService";
 
@@ -15,10 +16,13 @@ export type PluginServiceContextType = {
 	isReadyStatus: ((pluginId: string) => boolean) | undefined;
 	refreshPluginStatus: () => void;
 	refreshPluginStatusThrottle: () => void;
+	updatePluginDownloadSources: (
+		sources: PluginDownloadSource[],
+	) => Promise<void>;
 };
 
 export const PluginServiceContext = createContext<PluginServiceContextType>({
-	pluginConfig: new PluginConfig([], "", "", "", ""),
+	pluginConfig: new PluginConfig([], "", "", "", []),
 	pluginConfigRef: { current: undefined },
 	pluginStatus: undefined,
 	pluginStatusRef: { current: undefined },
@@ -26,6 +30,7 @@ export const PluginServiceContext = createContext<PluginServiceContextType>({
 	isReadyStatus: undefined,
 	refreshPluginStatus: () => {},
 	refreshPluginStatusThrottle: () => {},
+	updatePluginDownloadSources: async () => {},
 });
 
 export const usePluginServiceContext = () => {

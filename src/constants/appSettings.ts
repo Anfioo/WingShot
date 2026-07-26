@@ -31,6 +31,7 @@ import {
 	TrayIconDefaultIcon,
 	VideoMaxSize,
 } from "@/types/appSettings";
+import { defaultPluginDownloadSources } from "@/types/components/pluginService";
 import { DrawState } from "@/types/draw";
 import {
 	TranslationDomain,
@@ -181,6 +182,9 @@ export const defaultAppSettingsData: AppSettingsData = {
 	},
 	[AppSettingsGroup.SystemNetwork]: {
 		enableProxy: false,
+	},
+	[AppSettingsGroup.PluginService]: {
+		downloadSources: defaultPluginDownloadSources,
 	},
 	[AppSettingsGroup.FunctionChat]: {
 		autoCreateNewSession: true,

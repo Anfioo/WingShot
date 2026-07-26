@@ -2,6 +2,7 @@ import { isDeepEqualReact } from "@ant-design/pro-components";
 import * as path from "@tauri-apps/api/path";
 import { throttle } from "es-toolkit";
 import { useCallback, useEffect, useMemo, useRef } from "react";
+import { textFileRead } from "@/commands/file";
 import {
 	pluginGetPluginsStatus,
 	pluginInit,
@@ -15,14 +16,38 @@ import {
 } from "@/constants/pluginService";
 import { PluginServiceContext } from "@/contexts/pluginServiceContext";
 import { useStateRef } from "@/hooks/useStateRef";
+import { AppSettingsGroup } from "@/types/appSettings";
 import { PluginStatus, type PluginStatusResult } from "@/types/commands/plugin";
 import {
+	defaultPluginDownloadSources,
+	normalizePluginDownloadSources,
+	PLUGIN_RESOURCE_VERSION,
 	PluginConfig,
+	type PluginDownloadSource,
 	type PluginItem,
 	type PluginStatusRecord,
 } from "@/types/components/pluginService";
-import { getAppConfigBaseDirWithCache } from "@/utils/environment";
+import {
+	getAppConfigBaseDirWithCache,
+	getConfigDirPath,
+} from "@/utils/environment";
 import { getPlatform } from "@/utils/platform";
+
+const readPluginDownloadSources = async () => {
+	try {
+		const content = await textFileRead(
+			`${await getConfigDirPath()}/${AppSettingsGroup.PluginService}.json`,
+		);
+		if (!content) {
+			return defaultPluginDownloadSources;
+		}
+
+		const settings = JSON.parse(content) as { downloadSources?: unknown };
+		return normalizePluginDownloadSources(settings.downloadSources);
+	} catch {
+		return defaultPluginDownloadSources;
+	}
+};
 
 export const PluginServiceContextProvider: React.FC<{
 	children: React.ReactNode;
@@ -65,40 +90,56 @@ export const PluginServiceContextProvider: React.FC<{
 	const [pluginReadyStatus, setPluginReadyStatus, pluginReadyStatusRef] =
 		useStateRef<Record<string, boolean> | undefined>(undefined);
 
-	const hasInitService = useRef(false);
+	const hasRegisterService = useRef(false);
 	const initServiceReadyRef = useRef(false);
-	const initPluginConfig = useCallback(async () => {
-		const configDirPath = await getAppConfigBaseDirWithCache();
+	const applyPluginConfig = useCallback(
+		async (downloadSources: PluginDownloadSource[]) => {
+			const configDirPath = await getAppConfigBaseDirWithCache();
 
-		const pluginConfig = new PluginConfig(
-			pluginList,
-			"20251005",
-			await path.join(configDirPath, "plugins"),
-			await path.join(configDirPath, "pluginsDownloads"),
-			"https://wingshot.anfioo.com/plugins/",
-		);
-		setPluginConfig(pluginConfig);
-
-		if (!hasInitService.current) {
-			hasInitService.current = true;
+			const pluginConfig = new PluginConfig(
+				pluginList,
+				PLUGIN_RESOURCE_VERSION,
+				await path.join(configDirPath, "plugins"),
+				await path.join(configDirPath, "pluginsDownloads"),
+				downloadSources,
+			);
+			setPluginConfig(pluginConfig);
 
 			if (autoInit) {
 				await pluginInit(
 					pluginConfig.version,
 					pluginConfig.plugin_install_dir,
 					pluginConfig.plugin_download_dir,
-					pluginConfig.plugin_download_service_url,
-				);
-				await Promise.all(
-					pluginList.map(async (plugin) => {
-						await pluginRegisterPlugin(plugin.id, plugin.file_list);
-					}),
+					pluginConfig.getPluginDownloadUrlTemplates(),
 				);
 			}
 
-			initServiceReadyRef.current = true;
-		}
-	}, [setPluginConfig, pluginList, autoInit]);
+			if (!hasRegisterService.current) {
+				hasRegisterService.current = true;
+
+				if (autoInit) {
+					await Promise.all(
+						pluginList.map(async (plugin) => {
+							await pluginRegisterPlugin(plugin.id, plugin.file_list);
+						}),
+					);
+				}
+
+				initServiceReadyRef.current = true;
+			}
+		},
+		[setPluginConfig, pluginList, autoInit],
+	);
+	const initPluginConfig = useCallback(async () => {
+		await applyPluginConfig(await readPluginDownloadSources());
+	}, [applyPluginConfig]);
+
+	const updatePluginDownloadSources = useCallback(
+		async (downloadSources: PluginDownloadSource[]) => {
+			await applyPluginConfig(normalizePluginDownloadSources(downloadSources));
+		},
+		[applyPluginConfig],
+	);
 
 	const refreshPluginStatus = useCallback(async () => {
 		const pluginStatus = await pluginGetPluginsStatus();
@@ -173,6 +214,7 @@ export const PluginServiceContextProvider: React.FC<{
 			pluginStatusRef,
 			refreshPluginStatus,
 			refreshPluginStatusThrottle,
+			updatePluginDownloadSources,
 			isReady: pluginStatus ? isReadyCore : undefined,
 			isReadyStatus: pluginStatus ? isReadyStatusCore : undefined,
 		};
@@ -184,6 +226,7 @@ export const PluginServiceContextProvider: React.FC<{
 		pluginStatusRef,
 		refreshPluginStatus,
 		refreshPluginStatusThrottle,
+		updatePluginDownloadSources,
 		isReadyStatusCore,
 	]);
 

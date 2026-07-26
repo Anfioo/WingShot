@@ -24,6 +24,7 @@ import {
 	streamChatModelText,
 } from "@/core/chatModels";
 import { useTranslationRequest } from "@/core/translations";
+import { translationServiceMetaMap } from "@/core/translations/services/registry";
 import { releaseOcrSession } from "@/functions/ocr";
 import { useHotkeysApp } from "@/hooks/useHotkeysApp";
 import { useStateRef } from "@/hooks/useStateRef";
@@ -37,6 +38,7 @@ import { MarkdownContent } from "@/pages/tools/chat/page";
 import {
 	AppSettingsGroup,
 	type ChatModelAdapterConfig,
+	type TranslationServiceInstance,
 } from "@/types/appSettings";
 import type { OcrDetectResult } from "@/types/commands/ocr";
 import type { ElementRect } from "@/types/commands/screenshot";
@@ -56,6 +58,7 @@ const ROTATION_THRESHOLD = 3; // 小于3度的旋转被视为误差，不进行�
 export type AppOcrResult = {
 	result: OcrDetectResult;
 	ignoreScale: boolean;
+	translationService?: TranslationServiceInstance;
 };
 
 export type AllOcrResult = {
@@ -251,6 +254,7 @@ export const OcrResult: React.FC<{
 			ocrResultType: OcrResultType,
 			options?: {
 				ignoreResetValue?: boolean;
+				translationService?: TranslationServiceInstance;
 			},
 		) => {
 			const monitorScaleFactor = monitorScaleFactorRef.current;
@@ -264,6 +268,7 @@ export const OcrResult: React.FC<{
 				result: ocrResult,
 				ignoreScale: ignoreScale,
 				ocrResultType: ocrResultType,
+				translationService: options?.translationService,
 			});
 
 			const transformScale = 1 / monitorScaleFactor;
@@ -646,6 +651,9 @@ export const OcrResult: React.FC<{
 						targetOcrResult.result,
 						targetOcrResult.ignoreScale,
 						targetOcrResult.ocrResultType,
+						{
+							translationService: targetOcrResult.translationService,
+						},
 					);
 					onOcrDetect?.(targetOcrResult.result);
 				}
@@ -1140,7 +1148,7 @@ export const OcrResult: React.FC<{
 	const { requestTranslate } = useTranslationRequest(
 		useMemo(() => {
 			return {
-				onComplete: (result, requestId) => {
+				onComplete: (result, requestId, service) => {
 					if (requestId !== requestIdRef.current || !ocrResultRef.current) {
 						return;
 					}
@@ -1165,6 +1173,7 @@ export const OcrResult: React.FC<{
 
 					const translatorOcrResult: AppOcrResult = {
 						ignoreScale: ocrResultRef.current.ignoreScale,
+						translationService: service,
 						result: {
 							...ocrResultRef.current.result,
 							text_blocks: ocrResultRef.current.result.text_blocks.map(
@@ -1181,6 +1190,7 @@ export const OcrResult: React.FC<{
 						translatorOcrResult.result,
 						translatorOcrResult.ignoreScale,
 						OcrResultType.Translated,
+						{ translationService: service },
 					);
 				},
 				lazyLoad: true,
@@ -1286,6 +1296,8 @@ export const OcrResult: React.FC<{
 						OcrResultType.Translated,
 						{
 							ignoreResetValue: true,
+							translationService:
+								translatorOcrResultRef.current.translationService,
 						},
 					);
 				} else if (
@@ -1365,6 +1377,22 @@ export const OcrResult: React.FC<{
 	}, [visionModelMarkdownResult, onVisionModelMarkdownResultChange]);
 
 	const enableDrag = !!(onMouseDown && onMouseMove && onMouseUp);
+	const translationServiceName = useMemo(() => {
+		if (
+			currentOcrResult?.ocrResultType !== OcrResultType.Translated ||
+			!currentOcrResult.translationService
+		) {
+			return undefined;
+		}
+
+		const service = currentOcrResult.translationService;
+		const serviceTypeName = intl.formatMessage({
+			id: translationServiceMetaMap[service.type].messageId,
+		});
+		return service.name?.trim()
+			? `${service.name.trim()} · ${serviceTypeName}`
+			: serviceTypeName;
+	}, [currentOcrResult, intl]);
 
 	return (
 		<div
@@ -1397,6 +1425,29 @@ export const OcrResult: React.FC<{
 				className="ocr-result-text-iframe-container"
 				ref={textIframeContainerElementWrapRef}
 			>
+				{translationServiceName && (
+					<div
+						style={{
+							position: "absolute",
+							right: 0,
+							top: -30,
+							zIndex: 2,
+							padding: "4px 8px",
+							borderRadius: token.borderRadius,
+							background: Color(token.colorBgContainer).alpha(0.86).toString(),
+							color: token.colorTextSecondary,
+							fontSize: 12,
+							boxShadow: token.boxShadowSecondary,
+							pointerEvents: "none",
+							whiteSpace: "nowrap",
+						}}
+					>
+						{intl.formatMessage(
+							{ id: "draw.ocrResult.translationService" },
+							{ service: translationServiceName },
+						)}
+					</div>
+				)}
 				<iframe
 					title="ocr-result-text-iframe"
 					ref={textIframeContainerElementRef}

@@ -214,6 +214,7 @@ export const draw = {
 	"draw.ocrResultEmpty": "文本识别结果为空",
 	"draw.ocrResult.translating": "翻译中",
 	"draw.ocrResult.translateError": "翻译失败",
+	"draw.ocrResult.translationService": "翻译服务：{service}",
 	"draw.ocrToolModalSettings.title": "文本识别设置",
 	"draw.ocrResult.visionModelListEmpty": "视觉理解模型无效，请检查应用设置",
 	"draw.ocrResult.imageTooSmall": "所选区域过小，无法进行视觉理解",

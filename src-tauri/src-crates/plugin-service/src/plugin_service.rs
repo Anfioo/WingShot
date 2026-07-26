@@ -2,7 +2,6 @@ use std::path::{Path, PathBuf};
 
 use crate::plugin::{Plugin, PluginStatus};
 use dashmap::DashMap;
-use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tauri::AppHandle;
@@ -12,7 +11,7 @@ pub struct PluginService {
     version: RwLock<String>,
     plugin_install_dir: RwLock<PathBuf>,
     plugin_download_dir: RwLock<PathBuf>,
-    plugin_download_service_url: RwLock<Url>,
+    plugin_download_url_templates: Arc<RwLock<Vec<String>>>,
     plugins: DashMap<String, Arc<RwLock<Plugin>>>,
     app_handle: Arc<RwLock<Option<AppHandle>>>,
 }
@@ -29,9 +28,11 @@ impl PluginService {
             version: RwLock::new("".to_string()),
             plugin_install_dir: RwLock::new(PathBuf::new()),
             plugin_download_dir: RwLock::new(PathBuf::new()),
-            plugin_download_service_url: RwLock::new(
-                Url::parse("https://wingshot.anfioo.com/plugins").unwrap(),
-            ),
+            plugin_download_url_templates: Arc::new(RwLock::new(vec![
+                "https://snowshot.top/plugins/{version}/{platform}/{plugin}.zip".to_string(),
+                "https://wingshot.anfioo.com/plugins/{version}/{platform}/{plugin}.zip".to_string(),
+                "https://github.com/Anfioo/WingShot/releases/download/Resources_20260725/{plugin}.zip".to_string(),
+            ])),
             plugins: DashMap::new(),
             app_handle: Arc::new(RwLock::new(None)),
         }
@@ -42,7 +43,7 @@ impl PluginService {
         version: String,
         plugin_install_dir: &Path,
         plugin_download_dir: &Path,
-        plugin_download_service_url: Url,
+        plugin_download_url_templates: Vec<String>,
         app_handle: AppHandle,
     ) {
         let mut version_guard = self.version.write().await;
@@ -51,8 +52,8 @@ impl PluginService {
         *plugin_install_dir_guard = plugin_install_dir.to_path_buf();
         let mut plugin_download_dir_guard = self.plugin_download_dir.write().await;
         *plugin_download_dir_guard = plugin_download_dir.to_path_buf();
-        let mut plugin_download_service_url_guard = self.plugin_download_service_url.write().await;
-        *plugin_download_service_url_guard = plugin_download_service_url;
+        let mut plugin_download_url_templates_guard = self.plugin_download_url_templates.write().await;
+        *plugin_download_url_templates_guard = plugin_download_url_templates;
         let mut app_handle_guard = self.app_handle.write().await;
         *app_handle_guard = Some(app_handle);
     }
@@ -135,7 +136,7 @@ impl PluginService {
             name.to_string(),
             file_list,
             self.version.read().await.clone(),
-            self.plugin_download_service_url.read().await.clone(),
+            self.plugin_download_url_templates.clone(),
             self.app_handle.clone(),
         )
     }

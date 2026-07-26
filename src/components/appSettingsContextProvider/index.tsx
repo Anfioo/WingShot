@@ -70,6 +70,7 @@ import {
 	DrawToolbarKeyEventKey,
 	type DrawToolbarKeyEventValue,
 } from "@/types/components/drawToolbar";
+import { normalizePluginDownloadSources } from "@/types/components/pluginService";
 import type {
 	CommonKeyEventKey,
 	CommonKeyEventValue,
@@ -993,6 +994,17 @@ const AppSettingsContextProviderCore: React.FC<{
 							? newSettings.enableProxy
 							: (prevSettings?.enableProxy ??
 								defaultAppSettingsData[group].enableProxy),
+				};
+			} else if (group === AppSettingsGroup.PluginService) {
+				newSettings = newSettings as AppSettingsData[typeof group];
+				const prevSettings = appSettingsRef.current[group] as
+					| AppSettingsData[typeof group]
+					| undefined;
+
+				settings = {
+					downloadSources: normalizePluginDownloadSources(
+						newSettings?.downloadSources ?? prevSettings?.downloadSources,
+					),
 				};
 			} else if (group === AppSettingsGroup.FunctionOcr) {
 				newSettings = newSettings as AppSettingsData[typeof group];

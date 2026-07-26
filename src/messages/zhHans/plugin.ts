@@ -13,6 +13,7 @@ export const plugin = {
 		"使用最前沿的 AI 大模型简化工作流程，支持自定义配置兼容 Open AI SDK 的 API。",
 	"plugin.translate.name": "翻译",
 	"plugin.translate.description": "支持图片翻译、文本翻译等功能",
+	"plugin.translate.functionDescription": "翻译",
 	"plugin.ai_chat.functionDescription": "AI 对话页面",
 	"plugin.status.NotInstalled": "未安装",
 	"plugin.status.Installed": "已安装",
@@ -23,4 +24,12 @@ export const plugin = {
 	"plugin.uninstall": "卸载",
 	"plugin.forceInstall": "重新安装",
 	"plugin.openDataDir": "打开目录",
+	"plugin.downloadSource.title": "插件下载源",
+	"plugin.downloadSource.description":
+		"按顺序尝试启用的下载源。模板支持 {version}、{platform}、{plugin}，例如 {plugin} 会展开为 rapid_ocr 或 ffmpeg。",
+	"plugin.downloadSource.add": "添加下载源",
+	"plugin.downloadSource.save": "保存下载源",
+	"plugin.downloadSource.saveSuccess": "插件下载源已保存",
+	"plugin.downloadSource.customName": "自定义源",
+	"plugin.downloadSource.namePlaceholder": "源名称",
 };

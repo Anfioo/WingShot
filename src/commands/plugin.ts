@@ -5,13 +5,13 @@ export const pluginInit = async (
 	version: string,
 	pluginInstallDir: string,
 	pluginDownloadDir: string,
-	pluginDownloadServiceUrl: string,
+	pluginDownloadUrlTemplates: string[],
 ) => {
 	await invoke("plugin_init", {
 		version,
 		pluginInstallDir,
 		pluginDownloadDir,
-		pluginDownloadServiceUrl,
+		pluginDownloadUrlTemplates,
 	});
 };
 

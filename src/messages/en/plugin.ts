@@ -14,6 +14,7 @@ export const plugin = {
 	"plugin.translate.name": "Translation",
 	"plugin.translate.description":
 		"Support image translation, text translation, and other functions",
+	"plugin.translate.functionDescription": "Translation",
 	"plugin.ai_chat.functionDescription": "AI Chat Page",
 	"plugin.status.NotInstalled": "Not Installed",
 	"plugin.status.Installed": "Installed",
@@ -24,4 +25,12 @@ export const plugin = {
 	"plugin.uninstall": "Uninstall",
 	"plugin.forceInstall": "Reinstall",
 	"plugin.openDataDir": "Open Plugin Data Directory",
+	"plugin.downloadSource.title": "Plugin Download Sources",
+	"plugin.downloadSource.description":
+		"Enabled sources are tried in order. Templates support {version}, {platform}, and {plugin}; for example, {plugin} expands to rapid_ocr or ffmpeg.",
+	"plugin.downloadSource.add": "Add source",
+	"plugin.downloadSource.save": "Save sources",
+	"plugin.downloadSource.saveSuccess": "Plugin download sources saved",
+	"plugin.downloadSource.customName": "Custom source",
+	"plugin.downloadSource.namePlaceholder": "Source name",
 };

@@ -4,6 +4,7 @@ import type {
 	DrawToolbarKeyEventKey,
 	DrawToolbarKeyEventValue,
 } from "./components/drawToolbar";
+import type { PluginDownloadSource } from "./components/pluginService";
 import type {
 	CommonKeyEventKey,
 	CommonKeyEventValue,
@@ -228,6 +229,7 @@ export enum AppSettingsGroup {
 	SystemCommon = "systemCommon",
 	SystemChat = "systemChat",
 	SystemNetwork = "systemNetwork",
+	PluginService = "pluginService",
 	SystemScreenshot = "systemScreenshot_20250627",
 	SystemCore = "systemCore",
 	SystemScrollScreenshot = "systemScrollScreenshot_20250628",
@@ -540,6 +542,9 @@ export type AppSettingsData = {
 	};
 	[AppSettingsGroup.SystemNetwork]: {
 		enableProxy: boolean;
+	};
+	[AppSettingsGroup.PluginService]: {
+		downloadSources: PluginDownloadSource[];
 	};
 	[AppSettingsGroup.FunctionChat]: {
 		autoCreateNewSession: boolean;

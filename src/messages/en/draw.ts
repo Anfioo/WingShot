@@ -224,6 +224,7 @@ export const draw = {
 	"draw.ocrResultEmpty": "OCR result is empty",
 	"draw.ocrResult.translating": "Translating",
 	"draw.ocrResult.translateError": "Translation failed",
+	"draw.ocrResult.translationService": "Translation service: {service}",
 	"draw.ocrToolModalSettings.title": "OCR Settings",
 	"draw.ocrResult.visionModelListEmpty":
 		"Vision model invalid, please check app settings",
