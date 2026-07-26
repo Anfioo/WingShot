@@ -1,5 +1,6 @@
 import { Button, Flex, Typography, theme } from "antd";
 import { useMemo } from "react";
+import { useIntl } from "react-intl";
 import type { ChatModelTestResult } from "@/core/chatModels";
 import {
 	formatHost,
@@ -57,6 +58,7 @@ export const ModelAdapterCard: React.FC<{
 	onDuplicate,
 	onDelete,
 }) => {
+	const intl = useIntl();
 	const { token } = theme.useToken();
 	return (
 		<div
@@ -191,13 +193,23 @@ export const ModelAdapterCard: React.FC<{
 							loading={testing}
 							disabled={testing || disabled}
 						>
-							{testing ? "测试中..." : "测试"}
+							{testing
+								? intl.formatMessage({
+										id: "settings.modelSettings.modelAdapter.testing",
+									})
+								: intl.formatMessage({
+										id: "settings.modelSettings.modelAdapter.test",
+									})}
 						</Button>
 						<Button size="small" onClick={onEdit} disabled={disabled}>
-							编辑
+							{intl.formatMessage({
+								id: "settings.modelSettings.modelAdapter.editButton",
+							})}
 						</Button>
 						<Button size="small" onClick={onDuplicate} disabled={disabled}>
-							复制
+							{intl.formatMessage({
+								id: "settings.modelSettings.modelAdapter.duplicate",
+							})}
 						</Button>
 						<Button
 							size="small"
@@ -206,7 +218,9 @@ export const ModelAdapterCard: React.FC<{
 							onClick={onDelete}
 							disabled={disabled}
 						>
-							删除
+							{intl.formatMessage({
+								id: "settings.modelSettings.modelAdapter.delete",
+							})}
 						</Button>
 					</Flex>
 				</Flex>

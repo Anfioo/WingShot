@@ -131,6 +131,86 @@ export const settings = {
 	"settings.hotKeySettings.keyEventTooltip": "{message} ({key})",
 	"settings.chatSettings": "AI Chat Settings",
 	"settings.modelSettings": "Model Settings",
+	"settings.modelSettings.modelAdapter.edit": "Edit Model Configuration",
+	"settings.modelSettings.modelAdapter.add": "New Model Configuration",
+	"settings.modelSettings.modelAdapter.validationFailed":
+		"Form validation failed. Please check the highlighted fields.",
+	"settings.modelSettings.modelAdapter.tab.connection": "Connection",
+	"settings.modelSettings.modelAdapter.tab.model": "Model",
+	"settings.modelSettings.modelAdapter.tab.capabilities": "Capabilities",
+	"settings.modelSettings.modelAdapter.tab.advanced": "Advanced",
+	"settings.modelSettings.modelAdapter.baseURL": "API Base URL",
+	"settings.modelSettings.modelAdapter.baseURL.required":
+		"Please enter API Base URL",
+	"settings.modelSettings.modelAdapter.apiKey": "API Key",
+	"settings.modelSettings.modelAdapter.customHeaders.enable":
+		"Enable Custom Headers",
+	"settings.modelSettings.modelAdapter.customHeaders.enable.tip":
+		"When enabled, parses the JSON below and merges it into request headers.",
+	"settings.modelSettings.modelAdapter.customHeaders.label":
+		"Custom Headers JSON",
+	"settings.modelSettings.modelAdapter.customHeaders.tip":
+		"Must be a JSON object. Format errors will be reported on request.",
+	"settings.modelSettings.modelAdapter.displayName": "Display Name",
+	"settings.modelSettings.modelAdapter.displayName.required":
+		"Please enter Display Name",
+	"settings.modelSettings.modelAdapter.displayName.placeholder":
+		"e.g. OpenAI - GPT-4.1",
+	"settings.modelSettings.modelAdapter.modelList": "Model List",
+	"settings.modelSettings.modelAdapter.modelList.placeholder":
+		"Select to auto-fill model ID",
+	"settings.modelSettings.modelAdapter.fetchFromAPI": "Fetch from current API",
+	"settings.modelSettings.modelAdapter.modelID": "Model ID",
+	"settings.modelSettings.modelAdapter.modelID.required":
+		"Please enter Model ID",
+	"settings.modelSettings.modelAdapter.modelID.placeholder":
+		"e.g. qwen-flash / gpt-4.1 / claude-sonnet-4",
+	"settings.modelSettings.modelAdapter.contextWindow": "Context Window",
+	"settings.modelSettings.modelAdapter.endpoint": "API Endpoint",
+	"settings.modelSettings.modelAdapter.supportThinking":
+		"Support Thinking / Reasoning",
+	"settings.modelSettings.modelAdapter.supportThinking.tip":
+		"Enables thinking / reasoning capabilities in AI Chat.",
+	"settings.modelSettings.modelAdapter.supportVision": "OCR Vision Model",
+	"settings.modelSettings.modelAdapter.supportVision.tip":
+		"For converting screenshots / OCR images to HTML and Markdown.",
+	"settings.modelSettings.modelAdapter.supportImageInput": "Chat Image Input",
+	"settings.modelSettings.modelAdapter.supportImageInput.tip":
+		"Allows uploading images as user input in AI Chat.",
+	"settings.modelSettings.modelAdapter.reasoningEffort": "Reasoning Effort",
+	"settings.modelSettings.modelAdapter.thinkingEffort": "Thinking Effort",
+	"settings.modelSettings.modelAdapter.maxTokens": "Max Output Tokens",
+	"settings.modelSettings.modelAdapter.openAIExtraParams.enable":
+		"Enable OpenAI Extra Params",
+	"settings.modelSettings.modelAdapter.openAIExtraParams.enable.tip":
+		"Only applies to OpenAI-compatible requests.",
+	"settings.modelSettings.modelAdapter.openAIExtraParams.label":
+		"OpenAI Extra Params JSON",
+	"settings.modelSettings.modelAdapter.openAIExtraParams.tip":
+		"When enabled, merges into the OpenAI request body. Explicitly set fields override defaults.",
+	"settings.modelSettings.modelAdapter.anthropicExtraParams.enable":
+		"Enable Anthropic Extra Params",
+	"settings.modelSettings.modelAdapter.anthropicExtraParams.enable.tip":
+		"Only applies to Anthropic requests.",
+	"settings.modelSettings.modelAdapter.anthropicExtraParams.label":
+		"Anthropic Extra Params JSON",
+	"settings.modelSettings.modelAdapter.anthropicExtraParams.tip":
+		"When enabled, merges into the Anthropic request body. Format errors will be reported.",
+	"settings.modelSettings.modelAdapter.tooltipData": "Notes",
+	"settings.modelSettings.modelAdapter.resetConfirm.title": "Confirm Reset",
+	"settings.modelSettings.modelAdapter.resetConfirm.description":
+		"This will clear all fields in the form. Are you sure you want to reset?",
+	"settings.modelSettings.modelAdapter.resetConfirm.okText": "Reset",
+	"settings.modelSettings.modelAdapter.resetConfirm.cancelText": "Cancel",
+	"settings.modelSettings.modelAdapter.resetForm": "Reset Form",
+	"settings.modelSettings.modelAdapter.test": "Test",
+	"settings.modelSettings.modelAdapter.testing": "Testing...",
+	"settings.modelSettings.modelAdapter.editButton": "Edit",
+	"settings.modelSettings.modelAdapter.duplicate": "Duplicate",
+	"settings.modelSettings.modelAdapter.delete": "Delete",
+	"settings.modelSettings.modelAdapter.testAll": "Test All",
+	"settings.modelSettings.modelAdapter.stopTest": "Stop Test",
+	"settings.modelSettings.modelAdapter.addButton": "New Model",
 	"settings.chatSettings.maxTokens": "Max Tokens",
 	"settings.chatSettings.maxTokens.tip":
 		"Maximum number of tokens the model will generate in a response",

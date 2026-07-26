@@ -14,6 +14,7 @@ import {
 	Tabs,
 } from "antd";
 import { useEffect, useState } from "react";
+import { useIntl } from "react-intl";
 import {
 	chatModelProviderTabs,
 	createEmptyChatModelAdapter,
@@ -38,6 +39,7 @@ export const ModelAdapterModal: React.FC<{
 	onCancel: () => void;
 	onSave: (adapter: ChatModelAdapterConfig) => void;
 }> = ({ open, adapter, providerType, onCancel, onSave }) => {
+	const intl = useIntl();
 	const [form] = Form.useForm<ChatModelAdapterConfig>();
 	const [modelOptions, setModelOptions] = useState<ModelOption[]>([]);
 	const [providerModelsLoading, setProviderModelsLoading] = useState(false);
@@ -88,7 +90,15 @@ export const ModelAdapterModal: React.FC<{
 	return (
 		<Modal
 			open={open}
-			title={adapter ? "编辑模型配置" : "新增模型配置"}
+			title={
+				adapter
+					? intl.formatMessage({
+							id: "settings.modelSettings.modelAdapter.edit",
+						})
+					: intl.formatMessage({
+							id: "settings.modelSettings.modelAdapter.add",
+						})
+			}
 			width={760}
 			onCancel={onCancel}
 			onOk={async () => {
@@ -114,7 +124,12 @@ export const ModelAdapterModal: React.FC<{
 					if (tab) {
 						setInnerTab(tab);
 					}
-					message.error(firstErrorMsg || "表单验证失败，请检查红色标记的字段");
+					message.error(
+						firstErrorMsg ||
+							intl.formatMessage({
+								id: "settings.modelSettings.modelAdapter.validationFailed",
+							}),
+					);
 				}
 			}}
 		>
@@ -155,14 +170,25 @@ export const ModelAdapterModal: React.FC<{
 					items={[
 						{
 							key: "connection",
-							label: "连接",
+							label: intl.formatMessage({
+								id: "settings.modelSettings.modelAdapter.tab.connection",
+							}),
 							children: (
 								<Row gutter={16}>
 									<Col span={12}>
 										<Form.Item
 											name="baseURL"
-											label="接口地址"
-											rules={[{ required: true, message: "请输入接口地址" }]}
+											label={intl.formatMessage({
+												id: "settings.modelSettings.modelAdapter.baseURL",
+											})}
+											rules={[
+												{
+													required: true,
+													message: intl.formatMessage({
+														id: "settings.modelSettings.modelAdapter.baseURL.required",
+													}),
+												},
+											]}
 										>
 											<Input
 												placeholder={
@@ -176,16 +202,25 @@ export const ModelAdapterModal: React.FC<{
 										</Form.Item>
 									</Col>
 									<Col span={12}>
-										<Form.Item name="apiKey" label="访问密钥">
+										<Form.Item
+											name="apiKey"
+											label={intl.formatMessage({
+												id: "settings.modelSettings.modelAdapter.apiKey",
+											})}
+										>
 											<Input.Password autoComplete="off" />
 										</Form.Item>
 									</Col>
 									<Col span={12}>
 										<Form.Item
 											name="customHeadersEnabled"
-											label="启用自定义请求头"
+											label={intl.formatMessage({
+												id: "settings.modelSettings.modelAdapter.customHeaders.enable",
+											})}
 											valuePropName="checked"
-											help="启用后会解析下方 JSON，并合并到实际请求 headers。"
+											help={intl.formatMessage({
+												id: "settings.modelSettings.modelAdapter.customHeaders.enable.tip",
+											})}
 										>
 											<Switch />
 										</Form.Item>
@@ -193,8 +228,12 @@ export const ModelAdapterModal: React.FC<{
 									<Col span={24}>
 										<Form.Item
 											name="customHeadersJSON"
-											label="自定义请求头 JSON"
-											help="必须是 JSON 对象，格式错误时会在请求时明确报错。"
+											label={intl.formatMessage({
+												id: "settings.modelSettings.modelAdapter.customHeaders.label",
+											})}
+											help={intl.formatMessage({
+												id: "settings.modelSettings.modelAdapter.customHeaders.tip",
+											})}
 										>
 											<Input.TextArea
 												rows={5}
@@ -207,24 +246,45 @@ export const ModelAdapterModal: React.FC<{
 						},
 						{
 							key: "model",
-							label: "模型",
+							label: intl.formatMessage({
+								id: "settings.modelSettings.modelAdapter.tab.model",
+							}),
 							children: (
 								<Row gutter={16}>
 									<Col span={12}>
 										<Form.Item
 											name="displayName"
-											label="显示名称"
-											rules={[{ required: true, message: "请输入显示名称" }]}
+											label={intl.formatMessage({
+												id: "settings.modelSettings.modelAdapter.displayName",
+											})}
+											rules={[
+												{
+													required: true,
+													message: intl.formatMessage({
+														id: "settings.modelSettings.modelAdapter.displayName.required",
+													}),
+												},
+											]}
 										>
-											<Input placeholder="例如：OpenAI - GPT-4.1" />
+											<Input
+												placeholder={intl.formatMessage({
+													id: "settings.modelSettings.modelAdapter.displayName.placeholder",
+												})}
+											/>
 										</Form.Item>
 									</Col>
 									<Col span={12}>
-										<Form.Item label="模型列表">
+										<Form.Item
+											label={intl.formatMessage({
+												id: "settings.modelSettings.modelAdapter.modelList",
+											})}
+										>
 											<Select
 												showSearch
 												allowClear
-												placeholder="选择后自动填充模型标识"
+												placeholder={intl.formatMessage({
+													id: "settings.modelSettings.modelAdapter.modelList.placeholder",
+												})}
 												options={modelOptions}
 												filterOption={(input, option) =>
 													`${option?.label ?? ""}${option?.value ?? ""}`
@@ -273,7 +333,9 @@ export const ModelAdapterModal: React.FC<{
 														}
 													}}
 												>
-													从当前 API 获取
+													{intl.formatMessage({
+														id: "settings.modelSettings.modelAdapter.fetchFromAPI",
+													})}
 												</Button>
 											</Space>
 										</Form.Item>
@@ -281,14 +343,32 @@ export const ModelAdapterModal: React.FC<{
 									<Col span={12}>
 										<Form.Item
 											name="modelID"
-											label="模型标识"
-											rules={[{ required: true, message: "请输入模型标识" }]}
+											label={intl.formatMessage({
+												id: "settings.modelSettings.modelAdapter.modelID",
+											})}
+											rules={[
+												{
+													required: true,
+													message: intl.formatMessage({
+														id: "settings.modelSettings.modelAdapter.modelID.required",
+													}),
+												},
+											]}
 										>
-											<Input placeholder="例如：qwen-flash / gpt-4.1 / claude-sonnet-4" />
+											<Input
+												placeholder={intl.formatMessage({
+													id: "settings.modelSettings.modelAdapter.modelID.placeholder",
+												})}
+											/>
 										</Form.Item>
 									</Col>
 									<Col span={12}>
-										<Form.Item name="contextWindowTokens" label="上下文窗口">
+										<Form.Item
+											name="contextWindowTokens"
+											label={intl.formatMessage({
+												id: "settings.modelSettings.modelAdapter.contextWindow",
+											})}
+										>
 											<InputNumber
 												min={0}
 												precision={0}
@@ -298,7 +378,12 @@ export const ModelAdapterModal: React.FC<{
 									</Col>
 									{currentType === "openai" ? (
 										<Col span={12}>
-											<Form.Item name="openAIEndpoint" label="接口端点">
+											<Form.Item
+												name="openAIEndpoint"
+												label={intl.formatMessage({
+													id: "settings.modelSettings.modelAdapter.endpoint",
+												})}
+											>
 												<Select options={openAIEndpointOptions} />
 											</Form.Item>
 										</Col>
@@ -308,15 +393,21 @@ export const ModelAdapterModal: React.FC<{
 						},
 						{
 							key: "capabilities",
-							label: "能力",
+							label: intl.formatMessage({
+								id: "settings.modelSettings.modelAdapter.tab.capabilities",
+							}),
 							children: (
 								<Row gutter={16}>
 									<Col span={8}>
 										<Form.Item
 											name="supportThinking"
-											label="支持思考/推理"
+											label={intl.formatMessage({
+												id: "settings.modelSettings.modelAdapter.supportThinking",
+											})}
 											valuePropName="checked"
-											help="用于 AI 对话页的 thinking/reasoning 能力。"
+											help={intl.formatMessage({
+												id: "settings.modelSettings.modelAdapter.supportThinking.tip",
+											})}
 										>
 											<Switch />
 										</Form.Item>
@@ -324,9 +415,13 @@ export const ModelAdapterModal: React.FC<{
 									<Col span={8}>
 										<Form.Item
 											name="supportVision"
-											label="OCR 视觉模型"
+											label={intl.formatMessage({
+												id: "settings.modelSettings.modelAdapter.supportVision",
+											})}
 											valuePropName="checked"
-											help="用于截图/OCR 图片转 HTML、Markdown。"
+											help={intl.formatMessage({
+												id: "settings.modelSettings.modelAdapter.supportVision.tip",
+											})}
 										>
 											<Switch />
 										</Form.Item>
@@ -334,16 +429,25 @@ export const ModelAdapterModal: React.FC<{
 									<Col span={8}>
 										<Form.Item
 											name="supportImageInput"
-											label="对话图片输入"
+											label={intl.formatMessage({
+												id: "settings.modelSettings.modelAdapter.supportImageInput",
+											})}
 											valuePropName="checked"
-											help="用于 AI 对话页上传图片作为用户输入。"
+											help={intl.formatMessage({
+												id: "settings.modelSettings.modelAdapter.supportImageInput.tip",
+											})}
 										>
 											<Switch />
 										</Form.Item>
 									</Col>
 									{currentType === "openai" && supportThinking ? (
 										<Col span={12}>
-											<Form.Item name="reasoningEffort" label="推理强度">
+											<Form.Item
+												name="reasoningEffort"
+												label={intl.formatMessage({
+													id: "settings.modelSettings.modelAdapter.reasoningEffort",
+												})}
+											>
 												<Select options={reasoningEffortOptions} />
 											</Form.Item>
 										</Col>
@@ -351,7 +455,9 @@ export const ModelAdapterModal: React.FC<{
 										<Col span={12}>
 											<Form.Item
 												name="anthropicThinkingEffort"
-												label="思考强度"
+												label={intl.formatMessage({
+													id: "settings.modelSettings.modelAdapter.thinkingEffort",
+												})}
 											>
 												<Select options={reasoningEffortOptions} />
 											</Form.Item>
@@ -362,7 +468,9 @@ export const ModelAdapterModal: React.FC<{
 						},
 						{
 							key: "advanced",
-							label: "高级",
+							label: intl.formatMessage({
+								id: "settings.modelSettings.modelAdapter.tab.advanced",
+							}),
 							children: (
 								<Row gutter={16}>
 									{currentType === "openai" ? (
@@ -370,7 +478,9 @@ export const ModelAdapterModal: React.FC<{
 											<Col span={12}>
 												<Form.Item
 													name="maxCompletionTokens"
-													label="最大输出 Token"
+													label={intl.formatMessage({
+														id: "settings.modelSettings.modelAdapter.maxTokens",
+													})}
 												>
 													<InputNumber
 														min={0}
@@ -382,9 +492,13 @@ export const ModelAdapterModal: React.FC<{
 											<Col span={12}>
 												<Form.Item
 													name="openAIExtraParamsEnabled"
-													label="启用 OpenAI 额外参数"
+													label={intl.formatMessage({
+														id: "settings.modelSettings.modelAdapter.openAIExtraParams.enable",
+													})}
 													valuePropName="checked"
-													help="仅 OpenAI-compatible 请求生效。"
+													help={intl.formatMessage({
+														id: "settings.modelSettings.modelAdapter.openAIExtraParams.enable.tip",
+													})}
 												>
 													<Switch />
 												</Form.Item>
@@ -392,8 +506,12 @@ export const ModelAdapterModal: React.FC<{
 											<Col span={24}>
 												<Form.Item
 													name="openAIExtraParamsJSON"
-													label="OpenAI 额外参数 JSON"
-													help="启用后会合并到 OpenAI 请求 body，用户显式填写的字段可覆盖默认值。"
+													label={intl.formatMessage({
+														id: "settings.modelSettings.modelAdapter.openAIExtraParams.label",
+													})}
+													help={intl.formatMessage({
+														id: "settings.modelSettings.modelAdapter.openAIExtraParams.tip",
+													})}
 												>
 													<Input.TextArea
 														rows={5}
@@ -407,7 +525,9 @@ export const ModelAdapterModal: React.FC<{
 											<Col span={12}>
 												<Form.Item
 													name="anthropicMaxTokens"
-													label="最大输出 Token"
+													label={intl.formatMessage({
+														id: "settings.modelSettings.modelAdapter.maxTokens",
+													})}
 												>
 													<InputNumber
 														min={0}
@@ -419,9 +539,13 @@ export const ModelAdapterModal: React.FC<{
 											<Col span={12}>
 												<Form.Item
 													name="anthropicExtraParamsEnabled"
-													label="启用 Anthropic 额外参数"
+													label={intl.formatMessage({
+														id: "settings.modelSettings.modelAdapter.anthropicExtraParams.enable",
+													})}
 													valuePropName="checked"
-													help="仅 Anthropic 请求生效。"
+													help={intl.formatMessage({
+														id: "settings.modelSettings.modelAdapter.anthropicExtraParams.enable.tip",
+													})}
 												>
 													<Switch />
 												</Form.Item>
@@ -429,8 +553,12 @@ export const ModelAdapterModal: React.FC<{
 											<Col span={24}>
 												<Form.Item
 													name="anthropicExtraParamsJSON"
-													label="Anthropic 额外参数 JSON"
-													help="启用后会合并到 Anthropic 请求 body，格式错误时会明确报错。"
+													label={intl.formatMessage({
+														id: "settings.modelSettings.modelAdapter.anthropicExtraParams.label",
+													})}
+													help={intl.formatMessage({
+														id: "settings.modelSettings.modelAdapter.anthropicExtraParams.tip",
+													})}
 												>
 													<Input.TextArea
 														rows={5}
@@ -443,7 +571,9 @@ export const ModelAdapterModal: React.FC<{
 										<Col span={12}>
 											<Form.Item
 												name="maxCompletionTokens"
-												label="最大输出 Token"
+												label={intl.formatMessage({
+													id: "settings.modelSettings.modelAdapter.maxTokens",
+												})}
 											>
 												<InputNumber
 													min={0}
@@ -454,19 +584,36 @@ export const ModelAdapterModal: React.FC<{
 										</Col>
 									)}
 									<Col span={24}>
-										<Form.Item name="tooltipData" label="备注">
+										<Form.Item
+											name="tooltipData"
+											label={intl.formatMessage({
+												id: "settings.modelSettings.modelAdapter.tooltipData",
+											})}
+										>
 											<Input.TextArea rows={3} />
 										</Form.Item>
 									</Col>
 									<Col span={24}>
 										<Popconfirm
-											title="确认重置"
-											description="将清空当前表单所有已填写的内容，确定要重置吗？"
+											title={intl.formatMessage({
+												id: "settings.modelSettings.modelAdapter.resetConfirm.title",
+											})}
+											description={intl.formatMessage({
+												id: "settings.modelSettings.modelAdapter.resetConfirm.description",
+											})}
 											onConfirm={() => form.resetFields()}
-											okText="确定重置"
-											cancelText="取消"
+											okText={intl.formatMessage({
+												id: "settings.modelSettings.modelAdapter.resetConfirm.okText",
+											})}
+											cancelText={intl.formatMessage({
+												id: "settings.modelSettings.modelAdapter.resetConfirm.cancelText",
+											})}
 										>
-											<Button danger>重置当前表单</Button>
+											<Button danger>
+												{intl.formatMessage({
+													id: "settings.modelSettings.modelAdapter.resetForm",
+												})}
+											</Button>
 										</Popconfirm>
 									</Col>
 								</Row>

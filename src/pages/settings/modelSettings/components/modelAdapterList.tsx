@@ -1,5 +1,6 @@
 import { Button, Flex, Segmented, theme } from "antd";
 import { useMemo, useRef, useState } from "react";
+import { useIntl } from "react-intl";
 import type { ChatModelTestResult } from "@/core/chatModels";
 import {
 	chatModelProviderTabs,
@@ -22,6 +23,7 @@ export const ModelAdapterList: React.FC<{
 	value?: ChatModelAdapterConfig[];
 	onChange?: (value: ChatModelAdapterConfig[]) => void;
 }> = ({ value = [], onChange }) => {
+	const intl = useIntl();
 	const { token } = theme.useToken();
 	const [activeType, setActiveType] = useState<ChatModelProviderType>("openai");
 	const [editingAdapter, setEditingAdapter] =
@@ -110,8 +112,8 @@ export const ModelAdapterList: React.FC<{
 	const batchButtonDisabled =
 		filteredAdapters.length === 0 || (!batchTesting && testingIds.size > 0);
 	const batchButtonText = batchTesting
-		? `停止测试 ${batchProgress.completed}/${batchProgress.total}`
-		: "测试全部";
+		? `${intl.formatMessage({ id: "settings.modelSettings.modelAdapter.stopTest" })} ${batchProgress.completed}/${batchProgress.total}`
+		: intl.formatMessage({ id: "settings.modelSettings.modelAdapter.testAll" });
 
 	return (
 		<Flex vertical gap={token.margin}>
@@ -139,7 +141,9 @@ export const ModelAdapterList: React.FC<{
 							setModalOpen(true);
 						}}
 					>
-						新增模型
+						{intl.formatMessage({
+							id: "settings.modelSettings.modelAdapter.addButton",
+						})}
 					</Button>
 				</Flex>
 			</Flex>

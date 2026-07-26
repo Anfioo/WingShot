@@ -123,6 +123,80 @@ export const settings = {
 	"settings.hotKeySettings.keyEventTooltip": "{message}（{key}）",
 	"settings.chatSettings": "AI 對話",
 	"settings.modelSettings": "模型設定",
+	"settings.modelSettings.modelAdapter.edit": "編輯模型配置",
+	"settings.modelSettings.modelAdapter.add": "新增模型配置",
+	"settings.modelSettings.modelAdapter.validationFailed":
+		"表單驗證失敗，請檢查紅色標記的欄位",
+	"settings.modelSettings.modelAdapter.tab.connection": "連線",
+	"settings.modelSettings.modelAdapter.tab.model": "模型",
+	"settings.modelSettings.modelAdapter.tab.capabilities": "能力",
+	"settings.modelSettings.modelAdapter.tab.advanced": "進階",
+	"settings.modelSettings.modelAdapter.baseURL": "API 位址",
+	"settings.modelSettings.modelAdapter.baseURL.required": "請輸入 API 位址",
+	"settings.modelSettings.modelAdapter.apiKey": "API Key",
+	"settings.modelSettings.modelAdapter.customHeaders.enable": "啟用自訂請求頭",
+	"settings.modelSettings.modelAdapter.customHeaders.enable.tip":
+		"啟用後會解析下方 JSON，並合併到實際請求 headers。",
+	"settings.modelSettings.modelAdapter.customHeaders.label": "自訂請求頭 JSON",
+	"settings.modelSettings.modelAdapter.customHeaders.tip":
+		"必須是 JSON 物件，格式錯誤時會在請求時明確報錯。",
+	"settings.modelSettings.modelAdapter.displayName": "顯示名稱",
+	"settings.modelSettings.modelAdapter.displayName.required": "請輸入顯示名稱",
+	"settings.modelSettings.modelAdapter.displayName.placeholder":
+		"例如：OpenAI - GPT-4.1",
+	"settings.modelSettings.modelAdapter.modelList": "模型列表",
+	"settings.modelSettings.modelAdapter.modelList.placeholder":
+		"選擇後自動填入模型標識",
+	"settings.modelSettings.modelAdapter.fetchFromAPI": "從目前 API 取得",
+	"settings.modelSettings.modelAdapter.modelID": "模型標識",
+	"settings.modelSettings.modelAdapter.modelID.required": "請輸入模型標識",
+	"settings.modelSettings.modelAdapter.modelID.placeholder":
+		"例如：qwen-flash / gpt-4.1 / claude-sonnet-4",
+	"settings.modelSettings.modelAdapter.contextWindow": "上下文視窗",
+	"settings.modelSettings.modelAdapter.endpoint": "API 端點",
+	"settings.modelSettings.modelAdapter.supportThinking": "支援思考/推理",
+	"settings.modelSettings.modelAdapter.supportThinking.tip":
+		"用於 AI 對話頁的 thinking/reasoning 能力。",
+	"settings.modelSettings.modelAdapter.supportVision": "OCR 視覺模型",
+	"settings.modelSettings.modelAdapter.supportVision.tip":
+		"用於截圖/OCR 圖片轉 HTML、Markdown。",
+	"settings.modelSettings.modelAdapter.supportImageInput": "對話圖片輸入",
+	"settings.modelSettings.modelAdapter.supportImageInput.tip":
+		"用於 AI 對話頁上傳圖片作為使用者輸入。",
+	"settings.modelSettings.modelAdapter.reasoningEffort": "推理強度",
+	"settings.modelSettings.modelAdapter.thinkingEffort": "思考強度",
+	"settings.modelSettings.modelAdapter.maxTokens": "最大輸出 Token",
+	"settings.modelSettings.modelAdapter.openAIExtraParams.enable":
+		"啟用 OpenAI 額外參數",
+	"settings.modelSettings.modelAdapter.openAIExtraParams.enable.tip":
+		"僅 OpenAI-compatible 請求生效。",
+	"settings.modelSettings.modelAdapter.openAIExtraParams.label":
+		"OpenAI 額外參數 JSON",
+	"settings.modelSettings.modelAdapter.openAIExtraParams.tip":
+		"啟用後會合併到 OpenAI 請求 body，使用者顯式填寫的欄位可覆蓋預設值。",
+	"settings.modelSettings.modelAdapter.anthropicExtraParams.enable":
+		"啟用 Anthropic 額外參數",
+	"settings.modelSettings.modelAdapter.anthropicExtraParams.enable.tip":
+		"僅 Anthropic 請求生效。",
+	"settings.modelSettings.modelAdapter.anthropicExtraParams.label":
+		"Anthropic 額外參數 JSON",
+	"settings.modelSettings.modelAdapter.anthropicExtraParams.tip":
+		"啟用後會合併到 Anthropic 請求 body，格式錯誤時會明確報錯。",
+	"settings.modelSettings.modelAdapter.tooltipData": "備註",
+	"settings.modelSettings.modelAdapter.resetConfirm.title": "確認重置",
+	"settings.modelSettings.modelAdapter.resetConfirm.description":
+		"將清空目前表單所有已填寫的內容，確定要重置嗎？",
+	"settings.modelSettings.modelAdapter.resetConfirm.okText": "確定重置",
+	"settings.modelSettings.modelAdapter.resetConfirm.cancelText": "取消",
+	"settings.modelSettings.modelAdapter.resetForm": "重置目前表單",
+	"settings.modelSettings.modelAdapter.test": "測試",
+	"settings.modelSettings.modelAdapter.testing": "測試中...",
+	"settings.modelSettings.modelAdapter.editButton": "編輯",
+	"settings.modelSettings.modelAdapter.duplicate": "複製",
+	"settings.modelSettings.modelAdapter.delete": "刪除",
+	"settings.modelSettings.modelAdapter.testAll": "測試全部",
+	"settings.modelSettings.modelAdapter.stopTest": "停止測試",
+	"settings.modelSettings.modelAdapter.addButton": "新增模型",
 	"settings.chatSettings.maxTokens": "最大 Token 量",
 	"settings.chatSettings.maxTokens.tip":
 		"限制一次請求中模型產生 completion 的最大 token 量",
