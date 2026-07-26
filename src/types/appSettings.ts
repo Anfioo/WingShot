@@ -75,6 +75,45 @@ export enum RunLogLevel {
 	Trace = "trace",
 }
 
+export type ChatModelProviderType = "openai" | "anthropic" | "snowshot";
+
+export type ChatModelOpenAIEndpoint =
+	| "/v1/responses"
+	| "/v1/chat/completions"
+	| "/custom";
+
+export type ChatModelReasoningEffort =
+	| "low"
+	| "medium"
+	| "high"
+	| "xhigh"
+	| "max";
+
+export type ChatModelAdapterConfig = {
+	id: string;
+	displayName: string;
+	type: ChatModelProviderType;
+	baseURL: string;
+	apiKey: string;
+	modelID: string;
+	tooltipData: string;
+	supportThinking: boolean;
+	supportVision: boolean;
+	supportImageInput: boolean;
+	contextWindowTokens: number;
+	openAIEndpoint: ChatModelOpenAIEndpoint;
+	reasoningEffort: ChatModelReasoningEffort;
+	maxCompletionTokens: number;
+	openAIExtraParamsEnabled: boolean;
+	openAIExtraParamsJSON: string;
+	anthropicMaxTokens: number;
+	anthropicThinkingEffort: ChatModelReasoningEffort;
+	anthropicExtraParamsEnabled: boolean;
+	anthropicExtraParamsJSON: string;
+	customHeadersEnabled: boolean;
+	customHeadersJSON: string;
+};
+
 export type ChatApiConfig = {
 	api_uri: string;
 	api_key: string;
@@ -504,7 +543,9 @@ export type AppSettingsData = {
 		autoCreateNewSession: boolean;
 		/** 关闭窗口时自动创建新会话 */
 		autoCreateNewSessionOnCloseWindow: boolean;
+		/** 兼容旧版本字段，新流程使用 modelAdapters */
 		chatApiConfigList: ChatApiConfig[];
+		modelAdapters: ChatModelAdapterConfig[];
 	};
 	[AppSettingsGroup.FunctionOcr]: {
 		/** 文本识别模型 */

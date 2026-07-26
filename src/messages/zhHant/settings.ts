@@ -122,6 +122,7 @@ export const settings = {
 	"settings.hotKeySettings.chat": "AI 對話",
 	"settings.hotKeySettings.keyEventTooltip": "{message}（{key}）",
 	"settings.chatSettings": "AI 對話",
+	"settings.modelSettings": "模型設定",
 	"settings.chatSettings.maxTokens": "最大 Token 量",
 	"settings.chatSettings.maxTokens.tip":
 		"限制一次請求中模型產生 completion 的最大 token 量",

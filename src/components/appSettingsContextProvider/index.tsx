@@ -30,6 +30,10 @@ import {
 	AppSettingsPublisher,
 } from "@/contexts/appSettingsActionContext";
 import { usePluginServiceContext } from "@/contexts/pluginServiceContext";
+import {
+	migrateChatApiConfigToModelAdapter,
+	normalizeChatModelAdapter,
+} from "@/core/chatModels";
 import { releaseDrawPage } from "@/functions/screenshot";
 import { withStatePublisher } from "@/hooks/useStatePublisher";
 import { useStateSubscriber } from "@/hooks/useStateSubscriber";
@@ -226,6 +230,42 @@ const normalizeTranslationServices = (
 	}
 
 	return migratedServices;
+};
+
+const normalizeChatModelAdapters = (
+	newSettings:
+		| Partial<AppSettingsData[AppSettingsGroup.FunctionChat]>
+		| undefined,
+	prevSettings: AppSettingsData[AppSettingsGroup.FunctionChat] | undefined,
+) => {
+	if (Array.isArray(newSettings?.modelAdapters)) {
+		return newSettings.modelAdapters.map((item) =>
+			normalizeChatModelAdapter(item),
+		);
+	}
+
+	const legacyListFromNewSettings = Array.isArray(
+		newSettings?.chatApiConfigList,
+	)
+		? newSettings.chatApiConfigList
+		: undefined;
+	if (legacyListFromNewSettings && legacyListFromNewSettings.length > 0) {
+		return legacyListFromNewSettings.map((item) =>
+			migrateChatApiConfigToModelAdapter(item),
+		);
+	}
+
+	if (Array.isArray(prevSettings?.modelAdapters)) {
+		return prevSettings.modelAdapters.map((item) =>
+			normalizeChatModelAdapter(item),
+		);
+	}
+
+	return (
+		legacyListFromNewSettings ??
+		prevSettings?.chatApiConfigList ??
+		[]
+	).map((item) => migrateChatApiConfigToModelAdapter(item));
 };
 
 const AppSettingsContextProviderCore: React.FC<{
@@ -1006,6 +1046,7 @@ const AppSettingsContextProviderCore: React.FC<{
 							}))
 						: (prevSettings?.chatApiConfigList ??
 							defaultAppSettingsData[group].chatApiConfigList),
+					modelAdapters: normalizeChatModelAdapters(newSettings, prevSettings),
 					autoCreateNewSessionOnCloseWindow:
 						typeof newSettings?.autoCreateNewSessionOnCloseWindow === "boolean"
 							? newSettings.autoCreateNewSessionOnCloseWindow

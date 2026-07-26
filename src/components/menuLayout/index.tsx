@@ -375,6 +375,26 @@ const MenuLayoutCore: React.FC<{ children: React.ReactNode }> = ({
 							return true;
 						}),
 					},
+					...(isReadyStatus?.(PLUGIN_ID_AI_CHAT)
+						? [
+								{
+									key: "/settings/modelSettings",
+									path: "/settings/modelSettings",
+									label: intl.formatMessage({
+										id: "menu.settings.modelSettings",
+									}),
+									hideTabs: true,
+									tabs: [
+										{
+											key: "modelSettings",
+											label: intl.formatMessage({
+												id: "settings.modelSettings",
+											}),
+										},
+									],
+								},
+							]
+						: []),
 					...(isReadyStatus?.(PLUGIN_ID_TRANSLATE)
 						? [
 								{

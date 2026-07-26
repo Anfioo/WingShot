@@ -178,6 +178,7 @@ export const defaultAppSettingsData: AppSettingsData = {
 		autoCreateNewSession: true,
 		autoCreateNewSessionOnCloseWindow: true,
 		chatApiConfigList: [],
+		modelAdapters: [],
 	},
 	[AppSettingsGroup.FunctionTranslation]: {
 		optimizeAiTranslationLayout: true,

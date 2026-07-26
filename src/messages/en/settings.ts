@@ -130,6 +130,7 @@ export const settings = {
 	"settings.hotKeySettings.chat": "AI Chat Hotkey",
 	"settings.hotKeySettings.keyEventTooltip": "{message} ({key})",
 	"settings.chatSettings": "AI Chat Settings",
+	"settings.modelSettings": "Model Settings",
 	"settings.chatSettings.maxTokens": "Max Tokens",
 	"settings.chatSettings.maxTokens.tip":
 		"Maximum number of tokens the model will generate in a response",

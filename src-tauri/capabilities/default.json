@@ -57,28 +57,10 @@
 			"identifier": "http:default",
 			"allow": [
 				{
-					"url": "https://wingshot.anfioo.com"
+					"url": "https://*:*"
 				},
 				{
-					"url": "https://*.wingshot.anfioo.com"
-				},
-				{
-					"url": "http://127.0.0.1:*"
-				},
-				{
-					"url": "http://localhost:*"
-				},
-				{
-					"url": "https://*.deepl.com"
-				},
-				{
-					"url": "https://*.google.com"
-				},
-				{
-					"url": "https://*"
-				},
-				{
-					"url": "http://*"
+					"url": "http://*:*"
 				}
 			]
 		}

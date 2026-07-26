@@ -5,6 +5,7 @@ export const menu = {
 	"menu.settings.generalSettings": "Interface Settings",
 	"menu.settings.functionSettings": "Function Settings",
 	"menu.settings.translationSettings": "Translation Settings",
+	"menu.settings.modelSettings": "Model Settings",
 	"menu.settings.hotKeySettings": "Hotkey Settings",
 	"menu.settings.systemSettings": "System Settings",
 	"menu.tools": "Toolbox",
