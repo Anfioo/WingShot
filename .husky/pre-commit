@@ -1,1 +1,18 @@
+#!/bin/sh
+
+branch="$(git symbolic-ref --quiet --short HEAD 2>/dev/null)"
+
+case "$branch" in
+	main|master)
+		if [ "$ALLOW_MAIN_COMMIT" = "1" ]; then
+			echo "已确认：允许在 $branch 分支提交。"
+		else
+			echo "拒绝提交：当前分支是 $branch。"
+			echo "请先切换到功能分支后再提交。"
+			echo "如果确认必须提交到 $branch，请使用：ALLOW_MAIN_COMMIT=1 git commit"
+			exit 1
+		fi
+		;;
+esac
+
 pnpm exec lint-staged
