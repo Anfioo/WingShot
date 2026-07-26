@@ -318,7 +318,7 @@ type ChatModelConfig = {
 	model: string;
 	name: string;
 	thinking: boolean;
-	support_vision: boolean;
+	supportImageInput: boolean;
 	customConfig?: ChatModelAdapterConfig;
 };
 
@@ -502,6 +502,10 @@ class WingShotChatProvider extends AbstractChatProvider<
 		});
 
 		const settings = this.getAppSettings()[AppSettingsGroup.SystemChat];
+		const supportThinking = !!customModelRequest?.config?.supportThinking;
+		const enableThinking =
+			supportThinking && this.enableThinkingRef.current ? true : undefined;
+		const reasoningEffort = customModelRequest?.config?.reasoningEffort;
 
 		return {
 			messages,
@@ -511,14 +515,17 @@ class WingShotChatProvider extends AbstractChatProvider<
 				"",
 			temperature: settings.temperature,
 			max_tokens: settings.maxTokens,
-			enable_thinking: this.enableThinkingRef.current ? true : undefined,
+			enable_thinking: enableThinking,
 			stream_options: {
 				include_usage: true,
 			},
-			thinking_budget: settings.thinkingBudgetTokens,
-			reasoning: customModelRequest?.config?.supportThinking
-				? { effort: customModelRequest.config.reasoningEffort }
+			thinking_budget: enableThinking
+				? settings.thinkingBudgetTokens
 				: undefined,
+			reasoning:
+				enableThinking && reasoningEffort
+					? { effort: reasoningEffort }
+					: undefined,
 			stream: true,
 		};
 	}
@@ -681,8 +688,8 @@ const Chat = () => {
 				model: `${CUSTOM_MODEL_PREFIX}${item.id}`,
 				name: item.displayName || item.modelID,
 				thinking: item.supportThinking,
+				supportImageInput: item.supportImageInput,
 				customConfig: item,
-				support_vision: item.supportVision,
 			})),
 		);
 	}, [setSupportedModels, customModelConfigList]);
@@ -710,11 +717,30 @@ const Chat = () => {
 		() => supportedModels.find((item) => item.model === selectedModel),
 		[supportedModels, selectedModel],
 	);
-	const supportImageInput = Boolean(
-		currentSelectedModelConfig?.customConfig?.supportImageInput ||
-			(!currentSelectedModelConfig?.customConfig &&
-				currentSelectedModelConfig?.support_vision),
-	);
+	const currentSelectedAdapter = currentSelectedModelConfig?.customConfig;
+	const supportImageInput = !!currentSelectedAdapter?.supportImageInput;
+	const supportThinking = !!currentSelectedAdapter?.supportThinking;
+
+	useEffect(() => {
+		if (supportedModels.length === 0) return;
+		if (
+			selectedModel &&
+			supportedModels.some((item) => item.model === selectedModel)
+		) {
+			return;
+		}
+		const fallbackModel = supportedModels[0]?.model;
+		if (!fallbackModel) return;
+		updateAppSettings(
+			AppSettingsGroup.Cache,
+			{ chatModel: fallbackModel },
+			true,
+			true,
+			false,
+			true,
+			false,
+		);
+	}, [selectedModel, supportedModels, updateAppSettings]);
 
 	useEffect(() => {
 		if (!supportImageInput) {
@@ -797,11 +823,11 @@ const Chat = () => {
 									body: JSON.stringify(
 										buildChatModelRequestBody(customConfig, {
 											messages: requestBody.messages as never,
-											model: customConfig.modelID,
+											model: requestBody.model || customConfig.modelID,
 											stream: requestBody.stream,
 											temperature: requestBody.temperature,
 											maxTokens: requestBody.max_tokens,
-											enableThinking: enableThinkingRef.current,
+											enableThinking: requestBody.enable_thinking,
 											thinkingBudgetTokens: requestBody.thinking_budget,
 										}),
 									),
@@ -815,7 +841,7 @@ const Chat = () => {
 				config: customConfig,
 			};
 		},
-		[supportedModelsRef, enableThinkingRef],
+		[supportedModelsRef],
 	);
 	const provider = useMemo(() => {
 		return new WingShotChatProvider({
@@ -1073,31 +1099,33 @@ const Chat = () => {
 					loading={supportedModelsLoading}
 				/>
 
-				<Button
-					type="text"
-					icon={
-						<ThinkingIcon
-							style={{
-								color: enableThinking
-									? token.colorPrimary
-									: token.colorTextDisabled,
-							}}
-						/>
-					}
-					className="chatHeaderThinkingButton"
-					onClick={() => {
-						updateAppSettings(
-							AppSettingsGroup.Cache,
-							{ chatModelEnableThinking: !enableThinkingRef.current },
-							true,
-							true,
-							false,
-							true,
-							false,
-						);
-					}}
-					title={intl.formatMessage({ id: "tools.chat.thinking" })}
-				/>
+				{supportThinking ? (
+					<Button
+						type="text"
+						icon={
+							<ThinkingIcon
+								style={{
+									color: enableThinking
+										? token.colorPrimary
+										: token.colorTextDisabled,
+								}}
+							/>
+						}
+						className="chatHeaderThinkingButton"
+						onClick={() => {
+							updateAppSettings(
+								AppSettingsGroup.Cache,
+								{ chatModelEnableThinking: !enableThinkingRef.current },
+								true,
+								true,
+								false,
+								true,
+								false,
+							);
+						}}
+						title={intl.formatMessage({ id: "tools.chat.thinking" })}
+					/>
+				) : null}
 			</Space>
 
 			<div>
@@ -1396,6 +1424,10 @@ const Chat = () => {
 				message.error(intl.formatMessage({ id: "tools.chat.noSelectedModel" }));
 				return;
 			}
+			if (!currentSelectedAdapter) {
+				message.error("当前模型不存在，请重新选择模型");
+				return;
+			}
 
 			if (!curSessionRef.current) {
 				await createNewSession();
@@ -1416,6 +1448,7 @@ const Chat = () => {
 			intl,
 			imageAttachments,
 			supportImageInput,
+			currentSelectedAdapter,
 		],
 	);
 

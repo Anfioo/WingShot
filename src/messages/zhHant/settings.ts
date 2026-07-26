@@ -668,9 +668,10 @@ export const settings = {
 	"settings.systemSettings.coreSettings.hotLoadPageCount.tip":
 		"透過熱載入頁面，實現貼圖、錄影、全螢幕畫布等功能的快速載入，但同時提高了記憶體的佔用",
 	"settings.functionSettings.ocrSettings": "文字辨識",
-	"settings.functionSettings.ocrSettings.htmlVisionModel": "視覺理解模型",
+	"settings.functionSettings.ocrSettings.htmlVisionModel":
+		"圖片轉 HTML / Markdown 視覺模型",
 	"settings.functionSettings.ocrSettings.htmlVisionModel.tip":
-		"將圖片轉為 HTML 的視覺理解模型",
+		"用於截圖/OCR 圖片轉 HTML、Markdown 的視覺模型",
 	"settings.functionSettings.ocrSettings.customOcrModelConfig":
 		"文字辨識模型配置",
 	"settings.functionSettings.ocrSettings.customOcrModelConfig.tip":
@@ -689,7 +690,7 @@ export const settings = {
 		"方向(cls)",
 	"settings.functionSettings.ocrSettings.htmlVisionModel.default": "預設",
 	"settings.functionSettings.ocrSettings.htmlVisionModel.default.tip":
-		"預設使用首個支援視覺理解的模型",
+		"預設使用首個開啟 OCR 視覺模型能力的配置",
 	"settings.functionSettings.ocrSettings.htmlVisionModelSystemPrompt":
 		"圖片轉為 HTML 的 System 提示詞",
 	"settings.functionSettings.ocrSettings.markdownVisionModelSystemPrompt":

@@ -54,7 +54,10 @@ import { AppSettingsActionContext } from "@/contexts/appSettingsActionContext";
 import { usePluginServiceContext } from "@/contexts/pluginServiceContext";
 import { useAppSettingsLoad } from "@/hooks/useAppSettingsLoad";
 import { usePlatform } from "@/hooks/usePlatform";
-import { useVisionModelList } from "@/pages/fixedContent/components/ocrResult";
+import {
+	matchVisionModel,
+	useVisionModelList,
+} from "@/pages/fixedContent/components/ocrResult";
 import {
 	type AppSettingsData,
 	AppSettingsFixedContentInitialPosition,
@@ -669,15 +672,30 @@ export const FunctionSettingsPage = () => {
 							label: <FormattedMessage id="tools.chat.custom" />,
 							options: visionModelList.map((model) => ({
 								label: model.config.displayName || model.config.modelID,
-								value: model.config.displayName || model.config.modelID,
+								value: model.config.id,
 							})),
 						}
 					: undefined,
 			].filter(Boolean) as SelectProps["options"];
 
 			setHtmlVisionModelOptions(htmlVisionModelOptions);
+			const currentValue = functionOcrForm.getFieldValue("htmlVisionModel");
+			const matchedModel = matchVisionModel(
+				visionModelList,
+				typeof currentValue === "string" ? currentValue : "",
+			);
+			if (
+				currentValue &&
+				matchedModel &&
+				currentValue !== matchedModel.config.id
+			) {
+				functionOcrForm.setFieldValue(
+					"htmlVisionModel",
+					matchedModel.config.id,
+				);
+			}
 		});
-	}, [getVisionModelList, intl, isReadyStatus]);
+	}, [functionOcrForm, getVisionModelList, intl, isReadyStatus]);
 
 	const doubleClickActionOptions = useMemo(() => {
 		return [

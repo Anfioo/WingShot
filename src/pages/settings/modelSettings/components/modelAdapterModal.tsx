@@ -5,6 +5,8 @@ import {
 	Input,
 	InputNumber,
 	Modal,
+	message,
+	Popconfirm,
 	Row,
 	Select,
 	Space,
@@ -40,14 +42,47 @@ export const ModelAdapterModal: React.FC<{
 	const [modelOptions, setModelOptions] = useState<ModelOption[]>([]);
 	const [providerModelsLoading, setProviderModelsLoading] = useState(false);
 	const currentType = Form.useWatch("type", form) ?? providerType;
+	const supportThinking = Form.useWatch("supportThinking", form) ?? false;
+	const customHeadersEnabled =
+		Form.useWatch("customHeadersEnabled", form) ?? false;
+	const openAIExtraParamsEnabled =
+		Form.useWatch("openAIExtraParamsEnabled", form) ?? false;
+	const anthropicExtraParamsEnabled =
+		Form.useWatch("anthropicExtraParamsEnabled", form) ?? false;
 	const getDefaultAdapter = (type: ChatModelProviderType) =>
 		createEmptyChatModelAdapter(type);
+
+	const [innerTab, setInnerTab] = useState("connection");
+
+	const fieldTabMap: Record<string, string> = {
+		baseURL: "connection",
+		apiKey: "connection",
+		customHeadersEnabled: "connection",
+		customHeadersJSON: "connection",
+		displayName: "model",
+		modelID: "model",
+		contextWindowTokens: "model",
+		openAIEndpoint: "model",
+		supportThinking: "capabilities",
+		supportVision: "capabilities",
+		supportImageInput: "capabilities",
+		reasoningEffort: "capabilities",
+		anthropicThinkingEffort: "capabilities",
+		maxCompletionTokens: "advanced",
+		anthropicMaxTokens: "advanced",
+		openAIExtraParamsEnabled: "advanced",
+		openAIExtraParamsJSON: "advanced",
+		anthropicExtraParamsEnabled: "advanced",
+		anthropicExtraParamsJSON: "advanced",
+		tooltipData: "advanced",
+	};
 
 	useEffect(() => {
 		if (!open) return;
 		const initialAdapter = adapter ?? createEmptyChatModelAdapter(providerType);
 		form.setFieldsValue(initialAdapter);
 		setModelOptions([]);
+		setInnerTab("connection");
 	}, [adapter, form, open, providerType]);
 
 	return (
@@ -57,13 +92,30 @@ export const ModelAdapterModal: React.FC<{
 			width={760}
 			onCancel={onCancel}
 			onOk={async () => {
-				const values = await form.validateFields();
-				const error = validateChatModelAdapter(values);
-				if (error) {
-					form.setFields([{ name: "displayName", errors: [error] }]);
-					return;
+				try {
+					const values = await form.validateFields();
+					const error = validateChatModelAdapter(values);
+					if (error) {
+						form.setFields([{ name: "displayName", errors: [error] }]);
+						message.error(error);
+						return;
+					}
+					onSave(values);
+				} catch (err) {
+					const errorInfo = err as {
+						errorFields?: { name: (string | number)[]; errors: string[] }[];
+					};
+					const firstErrorField = errorInfo?.errorFields?.[0]?.name?.[0];
+					const firstErrorMsg = errorInfo?.errorFields?.[0]?.errors?.[0];
+					const tab =
+						typeof firstErrorField === "string"
+							? fieldTabMap[firstErrorField]
+							: undefined;
+					if (tab) {
+						setInnerTab(tab);
+					}
+					message.error(firstErrorMsg || "表单验证失败，请检查红色标记的字段");
 				}
-				onSave(values);
 			}}
 		>
 			<Form form={form} layout="vertical">
@@ -98,7 +150,8 @@ export const ModelAdapterModal: React.FC<{
 				/>
 
 				<Tabs
-					defaultActiveKey="connection"
+					activeKey={innerTab}
+					onChange={setInnerTab}
 					items={[
 						{
 							key: "connection",
@@ -132,6 +185,7 @@ export const ModelAdapterModal: React.FC<{
 											name="customHeadersEnabled"
 											label="启用自定义请求头"
 											valuePropName="checked"
+											help="启用后会解析下方 JSON，并合并到实际请求 headers。"
 										>
 											<Switch />
 										</Form.Item>
@@ -140,8 +194,12 @@ export const ModelAdapterModal: React.FC<{
 										<Form.Item
 											name="customHeadersJSON"
 											label="自定义请求头 JSON"
+											help="必须是 JSON 对象，格式错误时会在请求时明确报错。"
 										>
-											<Input.TextArea rows={5} />
+											<Input.TextArea
+												rows={5}
+												disabled={!customHeadersEnabled}
+											/>
 										</Form.Item>
 									</Col>
 								</Row>
@@ -256,8 +314,9 @@ export const ModelAdapterModal: React.FC<{
 									<Col span={8}>
 										<Form.Item
 											name="supportThinking"
-											label="支持思考"
+											label="支持思考/推理"
 											valuePropName="checked"
+											help="用于 AI 对话页的 thinking/reasoning 能力。"
 										>
 											<Switch />
 										</Form.Item>
@@ -265,8 +324,9 @@ export const ModelAdapterModal: React.FC<{
 									<Col span={8}>
 										<Form.Item
 											name="supportVision"
-											label="支持 OCR 视觉"
+											label="OCR 视觉模型"
 											valuePropName="checked"
+											help="用于截图/OCR 图片转 HTML、Markdown。"
 										>
 											<Switch />
 										</Form.Item>
@@ -276,17 +336,18 @@ export const ModelAdapterModal: React.FC<{
 											name="supportImageInput"
 											label="对话图片输入"
 											valuePropName="checked"
+											help="用于 AI 对话页上传图片作为用户输入。"
 										>
 											<Switch />
 										</Form.Item>
 									</Col>
-									{currentType === "openai" ? (
+									{currentType === "openai" && supportThinking ? (
 										<Col span={12}>
 											<Form.Item name="reasoningEffort" label="推理强度">
 												<Select options={reasoningEffortOptions} />
 											</Form.Item>
 										</Col>
-									) : currentType === "anthropic" ? (
+									) : currentType === "anthropic" && supportThinking ? (
 										<Col span={12}>
 											<Form.Item
 												name="anthropicThinkingEffort"
@@ -323,6 +384,7 @@ export const ModelAdapterModal: React.FC<{
 													name="openAIExtraParamsEnabled"
 													label="启用 OpenAI 额外参数"
 													valuePropName="checked"
+													help="仅 OpenAI-compatible 请求生效。"
 												>
 													<Switch />
 												</Form.Item>
@@ -331,8 +393,12 @@ export const ModelAdapterModal: React.FC<{
 												<Form.Item
 													name="openAIExtraParamsJSON"
 													label="OpenAI 额外参数 JSON"
+													help="启用后会合并到 OpenAI 请求 body，用户显式填写的字段可覆盖默认值。"
 												>
-													<Input.TextArea rows={5} />
+													<Input.TextArea
+														rows={5}
+														disabled={!openAIExtraParamsEnabled}
+													/>
 												</Form.Item>
 											</Col>
 										</>
@@ -355,6 +421,7 @@ export const ModelAdapterModal: React.FC<{
 													name="anthropicExtraParamsEnabled"
 													label="启用 Anthropic 额外参数"
 													valuePropName="checked"
+													help="仅 Anthropic 请求生效。"
 												>
 													<Switch />
 												</Form.Item>
@@ -363,8 +430,12 @@ export const ModelAdapterModal: React.FC<{
 												<Form.Item
 													name="anthropicExtraParamsJSON"
 													label="Anthropic 额外参数 JSON"
+													help="启用后会合并到 Anthropic 请求 body，格式错误时会明确报错。"
 												>
-													<Input.TextArea rows={5} />
+													<Input.TextArea
+														rows={5}
+														disabled={!anthropicExtraParamsEnabled}
+													/>
 												</Form.Item>
 											</Col>
 										</>
@@ -388,9 +459,15 @@ export const ModelAdapterModal: React.FC<{
 										</Form.Item>
 									</Col>
 									<Col span={24}>
-										<Button onClick={() => form.resetFields()}>
-											重置当前表单
-										</Button>
+										<Popconfirm
+											title="确认重置"
+											description="将清空当前表单所有已填写的内容，确定要重置吗？"
+											onConfirm={() => form.resetFields()}
+											okText="确定重置"
+											cancelText="取消"
+										>
+											<Button danger>重置当前表单</Button>
+										</Popconfirm>
 									</Col>
 								</Row>
 							),

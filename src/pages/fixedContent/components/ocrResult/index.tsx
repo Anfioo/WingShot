@@ -113,6 +113,25 @@ export type VisionModel = {
 	isOfficial: boolean;
 };
 
+const normalizeVisionModelKey = (value: string | undefined) =>
+	(value ?? "").trim().toLowerCase();
+
+export const matchVisionModel = (
+	modelList: VisionModel[],
+	selectedValue: string | undefined,
+) => {
+	const target = normalizeVisionModelKey(selectedValue);
+	if (!target) return modelList[0];
+	return (
+		modelList.find(({ config }) => {
+			const keys = [config.id, config.displayName, config.modelID].map((item) =>
+				normalizeVisionModelKey(item),
+			);
+			return keys.includes(target);
+		}) ?? modelList[0]
+	);
+};
+
 export const useVisionModelList = () => {
 	const [getAppSettings] = useStateSubscriber(AppSettingsPublisher, undefined);
 
@@ -987,16 +1006,16 @@ export const OcrResult: React.FC<{
 			// 获取视觉理解模型
 			const selectedVisionModel =
 				getAppSettings()[AppSettingsGroup.FunctionOcr].htmlVisionModel;
-			let selectedVisionModelIndex = visionModelList.findIndex((model) => {
-				return (
-					model.config.displayName === selectedVisionModel ||
-					model.config.modelID === selectedVisionModel
+			const modelConfig = matchVisionModel(
+				visionModelList,
+				selectedVisionModel,
+			);
+			if (!modelConfig) {
+				message.error(
+					intl.formatMessage({ id: "draw.ocrResult.visionModelListEmpty" }),
 				);
-			});
-			if (selectedVisionModelIndex === -1) {
-				selectedVisionModelIndex = 0;
+				return;
 			}
-			const modelConfig = visionModelList[selectedVisionModelIndex];
 
 			const hideLoading = message.loading(
 				intl.formatMessage({

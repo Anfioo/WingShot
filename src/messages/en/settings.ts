@@ -702,9 +702,10 @@ export const settings = {
 	"settings.systemSettings.coreSettings.hotLoadPageCount.tip":
 		"Hot load pages for fast loading of pinned clipboard content to screen, video recording, fullscreen canvas, etc., but also increases memory usage",
 	"settings.functionSettings.ocrSettings": "OCR Settings",
-	"settings.functionSettings.ocrSettings.htmlVisionModel": "Vision Model",
+	"settings.functionSettings.ocrSettings.htmlVisionModel":
+		"Image to HTML/Markdown Vision Model",
 	"settings.functionSettings.ocrSettings.htmlVisionModel.tip":
-		"Vision model for converting images to HTML",
+		"Vision model used for converting screenshots/OCR images to HTML or Markdown",
 	"settings.functionSettings.ocrSettings.customOcrModelConfig":
 		"OCR Model Configuration",
 	"settings.functionSettings.ocrSettings.customOcrModelConfig.tip":
@@ -723,7 +724,7 @@ export const settings = {
 		"Orientation(cls)",
 	"settings.functionSettings.ocrSettings.htmlVisionModel.default": "Default",
 	"settings.functionSettings.ocrSettings.htmlVisionModel.default.tip":
-		"Use the first vision model by default",
+		"Use the first model with OCR vision enabled by default",
 	"settings.functionSettings.ocrSettings.htmlVisionModelSystemPrompt":
 		"System Prompt for HTML Vision",
 	"settings.functionSettings.ocrSettings.markdownVisionModelSystemPrompt":

@@ -45,24 +45,54 @@ export const createAbortSignal = (ms: number = REQUEST_TIMEOUT_MS) => {
 	return controller.signal;
 };
 
-const parseJsonObject = (value: string) => {
+const parseRequiredJsonObject = (value: string, label: string) => {
+	const text = value.trim();
+	if (!text) {
+		throw new Error(`${label}不能为空`);
+	}
 	try {
-		const parsed = JSON.parse(value);
-		return parsed && typeof parsed === "object" && !Array.isArray(parsed)
-			? (parsed as Record<string, unknown>)
-			: {};
-	} catch {
-		return {};
+		const parsed = JSON.parse(text);
+		if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+			throw new Error(`${label}必须是 JSON 对象`);
+		}
+		return parsed as Record<string, unknown>;
+	} catch (error) {
+		if (error instanceof Error && error.message.includes(label)) {
+			throw error;
+		}
+		throw new Error(`${label}格式错误，必须是合法 JSON 对象`);
 	}
 };
 
+const getEnabledJsonObject = (
+	enabled: boolean,
+	value: string,
+	label: string,
+): Record<string, unknown> => {
+	if (!enabled) return {};
+	return parseRequiredJsonObject(value, label);
+};
+
+const isThinkingEnabled = (
+	adapter: ChatModelAdapterConfig,
+	options: ChatModelRequestOptions,
+) => adapter.supportThinking && !!options.enableThinking;
+
 export const buildChatModelHeaders = (adapter: ChatModelAdapterConfig) => {
-	const customHeaders = adapter.customHeadersEnabled
-		? parseJsonObject(adapter.customHeadersJSON)
-		: {};
+	const customHeaders = getEnabledJsonObject(
+		adapter.customHeadersEnabled,
+		adapter.customHeadersJSON,
+		"自定义请求头 JSON",
+	);
 	const headers: Record<string, string> = {};
 	for (const [key, value] of Object.entries(customHeaders)) {
-		if (typeof value === "string") headers[key] = value;
+		if (!key.trim()) {
+			throw new Error("自定义请求头名称不能为空");
+		}
+		if (typeof value !== "string") {
+			throw new Error(`自定义请求头 ${key} 的值必须是字符串`);
+		}
+		headers[key] = value;
 	}
 	return headers;
 };
@@ -259,7 +289,7 @@ const getAnthropicThinkingConfig = (
 	adapter: ChatModelAdapterConfig,
 	options: ChatModelRequestOptions,
 ) => {
-	if (!options.enableThinking) return undefined;
+	if (!isThinkingEnabled(adapter, options)) return undefined;
 	const requestedBudget =
 		options.thinkingBudgetTokens ||
 		anthropicThinkingBudgetByEffort[adapter.anthropicThinkingEffort] ||
@@ -305,22 +335,25 @@ const normalizeMessagesForOpenAIResponses = (
 const buildSnowShotRequestBody = (
 	adapter: ChatModelAdapterConfig,
 	options: ChatModelRequestOptions,
-) => ({
-	messages: options.messages,
-	model: options.model || adapter.modelID,
-	...(options.temperature !== undefined
-		? { temperature: options.temperature }
-		: {}),
-	...(options.maxTokens || adapter.maxCompletionTokens
-		? { max_tokens: adapter.maxCompletionTokens || options.maxTokens }
-		: {}),
-	...(options.enableThinking ? { enable_thinking: true } : {}),
-	stream_options: { include_usage: true },
-	...(options.thinkingBudgetTokens
-		? { thinking_budget: options.thinkingBudgetTokens }
-		: {}),
-	stream: options.stream ?? true,
-});
+) => {
+	const thinkingEnabled = isThinkingEnabled(adapter, options);
+	return {
+		messages: options.messages,
+		model: options.model || adapter.modelID,
+		...(options.temperature !== undefined
+			? { temperature: options.temperature }
+			: {}),
+		...(options.maxTokens || adapter.maxCompletionTokens
+			? { max_tokens: adapter.maxCompletionTokens || options.maxTokens }
+			: {}),
+		...(thinkingEnabled ? { enable_thinking: true } : {}),
+		stream_options: { include_usage: true },
+		...(thinkingEnabled && options.thinkingBudgetTokens
+			? { thinking_budget: options.thinkingBudgetTokens }
+			: {}),
+		stream: options.stream ?? true,
+	};
+};
 
 export const buildChatModelRequestBody = (
 	adapter: ChatModelAdapterConfig,
@@ -331,9 +364,11 @@ export const buildChatModelRequestBody = (
 	}
 
 	if (adapter.type === "anthropic") {
-		const extraParams = adapter.anthropicExtraParamsEnabled
-			? parseJsonObject(adapter.anthropicExtraParamsJSON)
-			: {};
+		const extraParams = getEnabledJsonObject(
+			adapter.anthropicExtraParamsEnabled,
+			adapter.anthropicExtraParamsJSON,
+			"Anthropic 额外参数 JSON",
+		);
 		const { systemText, anthropicMessages } = normalizeMessagesForAnthropic(
 			options.messages,
 		);
@@ -352,9 +387,12 @@ export const buildChatModelRequestBody = (
 		};
 	}
 
-	const extraParams = adapter.openAIExtraParamsEnabled
-		? parseJsonObject(adapter.openAIExtraParamsJSON)
-		: {};
+	const extraParams = getEnabledJsonObject(
+		adapter.openAIExtraParamsEnabled,
+		adapter.openAIExtraParamsJSON,
+		"OpenAI 额外参数 JSON",
+	);
+	const thinkingEnabled = isThinkingEnabled(adapter, options);
 	if (adapter.openAIEndpoint === OPENAI_ENDPOINT_RESPONSES) {
 		return {
 			model: options.model || adapter.modelID,
@@ -368,7 +406,7 @@ export const buildChatModelRequestBody = (
 						max_output_tokens: adapter.maxCompletionTokens || options.maxTokens,
 					}
 				: {}),
-			...(options.enableThinking
+			...(thinkingEnabled
 				? { reasoning: { effort: adapter.reasoningEffort } }
 				: {}),
 			...extraParams,
@@ -384,10 +422,10 @@ export const buildChatModelRequestBody = (
 		...(options.maxTokens || adapter.maxCompletionTokens
 			? { max_tokens: adapter.maxCompletionTokens || options.maxTokens }
 			: {}),
-		...(options.enableThinking
+		...(thinkingEnabled
 			? { reasoning: { effort: adapter.reasoningEffort } }
 			: {}),
-		...(options.thinkingBudgetTokens
+		...(thinkingEnabled && options.thinkingBudgetTokens
 			? { thinking_budget: options.thinkingBudgetTokens }
 			: {}),
 		...extraParams,
