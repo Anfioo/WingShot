@@ -1,4 +1,11 @@
 import {
+	CUSTOM_HEADERS_DEFAULT_JSON,
+	DEFAULT_ANTHROPIC_THINKING_EFFORT,
+	EXTRA_PARAMS_DEFAULT_JSON,
+	OPENAI_ENDPOINT_CHAT_COMPLETIONS,
+	OPENAI_EXTRA_PARAMS_DEFAULT_JSON,
+} from "@/core/chatModels/schema";
+import {
 	AppSettingsControlNode,
 	type AppSettingsData,
 	AppSettingsFixedContentInitialPosition,
@@ -19,6 +26,7 @@ import {
 	OcrDetectAfterAction,
 	OcrModel,
 	RunLogLevel,
+	TranslationServiceType,
 	TrayIconClickAction,
 	TrayIconDefaultIcon,
 	VideoMaxSize,
@@ -35,6 +43,43 @@ import { defaultCommonKeyEventSettings } from "./commonKeyEvent";
 import { FOCUS_WINDOW_APP_NAME_ENV_VARIABLE } from "./components/chat";
 import { defaultTranslationPrompt } from "./components/translation";
 import { defaultDrawToolbarKeyEventSettings } from "./drawToolbarKeyEvent";
+
+export const defaultTranslationServices: AppSettingsData[AppSettingsGroup.FunctionTranslation]["translationServices"] =
+	[
+		{
+			id: TranslationServiceType.DeepL,
+			type: TranslationServiceType.DeepL,
+			enabled: true,
+			config: {
+				deeplType: "free",
+			},
+		},
+		{
+			id: TranslationServiceType.Bing,
+			type: TranslationServiceType.Bing,
+			enabled: true,
+		},
+		{
+			id: TranslationServiceType.Lingva,
+			type: TranslationServiceType.Lingva,
+			enabled: true,
+		},
+		{
+			id: TranslationServiceType.Yandex,
+			type: TranslationServiceType.Yandex,
+			enabled: true,
+		},
+		{
+			id: TranslationServiceType.Google,
+			type: TranslationServiceType.Google,
+			enabled: true,
+		},
+		{
+			id: TranslationServiceType.ECDict,
+			type: TranslationServiceType.ECDict,
+			enabled: true,
+		},
+	];
 
 export const defaultAppSettingsData: AppSettingsData = {
 	[AppSettingsGroup.Common]: {
@@ -70,6 +115,7 @@ export const defaultAppSettingsData: AppSettingsData = {
 		hotKeyTipOpacity: 100,
 		colorPickerCenterAuxiliaryLineColor: "#00000000",
 		toolbarHiddenToolList: [],
+		toolbarActionOrder: [],
 	},
 	[AppSettingsGroup.FixedContent]: {
 		borderColor: "#dbdbdb",
@@ -140,6 +186,32 @@ export const defaultAppSettingsData: AppSettingsData = {
 		autoCreateNewSession: true,
 		autoCreateNewSessionOnCloseWindow: true,
 		chatApiConfigList: [],
+		modelAdapters: [
+			{
+				id: "model@snowshot-default",
+				displayName: "Snow Api",
+				type: "snowshot" as const,
+				baseURL: "https://snowshot.top",
+				apiKey: "",
+				modelID: "qwen-flash",
+				tooltipData: "这个是测试api，会失效，最好自己填写api，注意翻译",
+				supportThinking: true,
+				supportVision: true,
+				supportImageInput: true,
+				contextWindowTokens: 5000,
+				openAIEndpoint: OPENAI_ENDPOINT_CHAT_COMPLETIONS,
+				reasoningEffort: "medium" as const,
+				maxCompletionTokens: 0,
+				openAIExtraParamsEnabled: false,
+				openAIExtraParamsJSON: OPENAI_EXTRA_PARAMS_DEFAULT_JSON,
+				anthropicMaxTokens: 0,
+				anthropicThinkingEffort: DEFAULT_ANTHROPIC_THINKING_EFFORT,
+				anthropicExtraParamsEnabled: false,
+				anthropicExtraParamsJSON: EXTRA_PARAMS_DEFAULT_JSON,
+				customHeadersEnabled: false,
+				customHeadersJSON: CUSTOM_HEADERS_DEFAULT_JSON,
+			},
+		],
 	},
 	[AppSettingsGroup.FunctionTranslation]: {
 		optimizeAiTranslationLayout: true,
@@ -149,6 +221,7 @@ export const defaultAppSettingsData: AppSettingsData = {
 		targetLanguage: "zh-CHS",
 		translationDomain: TranslationDomain.General,
 		translationType: TranslationType.Youdao,
+		translationServices: defaultTranslationServices,
 	},
 	[AppSettingsGroup.FunctionTranslationCache]: {
 		cacheSourceLanguage: "auto",
@@ -157,7 +230,7 @@ export const defaultAppSettingsData: AppSettingsData = {
 		cacheTranslationType: TranslationType.Youdao,
 	},
 	[AppSettingsGroup.FunctionOcr]: {
-		htmlVisionModel: "",
+		htmlVisionModel: "model@snowshot-default",
 		ocrModel: OcrModel.RapidOcrV4,
 		customOcrModelConfigList: [],
 		htmlVisionModelSystemPrompt: `You are a professional image-to-HTML conversion engine. Your sole objective is to accurately convert images into clean, semantic HTML code.

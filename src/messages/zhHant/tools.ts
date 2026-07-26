@@ -16,6 +16,7 @@ export const tools = {
 	"tools.translation.language.turkish": "土耳其語",
 	"tools.translation.language.japanese": "日語",
 	"tools.translation.placeholder": "請輸入要翻譯的文字",
+	"tools.translation.usedService": "使用：{service}",
 	"tools.translation.copyAndHide": "複製並隱藏",
 	"tools.translation.copy": "複製",
 	"tools.translation.replace": "取代",

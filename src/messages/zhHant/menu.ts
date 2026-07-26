@@ -4,6 +4,8 @@ export const menu = {
 	"menu.settings": "設定",
 	"menu.settings.generalSettings": "介面設定",
 	"menu.settings.functionSettings": "功能設定",
+	"menu.settings.translationSettings": "翻譯設定",
+	"menu.settings.modelSettings": "模型設定",
 	"menu.settings.hotKeySettings": "快捷鍵設定",
 	"menu.settings.systemSettings": "系統設定",
 	"menu.tools": "工具箱",

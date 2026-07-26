@@ -2,7 +2,6 @@ import { Menu } from "@tauri-apps/api/menu";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { theme } from "antd";
 import Color from "color";
-import OpenAI from "openai";
 import {
 	useCallback,
 	useContext,
@@ -20,6 +19,10 @@ import { AntdContext } from "@/contexts/antdContext";
 import { AppContext } from "@/contexts/appContext";
 import { AppSettingsPublisher } from "@/contexts/appSettingsActionContext";
 import { usePluginServiceContext } from "@/contexts/pluginServiceContext";
+import {
+	createVisionModelMessages,
+	streamChatModelText,
+} from "@/core/chatModels";
 import { useTranslationRequest } from "@/core/translations";
 import { releaseOcrSession } from "@/functions/ocr";
 import { useHotkeysApp } from "@/hooks/useHotkeysApp";
@@ -30,10 +33,11 @@ import {
 	type CaptureBoundingBoxInfo,
 	ElementDraggingPublisher,
 } from "@/pages/draw/extra";
-import { CUSTOM_MODEL_PREFIX, MarkdownContent } from "@/pages/tools/chat/page";
-import { appFetch, getUrl } from "@/services/tools";
-import { getChatModelsWithCache } from "@/services/tools/chat";
-import { AppSettingsGroup, type ChatApiConfig } from "@/types/appSettings";
+import { MarkdownContent } from "@/pages/tools/chat/page";
+import {
+	AppSettingsGroup,
+	type ChatModelAdapterConfig,
+} from "@/types/appSettings";
 import type { OcrDetectResult } from "@/types/commands/ocr";
 import type { ElementRect } from "@/types/commands/screenshot";
 import { writeHtmlToClipboard, writeTextToClipboard } from "@/utils/clipboard";
@@ -105,50 +109,40 @@ export enum OcrResultType {
 }
 
 export type VisionModel = {
-	config: ChatApiConfig;
+	config: ChatModelAdapterConfig;
 	isOfficial: boolean;
+};
+
+const normalizeVisionModelKey = (value: string | undefined) =>
+	(value ?? "").trim().toLowerCase();
+
+export const matchVisionModel = (
+	modelList: VisionModel[],
+	selectedValue: string | undefined,
+) => {
+	const target = normalizeVisionModelKey(selectedValue);
+	if (!target) return modelList[0];
+	return (
+		modelList.find(({ config }) => {
+			const keys = [config.id, config.displayName, config.modelID].map((item) =>
+				normalizeVisionModelKey(item),
+			);
+			return keys.includes(target);
+		}) ?? modelList[0]
+	);
 };
 
 export const useVisionModelList = () => {
 	const [getAppSettings] = useStateSubscriber(AppSettingsPublisher, undefined);
 
-	const customVisionModelListRef = useRef<VisionModel[]>(undefined);
 	const getVisionModelList = useCallback(async () => {
 		const settings = getAppSettings();
-		const visionModelList = settings[
-			AppSettingsGroup.FunctionChat
-		].chatApiConfigList
-			.filter((config) => config.support_vision)
-			.map((config) => {
-				return {
-					config: {
-						...config,
-						api_model: `${CUSTOM_MODEL_PREFIX}${config.api_model}`,
-					},
-					isOfficial: false,
-				};
-			});
-
-		if (!customVisionModelListRef.current) {
-			const res = await getChatModelsWithCache();
-			customVisionModelListRef.current = (res ?? [])
-				.filter((item) => item.support_vision)
-				.map((item) => {
-					return {
-						config: {
-							api_uri: getUrl("api/v1/"),
-							api_key: "",
-							api_model: item.model,
-							model_name: item.name,
-							support_thinking: item.thinking,
-							support_vision: item.support_vision,
-						},
-						isOfficial: true,
-					};
-				});
-		}
-
-		return [...visionModelList, ...customVisionModelListRef.current];
+		return settings[AppSettingsGroup.FunctionChat].modelAdapters
+			.filter((config) => config.supportVision)
+			.map((config) => ({
+				config,
+				isOfficial: false,
+			}));
 	}, [getAppSettings]);
 
 	return useMemo(() => {
@@ -1012,13 +1006,16 @@ export const OcrResult: React.FC<{
 			// 获取视觉理解模型
 			const selectedVisionModel =
 				getAppSettings()[AppSettingsGroup.FunctionOcr].htmlVisionModel;
-			let selectedVisionModelIndex = visionModelList.findIndex(
-				(model) => model.config.model_name === selectedVisionModel,
+			const modelConfig = matchVisionModel(
+				visionModelList,
+				selectedVisionModel,
 			);
-			if (selectedVisionModelIndex === -1) {
-				selectedVisionModelIndex = 0;
+			if (!modelConfig) {
+				message.error(
+					intl.formatMessage({ id: "draw.ocrResult.visionModelListEmpty" }),
+				);
+				return;
 			}
-			const modelConfig = visionModelList[selectedVisionModelIndex];
 
 			const hideLoading = message.loading(
 				intl.formatMessage({
@@ -1029,13 +1026,6 @@ export const OcrResult: React.FC<{
 
 			// 将图片编码为 base64
 			const imageBase64 = canvas.toDataURL("image/webp", 0.7);
-
-			const client = new OpenAI({
-				apiKey: modelConfig.config.api_key,
-				baseURL: modelConfig.config.api_uri,
-				dangerouslyAllowBrowser: true,
-				fetch: appFetch,
-			});
 
 			if (format === "html") {
 				onVisionModelHtmlLoading?.(true);
@@ -1065,73 +1055,56 @@ export const OcrResult: React.FC<{
 							.markdownVisionModelSystemPrompt;
 				}
 
-				const streamResponse = await client.chat.completions.create({
-					model: modelConfig.config.api_model.replace(CUSTOM_MODEL_PREFIX, ""),
-					messages: [
-						{
-							role: "system",
-							content: systemPrompt,
-						},
-						{
-							role: "user",
-							content: [
-								{
-									type: "image_url",
-									image_url: {
-										url: imageBase64,
+				await streamChatModelText(
+					modelConfig.config,
+					{
+						messages: createVisionModelMessages({
+							systemPrompt,
+							imageBase64,
+							format,
+						}),
+						stream: true,
+						temperature:
+							getAppSettings()[AppSettingsGroup.SystemChat].temperature,
+						maxTokens: getAppSettings()[AppSettingsGroup.SystemChat].maxTokens,
+					},
+					{
+						onText: (text) => {
+							if (!text) return;
+							formatResult = {
+								text_blocks: [
+									{
+										text: formatResult.text_blocks[0].text + text,
+										box_points: [],
+										text_score: 0,
 									},
-								},
-								{
-									type: "text",
-									text: `Convert the image to ${format}`,
-								},
-							],
+								],
+								scale_factor: 1,
+							};
+							if (format === "html") {
+								setVisionModelHtmlResult({
+									result: formatResult,
+									ignoreScale: false,
+								});
+								updateOcrTextElements(
+									formatResult,
+									false,
+									OcrResultType.VisionModelHtml,
+								);
+							} else {
+								setVisionModelMarkdownResult({
+									result: formatResult,
+									ignoreScale: false,
+								});
+								updateOcrTextElements(
+									formatResult,
+									false,
+									OcrResultType.VisionModelMarkdown,
+								);
+							}
 						},
-					],
-					max_completion_tokens:
-						getAppSettings()[AppSettingsGroup.SystemChat].maxTokens,
-					temperature:
-						getAppSettings()[AppSettingsGroup.SystemChat].temperature,
-					stream: true,
-				});
-
-				for await (const event of streamResponse) {
-					if (event.choices.length > 0 && event.choices[0].delta.content) {
-						formatResult = {
-							text_blocks: [
-								{
-									text:
-										formatResult.text_blocks[0].text +
-										event.choices[0].delta.content,
-									box_points: [],
-									text_score: 0,
-								},
-							],
-							scale_factor: 1,
-						};
-						if (format === "html") {
-							setVisionModelHtmlResult({
-								result: formatResult,
-								ignoreScale: false,
-							});
-							updateOcrTextElements(
-								formatResult,
-								false,
-								OcrResultType.VisionModelHtml,
-							);
-						} else {
-							setVisionModelMarkdownResult({
-								result: formatResult,
-								ignoreScale: false,
-							});
-							updateOcrTextElements(
-								formatResult,
-								false,
-								OcrResultType.VisionModelMarkdown,
-							);
-						}
-					}
-				}
+					},
+				);
 			} catch (error) {
 				appError(
 					`[convertImageToVisionModelFormat] streamResponse error`,

@@ -75,6 +75,45 @@ export enum RunLogLevel {
 	Trace = "trace",
 }
 
+export type ChatModelProviderType = "openai" | "anthropic" | "snowshot";
+
+export type ChatModelOpenAIEndpoint =
+	| "/v1/responses"
+	| "/v1/chat/completions"
+	| "/custom";
+
+export type ChatModelReasoningEffort =
+	| "low"
+	| "medium"
+	| "high"
+	| "xhigh"
+	| "max";
+
+export type ChatModelAdapterConfig = {
+	id: string;
+	displayName: string;
+	type: ChatModelProviderType;
+	baseURL: string;
+	apiKey: string;
+	modelID: string;
+	tooltipData: string;
+	supportThinking: boolean;
+	supportVision: boolean;
+	supportImageInput: boolean;
+	contextWindowTokens: number;
+	openAIEndpoint: ChatModelOpenAIEndpoint;
+	reasoningEffort: ChatModelReasoningEffort;
+	maxCompletionTokens: number;
+	openAIExtraParamsEnabled: boolean;
+	openAIExtraParamsJSON: string;
+	anthropicMaxTokens: number;
+	anthropicThinkingEffort: ChatModelReasoningEffort;
+	anthropicExtraParamsEnabled: boolean;
+	anthropicExtraParamsJSON: string;
+	customHeadersEnabled: boolean;
+	customHeadersJSON: string;
+};
+
 export type ChatApiConfig = {
 	api_uri: string;
 	api_key: string;
@@ -88,6 +127,72 @@ export enum TranslationApiType {
 	DeepL = "translation_api_deepl",
 	Custom = "translation_api_custom",
 }
+
+export enum TranslationServiceType {
+	DeepL = "deepl",
+	Bing = "bing",
+	Lingva = "lingva",
+	Yandex = "yandex",
+	Google = "google",
+	ECDict = "ecdict",
+	Alibaba = "alibaba",
+	Baidu = "baidu",
+	BaiduField = "baidu_field",
+	BingDict = "bing_dict",
+	Caiyun = "caiyun",
+	CambridgeDict = "cambridge_dict",
+	Tencent = "tencent",
+	Volcengine = "volcengine",
+	NiuTrans = "niutrans",
+	Youdao = "youdao",
+	Custom = "custom",
+}
+
+export type TranslationServiceConfig = {
+	apiUri?: string;
+	apiKey?: string;
+	secretKey?: string;
+	appId?: string;
+	accessKeyId?: string;
+	accessKeySecret?: string;
+	region?: string;
+	domain?: string;
+	deeplType?: "free" | "api" | "deeplx";
+	deeplPreferQualityOptimized?: boolean;
+	maxRequestsPerSecond?: number;
+	maxParagraphCount?: number;
+};
+
+export type TranslationServiceInstance = {
+	id: string;
+	type: TranslationServiceType;
+	enabled: boolean;
+	name?: string;
+	config?: TranslationServiceConfig;
+};
+
+export type FunctionTranslationSettings = {
+	/** 兼容旧版本字段，新流程不再使用 AI 翻译 */
+	optimizeAiTranslationLayout: boolean;
+	/** 兼容旧版本字段，新流程不再使用 AI 翻译 */
+	translationSystemPrompt: string;
+	/** 兼容旧版本字段，会迁移为 translationServices */
+	translationApiConfigList: TranslationApiConfig[];
+	sourceLanguage: string;
+	targetLanguage: string;
+	translationDomain: TranslationDomain;
+	/** 兼容旧版本字段，新流程使用 translationServices */
+	translationType: TranslationType | string;
+	translationServices: TranslationServiceInstance[];
+};
+
+export type FunctionTranslationCacheSettings = {
+	cacheSourceLanguage: string;
+	cacheTargetLanguage: string;
+	cacheTranslationDomain: TranslationDomain;
+	/** 兼容旧版本字段，新流程不再使用 */
+	cacheTranslationType: TranslationType | string;
+};
 
 export type DeepLApiConfig = {
 	api_type: TranslationApiType.DeepL;
@@ -341,6 +446,8 @@ export type AppSettingsData = {
 		disableAnimation: boolean;
 		/** 隐藏工具栏工具 */
 		toolbarHiddenToolList: DrawState[];
+		/** 操作按钮排序（仅非绘图工具） */
+		toolbarActionOrder: DrawState[];
 	};
 	[AppSettingsGroup.FixedContent]: {
 		/** 边框颜色 */
@@ -438,7 +545,9 @@ export type AppSettingsData = {
 		autoCreateNewSession: boolean;
 		/** 关闭窗口时自动创建新会话 */
 		autoCreateNewSessionOnCloseWindow: boolean;
+		/** 兼容旧版本字段，新流程使用 modelAdapters */
 		chatApiConfigList: ChatApiConfig[];
+		modelAdapters: ChatModelAdapterConfig[];
 	};
 	[AppSettingsGroup.FunctionOcr]: {
 		/** 文本识别模型 */
@@ -452,22 +561,8 @@ export type AppSettingsData = {
 		/** 图片转为 Markdown 的 System 提示词 */
 		markdownVisionModelSystemPrompt: string;
 	};
-	[AppSettingsGroup.FunctionTranslation]: {
-		/** 优化 AI 翻译的排版 */
-		optimizeAiTranslationLayout: boolean;
-		translationSystemPrompt: string;
-		translationApiConfigList: TranslationApiConfig[];
-		sourceLanguage: string;
-		targetLanguage: string;
-		translationDomain: TranslationDomain;
-		translationType: TranslationType | string;
-	};
-	[AppSettingsGroup.FunctionTranslationCache]: {
-		cacheSourceLanguage: string;
-		cacheTargetLanguage: string;
-		cacheTranslationDomain: TranslationDomain;
-		cacheTranslationType: TranslationType | string;
-	};
+	[AppSettingsGroup.FunctionTranslation]: FunctionTranslationSettings;
+	[AppSettingsGroup.FunctionTranslationCache]: FunctionTranslationCacheSettings;
 	[AppSettingsGroup.FunctionScreenshot]: {
 		/** 选取窗口子元素 */
 		findChildrenElements: boolean;
@@ -655,4 +750,43 @@ export const CanHiddenToolSet: Set<DrawState> = new Set([
 	DrawState.OcrDetect,
 	DrawState.OcrTranslate,
 	DrawState.ScrollScreenshot,
+	DrawState.ExtraTools,
 ]);
+
+/** 可排序的操作按钮列表（非绘图工具）*/
+export const ACTION_TOOLBAR_STATES: readonly DrawState[] = [
+	DrawState.Fixed,
+	DrawState.OcrDetect,
+	DrawState.OcrTranslate,
+	DrawState.LaserPointer,
+	DrawState.ScrollScreenshot,
+	DrawState.ExtraTools,
+	DrawState.Save,
+	DrawState.Cancel,
+	DrawState.Copy,
+] as const;
+
+export const normalizeToolbarActionOrder = (
+	value?: readonly DrawState[],
+	hiddenToolList?: readonly DrawState[],
+	availableActionStates: readonly DrawState[] = ACTION_TOOLBAR_STATES,
+) => {
+	const actionStateSet = new Set<DrawState>(availableActionStates);
+	const hiddenToolSet = new Set<DrawState>(hiddenToolList ?? []);
+	const configuredOrder = Array.isArray(value)
+		? value.reduce<DrawState[]>((acc, item) => {
+				if (
+					actionStateSet.has(item) &&
+					!hiddenToolSet.has(item) &&
+					!acc.includes(item)
+				) {
+					acc.push(item);
+				}
+				return acc;
+			}, [])
+		: [];
+	const missingOrder = availableActionStates.filter(
+		(item) => !configuredOrder.includes(item) && !hiddenToolSet.has(item),
+	);
+	return [...configuredOrder, ...missingOrder];
+};

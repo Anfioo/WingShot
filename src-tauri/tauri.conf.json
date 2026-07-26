@@ -2,7 +2,7 @@
 	"$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
 	"productName": "Wing Shot",
 	"mainBinaryName": "wingshot",
-	"version": "0.9.0-beta",
+	"version": "0.9.0-beta.1",
 	"identifier": "com.anfioo.wingshot",
 	"build": {
 		"removeUnusedCommands": true,

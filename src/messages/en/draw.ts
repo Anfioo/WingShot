@@ -120,6 +120,7 @@ export const draw = {
 	"draw.switchColorFormat": "Switch Color Format",
 	"draw.extraTool.scanQrcode": "Scan QR Code",
 	"draw.extraTool.videoRecord": "Video Record",
+	"draw.extraTool.combo": "Video Record and QR Code Scan Combo Button",
 	"draw.extraTool.scanQrcode.error": "No valid QR code detected",
 	"draw.extraTool.videoRecord.multiMonitor":
 		"MacOS multi-monitor recording not supported",

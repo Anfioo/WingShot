@@ -1,8 +1,16 @@
 import type { ChatWorkflowConfig, ChatWorkflowFlow } from "@/utils/appStore";
 
+export type ChatImageAttachment = {
+	id: string;
+	name: string;
+	mimeType: string;
+	dataURL: string;
+};
+
 export type SendQueueMessage = {
 	title: string;
 	content: string;
+	imageAttachments?: ChatImageAttachment[];
 	flow_config?: ChatMessageFlowConfig;
 };
 
@@ -15,6 +23,7 @@ export type ChatMessage = {
 		  }
 		| string;
 	role: "user" | "assistant";
+	imageAttachments?: ChatImageAttachment[];
 	flow_config?: ChatMessageFlowConfig;
 };
 

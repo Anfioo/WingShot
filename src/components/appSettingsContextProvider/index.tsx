@@ -30,6 +30,10 @@ import {
 	AppSettingsPublisher,
 } from "@/contexts/appSettingsActionContext";
 import { usePluginServiceContext } from "@/contexts/pluginServiceContext";
+import {
+	migrateChatApiConfigToModelAdapter,
+	normalizeChatModelAdapter,
+} from "@/core/chatModels";
 import { releaseDrawPage } from "@/functions/screenshot";
 import { withStatePublisher } from "@/hooks/useStatePublisher";
 import { useStateSubscriber } from "@/hooks/useStateSubscriber";
@@ -50,6 +54,10 @@ import {
 	type HistoryValidDuration,
 	OcrDetectAfterAction,
 	type RunLogLevel,
+	TranslationApiType,
+	type TranslationServiceConfig,
+	type TranslationServiceInstance,
+	TranslationServiceType,
 	type TrayIconClickAction,
 	type TrayIconDefaultIcon,
 	type VideoMaxSize,
@@ -67,6 +75,7 @@ import type {
 	CommonKeyEventValue,
 } from "@/types/core/commonKeyEvent";
 import { DrawState } from "@/types/draw";
+import { TranslationType } from "@/types/servies/translation";
 import { ImageFormat } from "@/types/utils/file";
 import { getConfigDirPath } from "@/utils/environment";
 import { appError, appWarn, formatErrorDetails } from "@/utils/log";
@@ -74,6 +83,189 @@ import { appError, appWarn, formatErrorDetails } from "@/utils/log";
 const getFilePath = async (group: AppSettingsGroup) => {
 	const configDirPath = await getConfigDirPath();
 	return `${configDirPath}/${group}.json`;
+};
+
+const createTranslationServiceId = (type: TranslationServiceType) =>
+	`${type}@${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+
+const normalizeTranslationServiceConfig = (
+	config: unknown,
+): TranslationServiceConfig => {
+	if (!config || typeof config !== "object") {
+		return {};
+	}
+
+	const data = config as Record<string, unknown>;
+	return {
+		apiUri: typeof data.apiUri === "string" ? data.apiUri : undefined,
+		apiKey: typeof data.apiKey === "string" ? data.apiKey : undefined,
+		secretKey: typeof data.secretKey === "string" ? data.secretKey : undefined,
+		appId: typeof data.appId === "string" ? data.appId : undefined,
+		accessKeyId:
+			typeof data.accessKeyId === "string" ? data.accessKeyId : undefined,
+		accessKeySecret:
+			typeof data.accessKeySecret === "string"
+				? data.accessKeySecret
+				: undefined,
+		region: typeof data.region === "string" ? data.region : undefined,
+		domain: typeof data.domain === "string" ? data.domain : undefined,
+		deeplType:
+			data.deeplType === "free" ||
+			data.deeplType === "api" ||
+			data.deeplType === "deeplx"
+				? data.deeplType
+				: undefined,
+		deeplPreferQualityOptimized:
+			typeof data.deeplPreferQualityOptimized === "boolean"
+				? data.deeplPreferQualityOptimized
+				: undefined,
+		maxRequestsPerSecond:
+			typeof data.maxRequestsPerSecond === "number"
+				? data.maxRequestsPerSecond
+				: undefined,
+		maxParagraphCount:
+			typeof data.maxParagraphCount === "number"
+				? data.maxParagraphCount
+				: undefined,
+	};
+};
+
+const isTranslationServiceType = (
+	type: unknown,
+): type is TranslationServiceType =>
+	typeof type === "string" &&
+	(Object.values(TranslationServiceType) as string[]).includes(type);
+
+const normalizeTranslationServices = (
+	newSettings:
+		| Partial<AppSettingsData[AppSettingsGroup.FunctionTranslation]>
+		| undefined,
+	prevSettings:
+		| AppSettingsData[AppSettingsGroup.FunctionTranslation]
+		| undefined,
+): TranslationServiceInstance[] => {
+	const fallbackServices =
+		defaultAppSettingsData[AppSettingsGroup.FunctionTranslation]
+			.translationServices;
+	const sourceServices = Array.isArray(newSettings?.translationServices)
+		? newSettings.translationServices
+		: prevSettings?.translationServices;
+
+	const services = Array.isArray(sourceServices)
+		? sourceServices
+				.filter((item) => isTranslationServiceType(item?.type))
+				.map((item) => ({
+					id:
+						typeof item.id === "string" && item.id.trim()
+							? item.id
+							: createTranslationServiceId(item.type),
+					type: item.type,
+					enabled: typeof item.enabled === "boolean" ? item.enabled : true,
+					name: typeof item.name === "string" ? item.name : undefined,
+					config: normalizeTranslationServiceConfig(item.config),
+				}))
+		: [];
+
+	if (services.length > 0) {
+		return services;
+	}
+
+	const migratedServices = [...fallbackServices];
+	const legacyTranslationType =
+		newSettings?.translationType ?? prevSettings?.translationType;
+	const promoteService = (type: TranslationServiceType) => {
+		const index = migratedServices.findIndex((item) => item.type === type);
+		if (index <= 0) {
+			return;
+		}
+		const [service] = migratedServices.splice(index, 1);
+		migratedServices.unshift({ ...service, enabled: true });
+	};
+
+	if (legacyTranslationType === TranslationType.Google) {
+		promoteService(TranslationServiceType.Google);
+	} else if (legacyTranslationType === TranslationType.Microsoft) {
+		promoteService(TranslationServiceType.Bing);
+	} else if (legacyTranslationType === TranslationType.Youdao) {
+		migratedServices.push({
+			id: TranslationServiceType.Youdao,
+			type: TranslationServiceType.Youdao,
+			enabled: true,
+		});
+	}
+
+	const legacyApiConfigList = Array.isArray(
+		newSettings?.translationApiConfigList,
+	)
+		? newSettings.translationApiConfigList
+		: (prevSettings?.translationApiConfigList ?? []);
+
+	for (const item of legacyApiConfigList) {
+		if (item.api_type === TranslationApiType.DeepL) {
+			migratedServices.push({
+				id: createTranslationServiceId(TranslationServiceType.DeepL),
+				type: TranslationServiceType.DeepL,
+				enabled: true,
+				config: {
+					deeplType: "api",
+					apiUri: item.api_uri,
+					apiKey: item.api_key,
+					deeplPreferQualityOptimized:
+						item.deepl_prefer_quality_optimized ?? false,
+				},
+			});
+		} else if (item.api_type === TranslationApiType.Custom) {
+			migratedServices.push({
+				id: createTranslationServiceId(TranslationServiceType.Custom),
+				type: TranslationServiceType.Custom,
+				enabled: true,
+				config: {
+					apiUri: item.api_uri,
+					apiKey: item.api_key,
+					maxRequestsPerSecond: item.max_requests_per_second,
+					maxParagraphCount: item.max_paragraph_count,
+				},
+			});
+		}
+	}
+
+	return migratedServices;
+};
+
+const normalizeChatModelAdapters = (
+	newSettings:
+		| Partial<AppSettingsData[AppSettingsGroup.FunctionChat]>
+		| undefined,
+	prevSettings: AppSettingsData[AppSettingsGroup.FunctionChat] | undefined,
+) => {
+	if (Array.isArray(newSettings?.modelAdapters)) {
+		return newSettings.modelAdapters.map((item) =>
+			normalizeChatModelAdapter(item),
+		);
+	}
+
+	const legacyListFromNewSettings = Array.isArray(
+		newSettings?.chatApiConfigList,
+	)
+		? newSettings.chatApiConfigList
+		: undefined;
+	if (legacyListFromNewSettings && legacyListFromNewSettings.length > 0) {
+		return legacyListFromNewSettings.map((item) =>
+			migrateChatApiConfigToModelAdapter(item),
+		);
+	}
+
+	if (Array.isArray(prevSettings?.modelAdapters)) {
+		return prevSettings.modelAdapters.map((item) =>
+			normalizeChatModelAdapter(item),
+		);
+	}
+
+	return (
+		legacyListFromNewSettings ??
+		prevSettings?.chatApiConfigList ??
+		[]
+	).map((item) => migrateChatApiConfigToModelAdapter(item));
 };
 
 const AppSettingsContextProviderCore: React.FC<{
@@ -514,6 +706,11 @@ const AppSettingsContextProviderCore: React.FC<{
 							? newSettings.toolbarHiddenToolList
 							: (prevSettings?.toolbarHiddenToolList ??
 								defaultAppSettingsData[group].toolbarHiddenToolList),
+					toolbarActionOrder:
+						typeof newSettings?.toolbarActionOrder === "object"
+							? newSettings.toolbarActionOrder
+							: (prevSettings?.toolbarActionOrder ??
+								defaultAppSettingsData[group].toolbarActionOrder),
 				};
 			} else if (group === AppSettingsGroup.FunctionDraw) {
 				newSettings = newSettings as AppSettingsData[typeof group];
@@ -854,6 +1051,7 @@ const AppSettingsContextProviderCore: React.FC<{
 							}))
 						: (prevSettings?.chatApiConfigList ??
 							defaultAppSettingsData[group].chatApiConfigList),
+					modelAdapters: normalizeChatModelAdapters(newSettings, prevSettings),
 					autoCreateNewSessionOnCloseWindow:
 						typeof newSettings?.autoCreateNewSessionOnCloseWindow === "boolean"
 							? newSettings.autoCreateNewSessionOnCloseWindow
@@ -943,6 +1141,10 @@ const AppSettingsContextProviderCore: React.FC<{
 							? newSettings.translationType
 							: (prevSettings?.translationType ??
 								defaultAppSettingsData[group].translationType),
+					translationServices: normalizeTranslationServices(
+						newSettings,
+						prevSettings,
+					),
 				};
 			} else if (group === AppSettingsGroup.FunctionScreenshot) {
 				newSettings = newSettings as AppSettingsData[typeof group];

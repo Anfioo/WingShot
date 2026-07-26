@@ -69,6 +69,9 @@ export const settings = {
 	"settings.showOcrTranslate": "启用文本识别翻译工具",
 	"settings.customToolbarToolList": "隐藏工具栏工具",
 	"settings.customToolbarToolList.tip": "工具栏隐藏后，仍可通过热键使用",
+	"settings.toolbarActionOrder": "操作按钮排序",
+	"settings.toolbarActionOrder.save": "保存顺序",
+	"settings.toolbarActionOrder.dragHandle": "拖动排序",
 	"settings.enableQrcodeScan": "启用二维码识别",
 	"settings.findChildrenElements": "查找窗口子元素",
 	"settings.performanceMode": "性能优先",
@@ -122,6 +125,83 @@ export const settings = {
 	"settings.hotKeySettings.chat": "AI 对话",
 	"settings.hotKeySettings.keyEventTooltip": "{message}（{key}）",
 	"settings.chatSettings": "AI 对话",
+	"settings.modelSettings": "模型设置",
+	"settings.modelSettings.modelAdapter.edit": "编辑模型配置",
+	"settings.modelSettings.modelAdapter.add": "新增模型配置",
+	"settings.modelSettings.modelAdapter.validationFailed":
+		"表单验证失败，请检查红色标记的字段",
+	"settings.modelSettings.modelAdapter.tab.connection": "连接",
+	"settings.modelSettings.modelAdapter.tab.model": "模型",
+	"settings.modelSettings.modelAdapter.tab.capabilities": "能力",
+	"settings.modelSettings.modelAdapter.tab.advanced": "高级",
+	"settings.modelSettings.modelAdapter.baseURL": "接口地址",
+	"settings.modelSettings.modelAdapter.baseURL.required": "请输入接口地址",
+	"settings.modelSettings.modelAdapter.apiKey": "访问密钥",
+	"settings.modelSettings.modelAdapter.customHeaders.enable":
+		"启用自定义请求头",
+	"settings.modelSettings.modelAdapter.customHeaders.enable.tip":
+		"启用后会解析下方 JSON，并合并到实际请求 headers。",
+	"settings.modelSettings.modelAdapter.customHeaders.label":
+		"自定义请求头 JSON",
+	"settings.modelSettings.modelAdapter.customHeaders.tip":
+		"必须是 JSON 对象，格式错误时会在请求时明确报错。",
+	"settings.modelSettings.modelAdapter.displayName": "显示名称",
+	"settings.modelSettings.modelAdapter.displayName.required": "请输入显示名称",
+	"settings.modelSettings.modelAdapter.displayName.placeholder":
+		"例如：OpenAI - GPT-4.1",
+	"settings.modelSettings.modelAdapter.modelList": "模型列表",
+	"settings.modelSettings.modelAdapter.modelList.placeholder":
+		"选择后自动填充模型标识",
+	"settings.modelSettings.modelAdapter.fetchFromAPI": "从当前 API 获取",
+	"settings.modelSettings.modelAdapter.modelID": "模型标识",
+	"settings.modelSettings.modelAdapter.modelID.required": "请输入模型标识",
+	"settings.modelSettings.modelAdapter.modelID.placeholder":
+		"例如：qwen-flash / gpt-4.1 / claude-sonnet-4",
+	"settings.modelSettings.modelAdapter.contextWindow": "上下文窗口",
+	"settings.modelSettings.modelAdapter.endpoint": "接口端点",
+	"settings.modelSettings.modelAdapter.supportThinking": "支持思考/推理",
+	"settings.modelSettings.modelAdapter.supportThinking.tip":
+		"用于 AI 对话页的 thinking/reasoning 能力。",
+	"settings.modelSettings.modelAdapter.supportVision": "OCR 视觉模型",
+	"settings.modelSettings.modelAdapter.supportVision.tip":
+		"用于截图/OCR 图片转 HTML、Markdown。",
+	"settings.modelSettings.modelAdapter.supportImageInput": "对话图片输入",
+	"settings.modelSettings.modelAdapter.supportImageInput.tip":
+		"用于 AI 对话页上传图片作为用户输入。",
+	"settings.modelSettings.modelAdapter.reasoningEffort": "推理强度",
+	"settings.modelSettings.modelAdapter.thinkingEffort": "思考强度",
+	"settings.modelSettings.modelAdapter.maxTokens": "最大输出 Token",
+	"settings.modelSettings.modelAdapter.openAIExtraParams.enable":
+		"启用 OpenAI 额外参数",
+	"settings.modelSettings.modelAdapter.openAIExtraParams.enable.tip":
+		"仅 OpenAI-compatible 请求生效。",
+	"settings.modelSettings.modelAdapter.openAIExtraParams.label":
+		"OpenAI 额外参数 JSON",
+	"settings.modelSettings.modelAdapter.openAIExtraParams.tip":
+		"启用后会合并到 OpenAI 请求 body，用户显式填写的字段可覆盖默认值。",
+	"settings.modelSettings.modelAdapter.anthropicExtraParams.enable":
+		"启用 Anthropic 额外参数",
+	"settings.modelSettings.modelAdapter.anthropicExtraParams.enable.tip":
+		"仅 Anthropic 请求生效。",
+	"settings.modelSettings.modelAdapter.anthropicExtraParams.label":
+		"Anthropic 额外参数 JSON",
+	"settings.modelSettings.modelAdapter.anthropicExtraParams.tip":
+		"启用后会合并到 Anthropic 请求 body，格式错误时会明确报错。",
+	"settings.modelSettings.modelAdapter.tooltipData": "备注",
+	"settings.modelSettings.modelAdapter.resetConfirm.title": "确认重置",
+	"settings.modelSettings.modelAdapter.resetConfirm.description":
+		"将清空当前表单所有已填写的内容，确定要重置吗？",
+	"settings.modelSettings.modelAdapter.resetConfirm.okText": "确定重置",
+	"settings.modelSettings.modelAdapter.resetConfirm.cancelText": "取消",
+	"settings.modelSettings.modelAdapter.resetForm": "重置当前表单",
+	"settings.modelSettings.modelAdapter.test": "测试",
+	"settings.modelSettings.modelAdapter.testing": "测试中...",
+	"settings.modelSettings.modelAdapter.editButton": "编辑",
+	"settings.modelSettings.modelAdapter.duplicate": "复制",
+	"settings.modelSettings.modelAdapter.delete": "删除",
+	"settings.modelSettings.modelAdapter.testAll": "测试全部",
+	"settings.modelSettings.modelAdapter.stopTest": "停止测试",
+	"settings.modelSettings.modelAdapter.addButton": "新增模型",
 	"settings.chatSettings.maxTokens": "最大 Token 数",
 	"settings.chatSettings.maxTokens.tip":
 		"限制一次请求中模型生成 completion 的最大 token 数",
@@ -159,7 +239,7 @@ export const settings = {
 		"关闭窗口时自动创建新会话",
 	"settings.functionSettings.chatSettings.apiConfig": "LLM 配置",
 	"settings.functionSettings.chatSettings.apiConfig.tip":
-		"仅支持兼容 OpenAI SDK 的 API 配置，新增配置后将自动支持 AI 翻译",
+		"仅支持兼容 OpenAI SDK 的 API 配置",
 	"settings.functionSettings.chatSettings.apiConfig.add": "添加 LLM 配置",
 	"settings.functionSettings.chatSettings.apiConfig.apiKey": "API Key",
 	"settings.functionSettings.chatSettings.apiConfig.apiKey.tip":
@@ -493,6 +573,54 @@ export const settings = {
 		"每次请求最大段落数",
 	"settings.functionSettings.translationSettings.apiConfig.maxParagraphCount.tip":
 		"每次发送给翻译服务的段落数量，如果段落数量过多，可能会导致接口的响应变慢",
+	"settings.translationSettings.services": "翻译服务",
+	"settings.translationSettings.addBuiltinService": "添加内置服务",
+	"settings.translationSettings.service.deepl": "DeepL",
+	"settings.translationSettings.service.bing": "必应翻译",
+	"settings.translationSettings.service.lingva": "Lingva",
+	"settings.translationSettings.service.yandex": "Yandex",
+	"settings.translationSettings.service.google": "谷歌翻译",
+	"settings.translationSettings.service.ecdict": "ECDict(在线)",
+	"settings.translationSettings.service.alibaba": "阿里翻译",
+	"settings.translationSettings.service.baidu": "百度翻译",
+	"settings.translationSettings.service.baiduField": "百度领域翻译",
+	"settings.translationSettings.service.bingDict": "必应词典",
+	"settings.translationSettings.service.caiyun": "彩云小译",
+	"settings.translationSettings.service.cambridgeDict": "剑桥词典",
+	"settings.translationSettings.service.tencent": "腾讯翻译",
+	"settings.translationSettings.service.volcengine": "火山翻译",
+	"settings.translationSettings.service.niutrans": "小牛翻译",
+	"settings.translationSettings.service.youdao": "有道翻译",
+	"settings.translationSettings.service.custom": "自定义 API",
+	"settings.translationSettings.serviceConfig.name": "显示名称",
+	"settings.translationSettings.serviceConfig.required": "请填写必填项",
+	"settings.translationSettings.serviceConfig.apiUri": "API 地址",
+	"settings.translationSettings.serviceConfig.apiKey": "API Key / Token",
+	"settings.translationSettings.serviceConfig.secretKey": "Secret Key",
+	"settings.translationSettings.serviceConfig.appId": "App ID",
+	"settings.translationSettings.serviceConfig.accessKeyId": "AccessKey ID",
+	"settings.translationSettings.serviceConfig.accessKeySecret":
+		"AccessKey Secret",
+	"settings.translationSettings.serviceConfig.region": "区域",
+	"settings.translationSettings.serviceConfig.domain": "领域",
+	"settings.translationSettings.serviceConfig.deeplType": "DeepL 类型",
+	"settings.translationSettings.serviceConfig.deeplType.free": "免费接口",
+	"settings.translationSettings.serviceConfig.deeplType.api": "官方 API",
+	"settings.translationSettings.serviceConfig.deeplType.deeplx": "DeepLX",
+	"settings.translationSettings.serviceConfig.deeplApiUriTip":
+		"官方 API 可留空；DeepLX 请填写完整服务地址",
+	"settings.translationSettings.serviceConfig.lingvaApiUriTip":
+		"可留空，默认使用 https://lingva.pot-app.com/api/v1",
+	"settings.translationSettings.serviceConfig.ecdictApiUriTip":
+		"可留空，默认使用 https://pot-app.com/api/dict",
+	"settings.translationSettings.serviceConfig.deeplPreferQualityOptimized":
+		"优先高质量模型",
+	"settings.translationSettings.serviceConfig.maxRequestsPerSecond":
+		"每秒最大请求数",
+	"settings.translationSettings.serviceConfig.maxParagraphCount":
+		"每次请求最大段落数",
+	"settings.translationSettings.serviceConfig.guide": "配置指南",
+	"settings.translationSettings.serviceConfig.openGuide": "打开配置指南",
 	"settings.functionSettings.trayIconSettings": "托盘",
 	"settings.functionSettings.trayIconSettings.iconClickAction": "左键点击后",
 	"settings.functionSettings.trayIconSettings.iconClickAction.screenshot":
@@ -619,9 +747,10 @@ export const settings = {
 	"settings.systemSettings.coreSettings.hotLoadPageCount.tip":
 		"通过热加载页面，实现贴图、视频录制、全屏画布等功能的快速加载，但同时提高了内存的占用",
 	"settings.functionSettings.ocrSettings": "文本识别",
-	"settings.functionSettings.ocrSettings.htmlVisionModel": "视觉理解模型",
+	"settings.functionSettings.ocrSettings.htmlVisionModel":
+		"图片转 HTML / Markdown 视觉模型",
 	"settings.functionSettings.ocrSettings.htmlVisionModel.tip":
-		"将图片转为 HTML 的视觉理解模型",
+		"用于截图/OCR 图片转 HTML、Markdown 的视觉模型",
 	"settings.functionSettings.ocrSettings.customOcrModelConfig":
 		"文本识别模型配置",
 	"settings.functionSettings.ocrSettings.customOcrModelConfig.tip":
@@ -640,7 +769,7 @@ export const settings = {
 		"方向(cls)",
 	"settings.functionSettings.ocrSettings.htmlVisionModel.default": "默认",
 	"settings.functionSettings.ocrSettings.htmlVisionModel.default.tip":
-		"默认使用首个支持视觉理解的模型",
+		"默认使用首个开启 OCR 视觉模型能力的配置",
 	"settings.functionSettings.ocrSettings.htmlVisionModelSystemPrompt":
 		"图片转为 HTML 的 System 提示词",
 	"settings.functionSettings.ocrSettings.markdownVisionModelSystemPrompt":

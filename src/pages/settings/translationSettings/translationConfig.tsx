@@ -4,7 +4,6 @@ import { FormattedMessage } from "react-intl";
 import {
 	useLanguageOptions,
 	useTranslationDomainOptions,
-	useTranslationTypeOptions,
 } from "@/components/translator";
 import { useTranslationRequest } from "@/core/translations";
 
@@ -18,15 +17,9 @@ export const TranslationConfig = () => {
 		updateTargetLanguage,
 		translationDomain,
 		updateTranslationDomain,
-		translationType,
-		updateTranslationType,
-		supportedTranslationTypes,
 	} = useTranslationRequest();
 	const { sourceLanguageOptions, targetLanguageOptions } = useLanguageOptions();
 	const translationDomainOptions = useTranslationDomainOptions();
-	const { translationTypeOptions } = useTranslationTypeOptions(
-		supportedTranslationTypes,
-	);
 
 	return (
 		<Row gutter={token.marginLG}>
@@ -58,25 +51,6 @@ export const TranslationConfig = () => {
 						value={targetLanguage}
 						onChange={(value) => updateTargetLanguage(value)}
 						options={targetLanguageOptions}
-						styles={{
-							popup: {
-								root: {
-									minWidth: 200,
-								},
-							},
-						}}
-					/>
-				</ProForm.Item>
-			</Col>
-			<Col span={12}>
-				<ProForm.Item
-					layout="vertical"
-					label={<FormattedMessage id="tools.translation.type" />}
-				>
-					<Select
-						value={translationType}
-						onChange={(value) => updateTranslationType(value)}
-						options={translationTypeOptions}
 						styles={{
 							popup: {
 								root: {

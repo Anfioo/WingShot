@@ -17,4 +17,11 @@ export const about = {
 	"about.contact.email": "Email: anfioo@wingshot.anfioo.com",
 	"about.contact.qqGroup": "QQ Group: ",
 	"about.newVersion": "New Version",
+	"about.update.checking": "Checking for updates...",
+	"about.update.upToDate": "You're using the latest version.",
+	"about.update.checkFailed":
+		"Failed to check for updates. Please try again later.",
+	"about.update.openRelease": "Open GitHub Release",
+	"about.update.githubRelease.description":
+		"Wing Shot {latestVersion} is available. Current version: {currentVersion}. Open GitHub Release to download the matching version?",
 };

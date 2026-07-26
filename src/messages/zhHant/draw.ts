@@ -115,6 +115,7 @@ export const draw = {
 	"draw.switchColorFormat": "切換色彩格式",
 	"draw.extraTool.scanQrcode": "掃描 QR Code",
 	"draw.extraTool.videoRecord": "錄影",
+	"draw.extraTool.combo": "錄影與掃描 QR Code 組合按鈕",
 	"draw.extraTool.scanQrcode.error": "未辨識到有效 QR Code",
 	"draw.extraTool.videoRecord.multiMonitor": "MacOS 暫不支援跨螢幕錄製",
 	"draw.scrollScreenshot.tip": "點擊截圖區域進行自動捲動",

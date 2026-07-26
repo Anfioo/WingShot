@@ -72,6 +72,9 @@ export const settings = {
 	"settings.customToolbarToolList": "Hide Toolbar Tools",
 	"settings.customToolbarToolList.tip":
 		"Tools can still be used via hotkeys when hidden",
+	"settings.toolbarActionOrder": "Action Button Order",
+	"settings.toolbarActionOrder.save": "Save Order",
+	"settings.toolbarActionOrder.dragHandle": "Drag to reorder",
 	"settings.enableQrcodeScan": "Enable QR Code Scan",
 	"settings.findChildrenElements": "Find Window Child Elements",
 	"settings.performanceMode": "Performance Mode",
@@ -130,6 +133,87 @@ export const settings = {
 	"settings.hotKeySettings.chat": "AI Chat Hotkey",
 	"settings.hotKeySettings.keyEventTooltip": "{message} ({key})",
 	"settings.chatSettings": "AI Chat Settings",
+	"settings.modelSettings": "Model Settings",
+	"settings.modelSettings.modelAdapter.edit": "Edit Model Configuration",
+	"settings.modelSettings.modelAdapter.add": "New Model Configuration",
+	"settings.modelSettings.modelAdapter.validationFailed":
+		"Form validation failed. Please check the highlighted fields.",
+	"settings.modelSettings.modelAdapter.tab.connection": "Connection",
+	"settings.modelSettings.modelAdapter.tab.model": "Model",
+	"settings.modelSettings.modelAdapter.tab.capabilities": "Capabilities",
+	"settings.modelSettings.modelAdapter.tab.advanced": "Advanced",
+	"settings.modelSettings.modelAdapter.baseURL": "API Base URL",
+	"settings.modelSettings.modelAdapter.baseURL.required":
+		"Please enter API Base URL",
+	"settings.modelSettings.modelAdapter.apiKey": "API Key",
+	"settings.modelSettings.modelAdapter.customHeaders.enable":
+		"Enable Custom Headers",
+	"settings.modelSettings.modelAdapter.customHeaders.enable.tip":
+		"When enabled, parses the JSON below and merges it into request headers.",
+	"settings.modelSettings.modelAdapter.customHeaders.label":
+		"Custom Headers JSON",
+	"settings.modelSettings.modelAdapter.customHeaders.tip":
+		"Must be a JSON object. Format errors will be reported on request.",
+	"settings.modelSettings.modelAdapter.displayName": "Display Name",
+	"settings.modelSettings.modelAdapter.displayName.required":
+		"Please enter Display Name",
+	"settings.modelSettings.modelAdapter.displayName.placeholder":
+		"e.g. OpenAI - GPT-4.1",
+	"settings.modelSettings.modelAdapter.modelList": "Model List",
+	"settings.modelSettings.modelAdapter.modelList.placeholder":
+		"Select to auto-fill model ID",
+	"settings.modelSettings.modelAdapter.fetchFromAPI": "Fetch from current API",
+	"settings.modelSettings.modelAdapter.modelID": "Model ID",
+	"settings.modelSettings.modelAdapter.modelID.required":
+		"Please enter Model ID",
+	"settings.modelSettings.modelAdapter.modelID.placeholder":
+		"e.g. qwen-flash / gpt-4.1 / claude-sonnet-4",
+	"settings.modelSettings.modelAdapter.contextWindow": "Context Window",
+	"settings.modelSettings.modelAdapter.endpoint": "API Endpoint",
+	"settings.modelSettings.modelAdapter.supportThinking":
+		"Support Thinking / Reasoning",
+	"settings.modelSettings.modelAdapter.supportThinking.tip":
+		"Enables thinking / reasoning capabilities in AI Chat.",
+	"settings.modelSettings.modelAdapter.supportVision": "OCR Vision Model",
+	"settings.modelSettings.modelAdapter.supportVision.tip":
+		"For converting screenshots / OCR images to HTML and Markdown.",
+	"settings.modelSettings.modelAdapter.supportImageInput": "Chat Image Input",
+	"settings.modelSettings.modelAdapter.supportImageInput.tip":
+		"Allows uploading images as user input in AI Chat.",
+	"settings.modelSettings.modelAdapter.reasoningEffort": "Reasoning Effort",
+	"settings.modelSettings.modelAdapter.thinkingEffort": "Thinking Effort",
+	"settings.modelSettings.modelAdapter.maxTokens": "Max Output Tokens",
+	"settings.modelSettings.modelAdapter.openAIExtraParams.enable":
+		"Enable OpenAI Extra Params",
+	"settings.modelSettings.modelAdapter.openAIExtraParams.enable.tip":
+		"Only applies to OpenAI-compatible requests.",
+	"settings.modelSettings.modelAdapter.openAIExtraParams.label":
+		"OpenAI Extra Params JSON",
+	"settings.modelSettings.modelAdapter.openAIExtraParams.tip":
+		"When enabled, merges into the OpenAI request body. Explicitly set fields override defaults.",
+	"settings.modelSettings.modelAdapter.anthropicExtraParams.enable":
+		"Enable Anthropic Extra Params",
+	"settings.modelSettings.modelAdapter.anthropicExtraParams.enable.tip":
+		"Only applies to Anthropic requests.",
+	"settings.modelSettings.modelAdapter.anthropicExtraParams.label":
+		"Anthropic Extra Params JSON",
+	"settings.modelSettings.modelAdapter.anthropicExtraParams.tip":
+		"When enabled, merges into the Anthropic request body. Format errors will be reported.",
+	"settings.modelSettings.modelAdapter.tooltipData": "Notes",
+	"settings.modelSettings.modelAdapter.resetConfirm.title": "Confirm Reset",
+	"settings.modelSettings.modelAdapter.resetConfirm.description":
+		"This will clear all fields in the form. Are you sure you want to reset?",
+	"settings.modelSettings.modelAdapter.resetConfirm.okText": "Reset",
+	"settings.modelSettings.modelAdapter.resetConfirm.cancelText": "Cancel",
+	"settings.modelSettings.modelAdapter.resetForm": "Reset Form",
+	"settings.modelSettings.modelAdapter.test": "Test",
+	"settings.modelSettings.modelAdapter.testing": "Testing...",
+	"settings.modelSettings.modelAdapter.editButton": "Edit",
+	"settings.modelSettings.modelAdapter.duplicate": "Duplicate",
+	"settings.modelSettings.modelAdapter.delete": "Delete",
+	"settings.modelSettings.modelAdapter.testAll": "Test All",
+	"settings.modelSettings.modelAdapter.stopTest": "Stop Test",
+	"settings.modelSettings.modelAdapter.addButton": "New Model",
 	"settings.chatSettings.maxTokens": "Max Tokens",
 	"settings.chatSettings.maxTokens.tip":
 		"Maximum number of tokens the model will generate in a response",
@@ -168,7 +252,7 @@ export const settings = {
 		"Auto-create new session on window close",
 	"settings.functionSettings.chatSettings.apiConfig": "LLM Configuration",
 	"settings.functionSettings.chatSettings.apiConfig.tip":
-		"Only supports OpenAI SDK compatible API configurations. Adding a new config will automatically enable AI translation",
+		"Only supports OpenAI SDK compatible API configurations",
 	"settings.functionSettings.chatSettings.apiConfig.add":
 		"Add LLM Configuration",
 	"settings.functionSettings.chatSettings.apiConfig.apiKey": "API Key",
@@ -520,6 +604,55 @@ export const settings = {
 		"Max Paragraphs Per Request",
 	"settings.functionSettings.translationSettings.apiConfig.maxParagraphCount.tip":
 		"Number of paragraphs sent to the translation service per request, too many paragraphs may slow down the interface response",
+	"settings.translationSettings.services": "Translation Services",
+	"settings.translationSettings.addBuiltinService": "Add Built-in Service",
+	"settings.translationSettings.service.deepl": "DeepL",
+	"settings.translationSettings.service.bing": "Bing Translator",
+	"settings.translationSettings.service.lingva": "Lingva",
+	"settings.translationSettings.service.yandex": "Yandex",
+	"settings.translationSettings.service.google": "Google Translate",
+	"settings.translationSettings.service.ecdict": "ECDict (Online)",
+	"settings.translationSettings.service.alibaba": "Alibaba Translate",
+	"settings.translationSettings.service.baidu": "Baidu Translate",
+	"settings.translationSettings.service.baiduField": "Baidu Field Translate",
+	"settings.translationSettings.service.bingDict": "Bing Dictionary",
+	"settings.translationSettings.service.caiyun": "Caiyun Translate",
+	"settings.translationSettings.service.cambridgeDict": "Cambridge Dictionary",
+	"settings.translationSettings.service.tencent": "Tencent Translate",
+	"settings.translationSettings.service.volcengine": "Volcengine Translate",
+	"settings.translationSettings.service.niutrans": "NiuTrans",
+	"settings.translationSettings.service.youdao": "Youdao Translate",
+	"settings.translationSettings.service.custom": "Custom API",
+	"settings.translationSettings.serviceConfig.name": "Display Name",
+	"settings.translationSettings.serviceConfig.required":
+		"Please fill in required fields",
+	"settings.translationSettings.serviceConfig.apiUri": "API URI",
+	"settings.translationSettings.serviceConfig.apiKey": "API Key / Token",
+	"settings.translationSettings.serviceConfig.secretKey": "Secret Key",
+	"settings.translationSettings.serviceConfig.appId": "App ID",
+	"settings.translationSettings.serviceConfig.accessKeyId": "AccessKey ID",
+	"settings.translationSettings.serviceConfig.accessKeySecret":
+		"AccessKey Secret",
+	"settings.translationSettings.serviceConfig.region": "Region",
+	"settings.translationSettings.serviceConfig.domain": "Domain",
+	"settings.translationSettings.serviceConfig.deeplType": "DeepL Type",
+	"settings.translationSettings.serviceConfig.deeplType.free": "Free Endpoint",
+	"settings.translationSettings.serviceConfig.deeplType.api": "Official API",
+	"settings.translationSettings.serviceConfig.deeplType.deeplx": "DeepLX",
+	"settings.translationSettings.serviceConfig.deeplApiUriTip":
+		"Official API can be left empty. For DeepLX, enter the full service URL",
+	"settings.translationSettings.serviceConfig.lingvaApiUriTip":
+		"Leave empty to use https://lingva.pot-app.com/api/v1",
+	"settings.translationSettings.serviceConfig.ecdictApiUriTip":
+		"Leave empty to use https://pot-app.com/api/dict",
+	"settings.translationSettings.serviceConfig.deeplPreferQualityOptimized":
+		"Prefer high quality model",
+	"settings.translationSettings.serviceConfig.maxRequestsPerSecond":
+		"Max requests per second",
+	"settings.translationSettings.serviceConfig.maxParagraphCount":
+		"Max paragraphs per request",
+	"settings.translationSettings.serviceConfig.guide": "Configuration Guide",
+	"settings.translationSettings.serviceConfig.openGuide": "Open Guide",
 	"settings.functionSettings.trayIconSettings": "Tray Icon",
 	"settings.functionSettings.trayIconSettings.iconClickAction":
 		"Left Click Action",
@@ -652,9 +785,10 @@ export const settings = {
 	"settings.systemSettings.coreSettings.hotLoadPageCount.tip":
 		"Hot load pages for fast loading of pinned clipboard content to screen, video recording, fullscreen canvas, etc., but also increases memory usage",
 	"settings.functionSettings.ocrSettings": "OCR Settings",
-	"settings.functionSettings.ocrSettings.htmlVisionModel": "Vision Model",
+	"settings.functionSettings.ocrSettings.htmlVisionModel":
+		"Image to HTML/Markdown Vision Model",
 	"settings.functionSettings.ocrSettings.htmlVisionModel.tip":
-		"Vision model for converting images to HTML",
+		"Vision model used for converting screenshots/OCR images to HTML or Markdown",
 	"settings.functionSettings.ocrSettings.customOcrModelConfig":
 		"OCR Model Configuration",
 	"settings.functionSettings.ocrSettings.customOcrModelConfig.tip":
@@ -673,7 +807,7 @@ export const settings = {
 		"Orientation(cls)",
 	"settings.functionSettings.ocrSettings.htmlVisionModel.default": "Default",
 	"settings.functionSettings.ocrSettings.htmlVisionModel.default.tip":
-		"Use the first vision model by default",
+		"Use the first model with OCR vision enabled by default",
 	"settings.functionSettings.ocrSettings.htmlVisionModelSystemPrompt":
 		"System Prompt for HTML Vision",
 	"settings.functionSettings.ocrSettings.markdownVisionModelSystemPrompt":

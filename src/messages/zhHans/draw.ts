@@ -115,6 +115,7 @@ export const draw = {
 	"draw.switchColorFormat": "切换颜色格式",
 	"draw.extraTool.scanQrcode": "扫描二维码",
 	"draw.extraTool.videoRecord": "视频录制",
+	"draw.extraTool.combo": "屏幕录制和二维码扫描组合按钮",
 	"draw.extraTool.scanQrcode.error": "未识别到有效二维码",
 	"draw.extraTool.videoRecord.multiMonitor": "MacOS 暂不支持跨屏录制",
 	"draw.scrollScreenshot.tip": "单击截图区域进行自动滚动",

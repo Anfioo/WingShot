@@ -1,6 +1,11 @@
 "use client";
 
-import { CopyOutlined, DeleteOutlined, PlusOutlined } from "@ant-design/icons";
+import {
+	CopyOutlined,
+	DeleteOutlined,
+	PaperClipOutlined,
+	PlusOutlined,
+} from "@ant-design/icons";
 import {
 	Bubble,
 	type BubbleItemType,
@@ -58,7 +63,6 @@ import {
 import rehypeKatex from "rehype-katex";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
-import urlJoin from "url-join";
 import { EventListenerContext } from "@/components/eventListener";
 import { HotkeysMenu } from "@/components/hotkeysMenu";
 import { BotIcon, SidebarIcon, ThinkingIcon } from "@/components/icons";
@@ -68,17 +72,23 @@ import {
 	AppSettingsActionContext,
 	AppSettingsPublisher,
 } from "@/contexts/appSettingsActionContext";
+import {
+	buildChatModelRequestBody,
+	type ChatModelRequestMessage,
+	getChatModelEndpoint,
+	getChatModelRequestHeaders,
+	streamChatModelFetch,
+} from "@/core/chatModels";
 import { finishScreenshot } from "@/functions/screenshot";
 import { useAppSettingsLoad } from "@/hooks/useAppSettingsLoad";
 import { useStateRef } from "@/hooks/useStateRef";
 import { useStateSubscriber } from "@/hooks/useStateSubscriber";
 import { appFetch, getUrl, ServiceResponse } from "@/services/tools";
-import { type ChatModel, getChatModelsWithCache } from "@/services/tools/chat";
 import {
 	type AppSettingsData,
 	AppSettingsGroup,
 	AppSettingsTheme,
-	type ChatApiConfig,
+	type ChatModelAdapterConfig,
 } from "@/types/appSettings";
 import {
 	CommonKeyEventKey,
@@ -97,6 +107,7 @@ import { ModelSelectLabel } from "./components/modelSelectLabel";
 import { SendQueueMessageList } from "./components/sendQueueMessageList";
 import { WorkflowList } from "./components/workflowList";
 import type {
+	ChatImageAttachment,
 	ChatMessage,
 	ChatMessageFlowConfig,
 	SendQueueMessage,
@@ -134,6 +145,62 @@ const getMessageContent = (
 	}
 
 	return "";
+};
+
+const createImageAttachmentId = () =>
+	`chat_image@${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+
+const readImageAttachment = (file: File): Promise<ChatImageAttachment> =>
+	new Promise((resolve, reject) => {
+		const reader = new FileReader();
+		reader.onload = () => {
+			resolve({
+				id: createImageAttachmentId(),
+				name: file.name,
+				mimeType: file.type || "image/png",
+				dataURL: `${reader.result ?? ""}`,
+			});
+		};
+		reader.onerror = () => reject(reader.error);
+		reader.readAsDataURL(file);
+	});
+
+const buildUserMessageContent = (
+	text: string,
+	imageAttachments?: ChatImageAttachment[],
+): ChatModelRequestMessage["content"] => {
+	if (!imageAttachments?.length) return text;
+	return [
+		...(text.trim() ? [{ type: "text" as const, text }] : []),
+		...imageAttachments.map((item) => ({
+			type: "image_url" as const,
+			image_url: { url: item.dataURL },
+		})),
+	];
+};
+
+const renderUserMessageContent = (message: ChatMessage, content: string) => {
+	if (!message.imageAttachments?.length) return content;
+	return (
+		<div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+			{content ? <div>{content}</div> : null}
+			<div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+				{message.imageAttachments.map((item) => (
+					<img
+						key={item.id}
+						src={item.dataURL}
+						alt={item.name}
+						style={{
+							width: 88,
+							height: 88,
+							objectFit: "cover",
+							borderRadius: 8,
+						}}
+					/>
+				))}
+			</div>
+		</div>
+	);
 };
 
 const CodeCard: React.FC<{
@@ -247,8 +314,12 @@ const modelRequest = XRequest<ChatRequestBody, SSEOutput, ChatMessage>(
 	},
 );
 
-type ChatModelConfig = ChatModel & {
-	customConfig?: ChatApiConfig;
+type ChatModelConfig = {
+	model: string;
+	name: string;
+	thinking: boolean;
+	supportImageInput: boolean;
+	customConfig?: ChatModelAdapterConfig;
 };
 
 const fliterErrorMessages = (messages: ChatMessage[] | undefined) => {
@@ -309,7 +380,7 @@ const fliterErrorMessages = (messages: ChatMessage[] | undefined) => {
 
 type ChatRequestBody = {
 	message?: ChatMessage;
-	messages: { role: string; content: string }[];
+	messages: ChatModelRequestMessage[];
 	model: string;
 	temperature?: number;
 	max_tokens?: number;
@@ -336,7 +407,7 @@ class WingShotChatProvider extends AbstractChatProvider<
 	private enableThinkingRef: { current: boolean };
 	private getCustomModelRequest: (
 		model: string,
-	) => { request: ChatRequest; config: ChatApiConfig } | undefined;
+	) => { request: ChatRequest; config: ChatModelAdapterConfig } | undefined;
 	private intl: IntlShape;
 	private messageApi: { error: (content: React.ReactNode) => void };
 	private newestMessageRef: { current: ChatMessage | undefined };
@@ -348,7 +419,7 @@ class WingShotChatProvider extends AbstractChatProvider<
 		enableThinkingRef: { current: boolean };
 		getCustomModelRequest: (
 			model: string,
-		) => { request: ChatRequest; config: ChatApiConfig } | undefined;
+		) => { request: ChatRequest; config: ChatModelAdapterConfig } | undefined;
 		intl: IntlShape;
 		messageApi: { error: (content: React.ReactNode) => void };
 		newestMessageRef: { current: ChatMessage | undefined };
@@ -411,7 +482,10 @@ class WingShotChatProvider extends AbstractChatProvider<
 			newInputMessages = newInputMessages.slice(-1);
 		}
 
-		const messages = newInputMessages.map((item) => {
+		const customModelRequest = this.getCustomModelRequest(
+			this.selectedModelRef.current ?? "",
+		);
+		const messages = newInputMessages.map((item): ChatModelRequestMessage => {
 			let content = getMessageContent(item, true);
 
 			variables.forEach((value, key) => {
@@ -419,33 +493,39 @@ class WingShotChatProvider extends AbstractChatProvider<
 			});
 
 			return {
-				role: item.role ?? "",
-				content,
+				role: item.role ?? "user",
+				content:
+					item.role === "user"
+						? buildUserMessageContent(content, item.imageAttachments)
+						: content,
 			};
 		});
 
-		const customModelRequest = this.getCustomModelRequest(
-			this.selectedModelRef.current ?? "",
-		);
 		const settings = this.getAppSettings()[AppSettingsGroup.SystemChat];
+		const supportThinking = !!customModelRequest?.config?.supportThinking;
+		const enableThinking =
+			supportThinking && this.enableThinkingRef.current ? true : undefined;
+		const reasoningEffort = customModelRequest?.config?.reasoningEffort;
 
 		return {
 			messages,
-			model: customModelRequest
-				? (this.selectedModelRef.current ?? "")
-						.substring(CUSTOM_MODEL_PREFIX.length)
-						.replace("_thinking", "")
-				: (this.selectedModelRef.current ?? ""),
+			model:
+				customModelRequest?.config.modelID ??
+				this.selectedModelRef.current ??
+				"",
 			temperature: settings.temperature,
 			max_tokens: settings.maxTokens,
-			enable_thinking: this.enableThinkingRef.current ? true : undefined,
+			enable_thinking: enableThinking,
 			stream_options: {
 				include_usage: true,
 			},
-			thinking_budget: settings.thinkingBudgetTokens,
-			reasoning: customModelRequest?.config?.support_thinking
-				? { effort: "medium" }
+			thinking_budget: enableThinking
+				? settings.thinkingBudgetTokens
 				: undefined,
+			reasoning:
+				enableThinking && reasoningEffort
+					? { effort: reasoningEffort }
+					: undefined,
 			stream: true,
 		};
 	}
@@ -515,8 +595,10 @@ class WingShotChatProvider extends AbstractChatProvider<
 					} else if (message.delta.type === "thinking_delta") {
 						messageContent.reasoning_content += message.delta.thinking ?? "";
 					}
+				} else if (message.type === "response.output_text.delta") {
+					messageContent.content += message.delta ?? "";
 				} else {
-					// OpenAI 格式的响应
+					// OpenAI Chat Completions 格式的响应
 					const choiceDelta = message?.choices?.[0]?.delta;
 					if (choiceDelta) {
 						if (choiceDelta?.reasoning_content) {
@@ -566,10 +648,7 @@ const Chat = () => {
 	const chatHistoryStoreRef = useRef<ChatHistoryStore | undefined>(undefined);
 	const [sessionStoreLoading, setSessionStoreLoading] = useState(true);
 	const [customModelConfigList, setCustomModelConfigList] = useState<
-		ChatApiConfig[]
-	>([]);
-	const [onlineModelConfigList, setOnlineModelConfigList] = useState<
-		ChatModel[]
+		ChatModelAdapterConfig[]
 	>([]);
 	const [supportedModels, setSupportedModels, supportedModelsRef] = useStateRef<
 		ChatModelConfig[]
@@ -593,7 +672,7 @@ const Chat = () => {
 					settings[AppSettingsGroup.Cache].chatModelEnableThinking,
 				);
 				setCustomModelConfigList(
-					settings[AppSettingsGroup.FunctionChat].chatApiConfigList,
+					settings[AppSettingsGroup.FunctionChat].modelAdapters,
 				);
 			},
 			[setSelectedModel, setEnableThinking],
@@ -601,45 +680,19 @@ const Chat = () => {
 		true,
 	);
 
-	const [
-		supportedModelsLoading,
-		setSupportedModelsLoading,
-		supportedModelsLoadingRef,
-	] = useStateRef(false);
-	useEffect(() => {
-		if (supportedModelsLoadingRef.current) {
-			return;
-		}
-
-		setSupportedModelsLoading(true);
-		getChatModelsWithCache().then((res) => {
-			setSupportedModelsLoading(false);
-
-			setOnlineModelConfigList(res ?? []);
-		});
-	}, [setSupportedModelsLoading, supportedModelsLoadingRef]);
+	const [supportedModelsLoading] = useStateRef(false);
 
 	useEffect(() => {
-		setSupportedModels([
-			...customModelConfigList.map((item) => {
-				return {
-					model: `${CUSTOM_MODEL_PREFIX}${item.api_model}`,
-					name: item.model_name,
-					thinking: item.support_thinking,
-					customConfig: item,
-					support_vision: item.support_vision ?? false,
-				};
-			}),
-			...onlineModelConfigList.map((item) => {
-				return {
-					model: item.model,
-					name: item.name,
-					thinking: item.thinking,
-					support_vision: item.support_vision,
-				};
-			}),
-		]);
-	}, [onlineModelConfigList, setSupportedModels, customModelConfigList]);
+		setSupportedModels(
+			customModelConfigList.map((item) => ({
+				model: `${CUSTOM_MODEL_PREFIX}${item.id}`,
+				name: item.displayName || item.modelID,
+				thinking: item.supportThinking,
+				supportImageInput: item.supportImageInput,
+				customConfig: item,
+			})),
+		);
+	}, [setSupportedModels, customModelConfigList]);
 
 	const newestMessage = useRef<ChatMessage>(undefined);
 
@@ -655,7 +708,82 @@ const Chat = () => {
 	>(undefined);
 
 	const [inputValue, setInputValue] = useState("");
+	const [imageAttachments, setImageAttachments] = useState<
+		ChatImageAttachment[]
+	>([]);
 	const senderRef = useRef<SenderRef>(null);
+	const imageInputRef = useRef<HTMLInputElement>(null);
+	const currentSelectedModelConfig = useMemo(
+		() => supportedModels.find((item) => item.model === selectedModel),
+		[supportedModels, selectedModel],
+	);
+	const currentSelectedAdapter = currentSelectedModelConfig?.customConfig;
+	const supportImageInput = !!currentSelectedAdapter?.supportImageInput;
+	const supportThinking = !!currentSelectedAdapter?.supportThinking;
+
+	useEffect(() => {
+		if (supportedModels.length === 0) return;
+		if (
+			selectedModel &&
+			supportedModels.some((item) => item.model === selectedModel)
+		) {
+			return;
+		}
+		const fallbackModel = supportedModels[0]?.model;
+		if (!fallbackModel) return;
+		updateAppSettings(
+			AppSettingsGroup.Cache,
+			{ chatModel: fallbackModel },
+			true,
+			true,
+			false,
+			true,
+			false,
+		);
+	}, [selectedModel, supportedModels, updateAppSettings]);
+
+	useEffect(() => {
+		if (!supportImageInput) {
+			setImageAttachments([]);
+		}
+	}, [supportImageInput]);
+
+	const handleImageFiles = useCallback(
+		async (files: FileList | null) => {
+			if (!files?.length) return;
+			if (!supportImageInput) {
+				message.error("当前模型未开启对话图片输入能力");
+				return;
+			}
+
+			const imageFiles = Array.from(files).filter((file) =>
+				file.type.startsWith("image/"),
+			);
+			if (imageFiles.length !== files.length) {
+				message.error("只能上传图片文件");
+			}
+
+			const validFiles = imageFiles.filter(
+				(file) => file.size <= 8 * 1024 * 1024,
+			);
+			if (validFiles.length !== imageFiles.length) {
+				message.error("单张图片不能超过 8MB");
+			}
+
+			if (!validFiles.length) return;
+			const remainCount = Math.max(0, 4 - imageAttachments.length);
+			if (remainCount <= 0) {
+				message.error("单条消息最多上传 4 张图片");
+				return;
+			}
+
+			const nextAttachments = await Promise.all(
+				validFiles.slice(0, remainCount).map(readImageAttachment),
+			);
+			setImageAttachments((prev) => prev.concat(nextAttachments));
+		},
+		[imageAttachments.length, message, supportImageInput],
+	);
 
 	const getCustomModelRequest = useCallback(
 		(model: string) => {
@@ -663,21 +791,53 @@ const Chat = () => {
 				return undefined;
 			}
 
-			const customConfig = supportedModelsRef.current.find(
-				(item) => item.model === model,
-			)?.customConfig;
+			const customModelKey = model.substring(CUSTOM_MODEL_PREFIX.length);
+			const customConfig = supportedModelsRef.current.find((item) => {
+				if (!item.customConfig) return false;
+				return (
+					item.model === model ||
+					item.customConfig.id === customModelKey ||
+					item.customConfig.modelID === customModelKey
+				);
+			})?.customConfig;
 
 			if (!customConfig) {
 				return undefined;
 			}
 
-			const baseURL = urlJoin(customConfig.api_uri, "chat/completions");
 			return {
-				request: XRequest<ChatRequestBody, SSEOutput, ChatMessage>(baseURL, {
-					headers: { Authorization: `Bearer ${customConfig.api_key}` },
-					fetch: appFetch,
-					manual: true,
-				}),
+				request: XRequest<ChatRequestBody, SSEOutput, ChatMessage>(
+					getChatModelEndpoint(customConfig),
+					{
+						headers: getChatModelRequestHeaders(customConfig),
+						fetch: async (...params) => {
+							const [, options] = params;
+							const requestBody = JSON.parse(
+								`${options?.body ?? "{}"}`,
+							) as ChatRequestBody;
+							return streamChatModelFetch(
+								params[0] as string,
+								{
+									method: "POST",
+									headers: getChatModelRequestHeaders(customConfig),
+									body: JSON.stringify(
+										buildChatModelRequestBody(customConfig, {
+											messages: requestBody.messages as never,
+											model: requestBody.model || customConfig.modelID,
+											stream: requestBody.stream,
+											temperature: requestBody.temperature,
+											maxTokens: requestBody.max_tokens,
+											enableThinking: requestBody.enable_thinking,
+											thinkingBudgetTokens: requestBody.thinking_budget,
+										}),
+									),
+								},
+								undefined,
+							);
+						},
+						manual: true,
+					},
+				),
 				config: customConfig,
 			};
 		},
@@ -939,31 +1099,33 @@ const Chat = () => {
 					loading={supportedModelsLoading}
 				/>
 
-				<Button
-					type="text"
-					icon={
-						<ThinkingIcon
-							style={{
-								color: enableThinking
-									? token.colorPrimary
-									: token.colorTextDisabled,
-							}}
-						/>
-					}
-					className="chatHeaderThinkingButton"
-					onClick={() => {
-						updateAppSettings(
-							AppSettingsGroup.Cache,
-							{ chatModelEnableThinking: !enableThinkingRef.current },
-							true,
-							true,
-							false,
-							true,
-							false,
-						);
-					}}
-					title={intl.formatMessage({ id: "tools.chat.thinking" })}
-				/>
+				{supportThinking ? (
+					<Button
+						type="text"
+						icon={
+							<ThinkingIcon
+								style={{
+									color: enableThinking
+										? token.colorPrimary
+										: token.colorTextDisabled,
+								}}
+							/>
+						}
+						className="chatHeaderThinkingButton"
+						onClick={() => {
+							updateAppSettings(
+								AppSettingsGroup.Cache,
+								{ chatModelEnableThinking: !enableThinkingRef.current },
+								true,
+								true,
+								false,
+								true,
+								false,
+							);
+						}}
+						title={intl.formatMessage({ id: "tools.chat.thinking" })}
+					/>
+				) : null}
 			</Space>
 
 			<div>
@@ -1036,7 +1198,9 @@ const Chat = () => {
 									/>
 								);
 							}
-						: undefined,
+						: msg.role === "user" && msg.imageAttachments?.length
+							? () => renderUserMessageContent(msg, content)
+							: undefined,
 				avatar: msg.role === "assistant" ? botAvatar : undefined,
 				footer:
 					msg.role === "assistant"
@@ -1208,12 +1372,17 @@ const Chat = () => {
 	const senderLoading = loading || sendQueueMessages.length > 0;
 
 	const handleUserSubmit = useCallback(
-		(val: string, flowConfig?: ChatMessageFlowConfig) => {
+		(
+			val: string,
+			flowConfig?: ChatMessageFlowConfig,
+			attachments?: ChatImageAttachment[],
+		) => {
 			onRequest({
 				stream: true,
 				message: {
 					content: val,
 					role: "user",
+					imageAttachments: attachments?.length ? attachments : undefined,
 					flow_config: flowConfig,
 				},
 			});
@@ -1240,9 +1409,23 @@ const Chat = () => {
 
 	const userSendingRef = useRef<boolean>(false);
 	const onSenderSubmit = useCallback(
-		async (value: string, flowConfig?: ChatMessageFlowConfig) => {
+		async (
+			value: string,
+			flowConfig?: ChatMessageFlowConfig,
+			attachments: ChatImageAttachment[] = imageAttachments,
+		) => {
+			if (!value.trim() && attachments.length === 0) return;
+			if (attachments.length > 0 && !supportImageInput) {
+				message.error("当前模型未开启对话图片输入能力");
+				return;
+			}
+
 			if (!selectedModelRef.current) {
 				message.error(intl.formatMessage({ id: "tools.chat.noSelectedModel" }));
+				return;
+			}
+			if (!currentSelectedAdapter) {
+				message.error("当前模型不存在，请重新选择模型");
 				return;
 			}
 
@@ -1250,8 +1433,9 @@ const Chat = () => {
 				await createNewSession();
 			}
 
-			handleUserSubmit(value, flowConfig);
+			handleUserSubmit(value, flowConfig, attachments);
 			setInputValue("");
+			setImageAttachments([]);
 			autoScrollRef.current = true;
 			newestMessage.current = undefined;
 		},
@@ -1262,6 +1446,9 @@ const Chat = () => {
 			selectedModelRef,
 			message,
 			intl,
+			imageAttachments,
+			supportImageInput,
+			currentSelectedAdapter,
 		],
 	);
 
@@ -1270,6 +1457,7 @@ const Chat = () => {
 			onSenderSubmit(
 				sendQueueMessagesRef.current[0].content,
 				sendQueueMessagesRef.current[0].flow_config,
+				sendQueueMessagesRef.current[0].imageAttachments,
 			);
 			setSendQueueMessages((prev) => prev.slice(1));
 		}
@@ -1311,7 +1499,7 @@ const Chat = () => {
 
 					userSendingRef.current = true;
 
-					onSenderSubmit(message, flowConfig);
+					onSenderSubmit(message, flowConfig, []);
 				}}
 			/>
 
@@ -1355,6 +1543,79 @@ const Chat = () => {
 					}}
 				/>
 			</div>
+			{supportImageInput ? (
+				<div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+					<input
+						ref={imageInputRef}
+						type="file"
+						accept="image/*"
+						multiple
+						style={{ display: "none" }}
+						onChange={(event) => {
+							handleImageFiles(event.target.files);
+							event.target.value = "";
+						}}
+					/>
+					<div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+						<Button
+							size="small"
+							icon={<PaperClipOutlined />}
+							disabled={senderLoading || imageAttachments.length >= 4}
+							onClick={() => imageInputRef.current?.click()}
+						>
+							上传图片
+						</Button>
+						<Typography.Text type="secondary" style={{ fontSize: 12 }}>
+							最多 4 张，单张 8MB
+						</Typography.Text>
+						{imageAttachments.length > 0 && !inputValue.trim() ? (
+							<Button
+								size="small"
+								type="primary"
+								disabled={senderLoading}
+								onClick={() => onSenderSubmit("", undefined, imageAttachments)}
+							>
+								发送图片
+							</Button>
+						) : null}
+					</div>
+					{imageAttachments.length > 0 ? (
+						<div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+							{imageAttachments.map((item) => (
+								<div key={item.id} style={{ position: "relative" }}>
+									<img
+										src={item.dataURL}
+										alt={item.name}
+										style={{
+											width: 64,
+											height: 64,
+											objectFit: "cover",
+											borderRadius: 8,
+											border: `1px solid ${token.colorBorder}`,
+										}}
+									/>
+									<Button
+										type="text"
+										size="small"
+										icon={<DeleteOutlined />}
+										style={{
+											position: "absolute",
+											right: -8,
+											top: -8,
+											background: token.colorBgElevated,
+										}}
+										onClick={() => {
+											setImageAttachments((prev) =>
+												prev.filter((image) => image.id !== item.id),
+											);
+										}}
+									/>
+								</div>
+							))}
+						</div>
+					) : null}
+				</div>
+			) : null}
 			{/** 输入框 */}
 			<Sender
 				ref={senderRef}
@@ -1373,7 +1634,7 @@ const Chat = () => {
 						await createNewSession();
 					}
 
-					onSenderSubmit(message);
+					onSenderSubmit(message, undefined, imageAttachments);
 				}}
 				onCancel={abortChat}
 				placeholder={intl.formatMessage({ id: "tools.chat.placeholder" })}
@@ -1382,12 +1643,16 @@ const Chat = () => {
 						setSendQueueMessages((prev) =>
 							prev.concat({
 								content: inputValue,
+								imageAttachments: imageAttachments.length
+									? imageAttachments
+									: undefined,
 								title: intl.formatMessage({
 									id: "tools.chat.sendQueue.userMessage",
 								}),
 							}),
 						);
 						setInputValue("");
+						setImageAttachments([]);
 					}
 				}}
 				suffix={(_, info) => {

@@ -69,6 +69,9 @@ export const settings = {
 	"settings.showOcrTranslate": "啟用文字辨識翻譯工具",
 	"settings.customToolbarToolList": "隱藏工具列工具",
 	"settings.customToolbarToolList.tip": "工具列隱藏後，仍可透過熱鍵使用",
+	"settings.toolbarActionOrder": "操作按鈕排序",
+	"settings.toolbarActionOrder.save": "保存順序",
+	"settings.toolbarActionOrder.dragHandle": "拖動排序",
 	"settings.enableQrcodeScan": "啟用 QR Code 辨識",
 	"settings.findChildrenElements": "偵測視窗子元素",
 	"settings.performanceMode": "效能優先",
@@ -122,6 +125,81 @@ export const settings = {
 	"settings.hotKeySettings.chat": "AI 對話",
 	"settings.hotKeySettings.keyEventTooltip": "{message}（{key}）",
 	"settings.chatSettings": "AI 對話",
+	"settings.modelSettings": "模型設定",
+	"settings.modelSettings.modelAdapter.edit": "編輯模型配置",
+	"settings.modelSettings.modelAdapter.add": "新增模型配置",
+	"settings.modelSettings.modelAdapter.validationFailed":
+		"表單驗證失敗，請檢查紅色標記的欄位",
+	"settings.modelSettings.modelAdapter.tab.connection": "連線",
+	"settings.modelSettings.modelAdapter.tab.model": "模型",
+	"settings.modelSettings.modelAdapter.tab.capabilities": "能力",
+	"settings.modelSettings.modelAdapter.tab.advanced": "進階",
+	"settings.modelSettings.modelAdapter.baseURL": "API 位址",
+	"settings.modelSettings.modelAdapter.baseURL.required": "請輸入 API 位址",
+	"settings.modelSettings.modelAdapter.apiKey": "API Key",
+	"settings.modelSettings.modelAdapter.customHeaders.enable": "啟用自訂請求頭",
+	"settings.modelSettings.modelAdapter.customHeaders.enable.tip":
+		"啟用後會解析下方 JSON，並合併到實際請求 headers。",
+	"settings.modelSettings.modelAdapter.customHeaders.label": "自訂請求頭 JSON",
+	"settings.modelSettings.modelAdapter.customHeaders.tip":
+		"必須是 JSON 物件，格式錯誤時會在請求時明確報錯。",
+	"settings.modelSettings.modelAdapter.displayName": "顯示名稱",
+	"settings.modelSettings.modelAdapter.displayName.required": "請輸入顯示名稱",
+	"settings.modelSettings.modelAdapter.displayName.placeholder":
+		"例如：OpenAI - GPT-4.1",
+	"settings.modelSettings.modelAdapter.modelList": "模型列表",
+	"settings.modelSettings.modelAdapter.modelList.placeholder":
+		"選擇後自動填入模型標識",
+	"settings.modelSettings.modelAdapter.fetchFromAPI": "從目前 API 取得",
+	"settings.modelSettings.modelAdapter.modelID": "模型標識",
+	"settings.modelSettings.modelAdapter.modelID.required": "請輸入模型標識",
+	"settings.modelSettings.modelAdapter.modelID.placeholder":
+		"例如：qwen-flash / gpt-4.1 / claude-sonnet-4",
+	"settings.modelSettings.modelAdapter.contextWindow": "上下文視窗",
+	"settings.modelSettings.modelAdapter.endpoint": "API 端點",
+	"settings.modelSettings.modelAdapter.supportThinking": "支援思考/推理",
+	"settings.modelSettings.modelAdapter.supportThinking.tip":
+		"用於 AI 對話頁的 thinking/reasoning 能力。",
+	"settings.modelSettings.modelAdapter.supportVision": "OCR 視覺模型",
+	"settings.modelSettings.modelAdapter.supportVision.tip":
+		"用於截圖/OCR 圖片轉 HTML、Markdown。",
+	"settings.modelSettings.modelAdapter.supportImageInput": "對話圖片輸入",
+	"settings.modelSettings.modelAdapter.supportImageInput.tip":
+		"用於 AI 對話頁上傳圖片作為使用者輸入。",
+	"settings.modelSettings.modelAdapter.reasoningEffort": "推理強度",
+	"settings.modelSettings.modelAdapter.thinkingEffort": "思考強度",
+	"settings.modelSettings.modelAdapter.maxTokens": "最大輸出 Token",
+	"settings.modelSettings.modelAdapter.openAIExtraParams.enable":
+		"啟用 OpenAI 額外參數",
+	"settings.modelSettings.modelAdapter.openAIExtraParams.enable.tip":
+		"僅 OpenAI-compatible 請求生效。",
+	"settings.modelSettings.modelAdapter.openAIExtraParams.label":
+		"OpenAI 額外參數 JSON",
+	"settings.modelSettings.modelAdapter.openAIExtraParams.tip":
+		"啟用後會合併到 OpenAI 請求 body，使用者顯式填寫的欄位可覆蓋預設值。",
+	"settings.modelSettings.modelAdapter.anthropicExtraParams.enable":
+		"啟用 Anthropic 額外參數",
+	"settings.modelSettings.modelAdapter.anthropicExtraParams.enable.tip":
+		"僅 Anthropic 請求生效。",
+	"settings.modelSettings.modelAdapter.anthropicExtraParams.label":
+		"Anthropic 額外參數 JSON",
+	"settings.modelSettings.modelAdapter.anthropicExtraParams.tip":
+		"啟用後會合併到 Anthropic 請求 body，格式錯誤時會明確報錯。",
+	"settings.modelSettings.modelAdapter.tooltipData": "備註",
+	"settings.modelSettings.modelAdapter.resetConfirm.title": "確認重置",
+	"settings.modelSettings.modelAdapter.resetConfirm.description":
+		"將清空目前表單所有已填寫的內容，確定要重置嗎？",
+	"settings.modelSettings.modelAdapter.resetConfirm.okText": "確定重置",
+	"settings.modelSettings.modelAdapter.resetConfirm.cancelText": "取消",
+	"settings.modelSettings.modelAdapter.resetForm": "重置目前表單",
+	"settings.modelSettings.modelAdapter.test": "測試",
+	"settings.modelSettings.modelAdapter.testing": "測試中...",
+	"settings.modelSettings.modelAdapter.editButton": "編輯",
+	"settings.modelSettings.modelAdapter.duplicate": "複製",
+	"settings.modelSettings.modelAdapter.delete": "刪除",
+	"settings.modelSettings.modelAdapter.testAll": "測試全部",
+	"settings.modelSettings.modelAdapter.stopTest": "停止測試",
+	"settings.modelSettings.modelAdapter.addButton": "新增模型",
 	"settings.chatSettings.maxTokens": "最大 Token 量",
 	"settings.chatSettings.maxTokens.tip":
 		"限制一次請求中模型產生 completion 的最大 token 量",
@@ -159,7 +237,7 @@ export const settings = {
 		"關閉視窗時自動建立新工作階段",
 	"settings.functionSettings.chatSettings.apiConfig": "LLM 配置",
 	"settings.functionSettings.chatSettings.apiConfig.tip":
-		"僅支援相容 OpenAI SDK 的 API 配置，新增配置後將自動支援 AI 翻譯",
+		"僅支援相容 OpenAI SDK 的 API 配置",
 	"settings.functionSettings.chatSettings.apiConfig.add": "新增 LLM 配置",
 	"settings.functionSettings.chatSettings.apiConfig.apiKey": "API Key",
 	"settings.functionSettings.chatSettings.apiConfig.apiKey.tip":
@@ -493,6 +571,54 @@ export const settings = {
 		"每次請求最大段落數",
 	"settings.functionSettings.translationSettings.apiConfig.maxParagraphCount.tip":
 		"每次傳送給翻譯服務的段落數量，如果段落數量過多，可能會導致介面的回應變慢",
+	"settings.translationSettings.services": "翻譯服務",
+	"settings.translationSettings.addBuiltinService": "新增內建服務",
+	"settings.translationSettings.service.deepl": "DeepL",
+	"settings.translationSettings.service.bing": "必應翻譯",
+	"settings.translationSettings.service.lingva": "Lingva",
+	"settings.translationSettings.service.yandex": "Yandex",
+	"settings.translationSettings.service.google": "Google 翻譯",
+	"settings.translationSettings.service.ecdict": "ECDict(線上)",
+	"settings.translationSettings.service.alibaba": "阿里翻譯",
+	"settings.translationSettings.service.baidu": "百度翻譯",
+	"settings.translationSettings.service.baiduField": "百度領域翻譯",
+	"settings.translationSettings.service.bingDict": "必應詞典",
+	"settings.translationSettings.service.caiyun": "彩雲小譯",
+	"settings.translationSettings.service.cambridgeDict": "劍橋詞典",
+	"settings.translationSettings.service.tencent": "騰訊翻譯",
+	"settings.translationSettings.service.volcengine": "火山翻譯",
+	"settings.translationSettings.service.niutrans": "小牛翻譯",
+	"settings.translationSettings.service.youdao": "有道翻譯",
+	"settings.translationSettings.service.custom": "自訂 API",
+	"settings.translationSettings.serviceConfig.name": "顯示名稱",
+	"settings.translationSettings.serviceConfig.required": "請填寫必填項",
+	"settings.translationSettings.serviceConfig.apiUri": "API 位址",
+	"settings.translationSettings.serviceConfig.apiKey": "API Key / Token",
+	"settings.translationSettings.serviceConfig.secretKey": "Secret Key",
+	"settings.translationSettings.serviceConfig.appId": "App ID",
+	"settings.translationSettings.serviceConfig.accessKeyId": "AccessKey ID",
+	"settings.translationSettings.serviceConfig.accessKeySecret":
+		"AccessKey Secret",
+	"settings.translationSettings.serviceConfig.region": "區域",
+	"settings.translationSettings.serviceConfig.domain": "領域",
+	"settings.translationSettings.serviceConfig.deeplType": "DeepL 類型",
+	"settings.translationSettings.serviceConfig.deeplType.free": "免費介面",
+	"settings.translationSettings.serviceConfig.deeplType.api": "官方 API",
+	"settings.translationSettings.serviceConfig.deeplType.deeplx": "DeepLX",
+	"settings.translationSettings.serviceConfig.deeplApiUriTip":
+		"官方 API 可留空；DeepLX 請填寫完整服務位址",
+	"settings.translationSettings.serviceConfig.lingvaApiUriTip":
+		"可留空，預設使用 https://lingva.pot-app.com/api/v1",
+	"settings.translationSettings.serviceConfig.ecdictApiUriTip":
+		"可留空，預設使用 https://pot-app.com/api/dict",
+	"settings.translationSettings.serviceConfig.deeplPreferQualityOptimized":
+		"優先高品質模型",
+	"settings.translationSettings.serviceConfig.maxRequestsPerSecond":
+		"每秒最大請求數",
+	"settings.translationSettings.serviceConfig.maxParagraphCount":
+		"每次請求最大段落數",
+	"settings.translationSettings.serviceConfig.guide": "配置指南",
+	"settings.translationSettings.serviceConfig.openGuide": "開啟配置指南",
 	"settings.functionSettings.trayIconSettings": "系統匣",
 	"settings.functionSettings.trayIconSettings.iconClickAction": "左鍵點擊後",
 	"settings.functionSettings.trayIconSettings.iconClickAction.screenshot":
@@ -619,9 +745,10 @@ export const settings = {
 	"settings.systemSettings.coreSettings.hotLoadPageCount.tip":
 		"透過熱載入頁面，實現貼圖、錄影、全螢幕畫布等功能的快速載入，但同時提高了記憶體的佔用",
 	"settings.functionSettings.ocrSettings": "文字辨識",
-	"settings.functionSettings.ocrSettings.htmlVisionModel": "視覺理解模型",
+	"settings.functionSettings.ocrSettings.htmlVisionModel":
+		"圖片轉 HTML / Markdown 視覺模型",
 	"settings.functionSettings.ocrSettings.htmlVisionModel.tip":
-		"將圖片轉為 HTML 的視覺理解模型",
+		"用於截圖/OCR 圖片轉 HTML、Markdown 的視覺模型",
 	"settings.functionSettings.ocrSettings.customOcrModelConfig":
 		"文字辨識模型配置",
 	"settings.functionSettings.ocrSettings.customOcrModelConfig.tip":
@@ -640,7 +767,7 @@ export const settings = {
 		"方向(cls)",
 	"settings.functionSettings.ocrSettings.htmlVisionModel.default": "預設",
 	"settings.functionSettings.ocrSettings.htmlVisionModel.default.tip":
-		"預設使用首個支援視覺理解的模型",
+		"預設使用首個開啟 OCR 視覺模型能力的配置",
 	"settings.functionSettings.ocrSettings.htmlVisionModelSystemPrompt":
 		"圖片轉為 HTML 的 System 提示詞",
 	"settings.functionSettings.ocrSettings.markdownVisionModelSystemPrompt":
