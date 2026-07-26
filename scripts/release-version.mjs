@@ -25,10 +25,14 @@ function run(command) {
 	}).trim();
 }
 
-function runInteractive(command) {
+function runInteractive(command, options = {}) {
 	execSync(command, {
 		cwd: rootDir,
 		stdio: "inherit",
+		env: {
+			...process.env,
+			...(options.env ?? {}),
+		},
 	});
 }
 
@@ -279,25 +283,47 @@ async function main() {
 	try {
 		ensureCleanWorkingTree();
 		const branch = getCurrentBranch();
+		const shouldCreateReleaseCommit = branch === "main";
 		const { currentVersion } = await loadCurrentVersions();
 		const nextVersion = await chooseVersion(currentVersion);
 		const tagName = `v${nextVersion}`;
-		ensureTagDoesNotExist(tagName);
+		if (shouldCreateReleaseCommit) {
+			ensureTagDoesNotExist(tagName);
+		}
 
 		console.log("\n发布摘要：");
 		console.log(`- 分支：${branch}`);
 		console.log(`- 当前版本：${currentVersion}`);
 		console.log(`- 新版本：${nextVersion}`);
-		console.log(`- Tag：${tagName}`);
+		if (shouldCreateReleaseCommit) {
+			console.log(`- Tag：${tagName}`);
+			console.log("- 操作：更新版本文件、创建提交、创建 tag，可选择推送");
+		} else {
+			console.log("- 操作：仅更新版本文件，不暂存、不提交、不创建 tag、不推送");
+		}
 
-		if (!(await askYesNo("是否继续更新版本并创建 tag？"))) {
+		if (
+			!(await askYesNo(
+				shouldCreateReleaseCommit
+					? "是否继续更新版本并创建 release 提交和 tag？"
+					: "是否继续更新版本文件？",
+			))
+		) {
 			console.log("已取消。");
 			return;
 		}
 
 		await updateVersions(nextVersion);
+
+		if (!shouldCreateReleaseCommit) {
+			console.log("\n已更新版本文件。当前不是 main 分支，已跳过 git add、commit、tag 和 push。");
+			return;
+		}
+
 		runInteractive("git add package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock");
-		runInteractive(`git commit -m "chore: release ${nextVersion}"`);
+		runInteractive(`git commit -m "chore: release ${nextVersion}"`, {
+			env: { ALLOW_MAIN_COMMIT: "1" },
+		});
 		runInteractive(`git tag ${tagName}`);
 
 		console.log("\n已成功创建提交和 tag。");
