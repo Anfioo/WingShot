@@ -278,3 +278,7 @@ export const getCommitSha = async () => {
 export const setRememberWindowGeometry = async (remember: boolean) => {
 	await invoke("set_remember_window_geometry", { remember });
 };
+
+export const resetMainWindowGeometry = async () => {
+	await invoke("reset_main_window_geometry");
+};
