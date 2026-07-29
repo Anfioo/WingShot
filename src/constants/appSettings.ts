@@ -25,6 +25,7 @@ import {
 	KeyDisplayDirection,
 	OcrDetectAfterAction,
 	OcrModel,
+	RenderBackend,
 	RunLogLevel,
 	TranslationServiceType,
 	TrayIconClickAction,
@@ -161,6 +162,7 @@ export const defaultAppSettingsData: AppSettingsData = {
 	[AppSettingsGroup.AppFunction]: defaultAppFunctionConfigs,
 	[AppSettingsGroup.Render]: {
 		antialias: true,
+		renderBackend: RenderBackend.WebGL,
 	},
 	[AppSettingsGroup.SystemCommon]: {
 		autoStart: true,

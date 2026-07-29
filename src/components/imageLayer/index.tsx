@@ -10,10 +10,16 @@ import {
 	useRef,
 	useState,
 } from "react";
+import { useAppSettingsLoad } from "@/hooks/useAppSettingsLoad";
 import { defaultWatermarkProps } from "@/pages/draw/components/drawToolbar/components/tools/drawExtraTool/components/watermarkTool";
 import type { CaptureBoundingBoxInfo } from "@/pages/draw/extra";
 import type { ImageSharedBufferData } from "@/pages/draw/tools";
 import type { FixedContentProcessImageConfig } from "@/pages/fixedContent/components/fixedContentCore";
+import {
+	type AppSettingsData,
+	AppSettingsGroup,
+	type RenderBackend,
+} from "@/types/appSettings";
 import type { ElementRect, ImageBuffer } from "@/types/commands/screenshot";
 import type { CaptureHistoryItem } from "@/utils/appStore";
 import { getCaptureHistoryImageAbsPath } from "@/utils/captureHistory";
@@ -57,7 +63,10 @@ export type ImageLayerActionType = {
 	/**
 	 * 初始化画布
 	 */
-	initCanvas: (antialias: boolean) => Promise<void>;
+	initCanvas: (
+		antialias: boolean,
+		renderBackend: RenderBackend,
+	) => Promise<void>;
 	resizeCanvas: (width: number, height: number) => void;
 	clearCanvas: () => Promise<void>;
 	getLayerContainerElement: () => HTMLDivElement | null;
@@ -284,7 +293,7 @@ export const ImageLayer: React.FC<ImageLayerProps> = ({
 	);
 	/** 初始化画布 */
 	const initCanvas = useCallback<ImageLayerActionType["initCanvas"]>(
-		async (antialias: boolean) => {
+		async (antialias: boolean, renderBackend: RenderBackend) => {
 			if (disabled) {
 				return;
 			}
@@ -317,7 +326,7 @@ export const ImageLayer: React.FC<ImageLayerProps> = ({
 				},
 				autoStart: false,
 				canvas: offscreenCanvasRef.current ?? canvas,
-				preference: "webgl",
+				preference: renderBackend,
 				multiView: false,
 				antialias,
 			};
@@ -334,9 +343,23 @@ export const ImageLayer: React.FC<ImageLayerProps> = ({
 		[rendererWorker, onInitCanvasReady, disabled, hasInitRendererWorker],
 	);
 
+	const [renderSettings, setRenderSettings] = useState<
+		AppSettingsData[AppSettingsGroup.Render] | undefined
+	>(undefined);
+	useAppSettingsLoad(
+		useCallback((settings: AppSettingsData) => {
+			setRenderSettings(settings[AppSettingsGroup.Render]);
+		}, []),
+		true,
+	);
+
 	useEffect(() => {
-		initCanvas(true);
-	}, [initCanvas]);
+		if (!renderSettings) {
+			return;
+		}
+
+		initCanvas(renderSettings.antialias, renderSettings.renderBackend);
+	}, [initCanvas, renderSettings]);
 
 	/** 调整画布大小 */
 	const resizeCanvas = useCallback(
@@ -708,18 +731,18 @@ export const ImageLayer: React.FC<ImageLayerProps> = ({
 					imageBuffer,
 				);
 			}
-		// 高亮层
-		highlightContainerKeyRef.current = await createNewCanvasContainer(
-			DRAW_LAYER_HIGHLIGHT_CONTAINER_KEY,
-		);
-		// 模糊层
-		blurContainerKeyRef.current = await createNewCanvasContainer(
-			DRAW_LAYER_BLUR_CONTAINER_KEY,
-		);
-		// 水印层（最后创建，确保位于最顶层，避免被高亮层的不透明底图遮挡）
-		watermarkContainerKeyRef.current = await createNewCanvasContainer(
-			DRAW_LAYER_WATERMARK_CONTAINER_KEY,
-		);
+			// 高亮层
+			highlightContainerKeyRef.current = await createNewCanvasContainer(
+				DRAW_LAYER_HIGHLIGHT_CONTAINER_KEY,
+			);
+			// 模糊层
+			blurContainerKeyRef.current = await createNewCanvasContainer(
+				DRAW_LAYER_BLUR_CONTAINER_KEY,
+			);
+			// 水印层（最后创建，确保位于最顶层，避免被高亮层的不透明底图遮挡）
+			watermarkContainerKeyRef.current = await createNewCanvasContainer(
+				DRAW_LAYER_WATERMARK_CONTAINER_KEY,
+			);
 
 			await canvasRender();
 		},
