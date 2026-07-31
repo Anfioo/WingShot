@@ -33,7 +33,7 @@ Wing Shot 是基于 Snow Shot 派生开发的项目，原项目信息见 [NOTICE
 
 - 原项目：Snow Shot，作者 mg-chao，Copyright (C) 2025 mg-chao
 - 当前项目：Wing Shot，作者 anfioo
-
+- fork 来源：上游 dev 分支，xiaofeiTM233/snow-shot 基准提交 a3bb0dea(2026-07-24)
 本项目保留原项目的版权声明和许可证条款。Wing Shot 中由 anfioo 新增或修改的部分，由 anfioo 维护，并在原许可证允许的范围内发布。
 
 
