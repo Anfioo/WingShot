@@ -21,6 +21,7 @@ import {
 	closeWindowAfterDelay,
 	createFixedContentWindow,
 	getMonitorsBoundingBox,
+	savePrevSelectRect,
 	setCurrentWindowAlwaysOnTop,
 } from "@/commands/core";
 import { setCaptureState } from "@/commands/globalSate";
@@ -81,7 +82,7 @@ import {
 	getImagePathFromSettings,
 	showImageDialog,
 } from "@/utils/file";
-import { appError, appWarn } from "@/utils/log";
+import { appError, appInfo, appWarn } from "@/utils/log";
 import { MousePosition } from "@/utils/mousePosition";
 import { ScreenshotType } from "@/utils/types";
 import { setWindowRect, showWindow as showCurrentWindow } from "@/utils/window";
@@ -640,6 +641,11 @@ const DrawPageCore: React.FC<{
 			excuteScreenshotType: ScreenshotType,
 			params: { windowId?: string; captureHistoryId?: string },
 		) => {
+			appInfo("[DIAG] excuteScreenshot: start", {
+				excuteScreenshotType,
+				capturing: capturingRef.current,
+				drawPageState: drawPageStateRef.current,
+			});
 			capturingRef.current = true;
 			setCaptureStateAction(true);
 			drawToolbarActionRef.current?.setEnable(false);
@@ -715,10 +721,11 @@ const DrawPageCore: React.FC<{
 					layerOnExecuteScreenshotPromise,
 				]);
 			} catch (error) {
+				// 无论如何先把 capturing 状态复位，避免一次异常导致后续所有截图静默失效
+				capturingRef.current = false;
+				setCaptureStateAction(false);
 				// 防止用户提前退出报错
 				if (getCaptureEvent()?.event !== CaptureEvent.onExecuteScreenshot) {
-					capturingRef.current = false;
-					setCaptureStateAction(false);
 					return;
 				}
 
@@ -786,17 +793,8 @@ const DrawPageCore: React.FC<{
 				return;
 			}
 
-			updateAppSettings(
-				AppSettingsGroup.Cache,
-				{
-					prevSelectRect: selectRect,
-				},
-				false,
-				true,
-				false,
-				true,
-				false,
-			);
+			// 持久化上一次选定的区域到独立文件，避免被 Cache 组全量回写/重置清空
+			await savePrevSelectRect(selectRect);
 
 			if (
 				!getAppSettings()[AppSettingsGroup.SystemScreenshot]
@@ -832,7 +830,7 @@ const DrawPageCore: React.FC<{
 				source,
 			);
 		},
-		[getAppSettings, updateAppSettings, getScreenshotType],
+		[getAppSettings, getScreenshotType],
 	);
 
 	const onSave = useCallback(
@@ -1035,7 +1033,29 @@ const DrawPageCore: React.FC<{
 			// 停止监听键盘
 			listenKeyStop();
 
-			saveCaptureHistory(undefined, CaptureHistorySource.ScrollScreenshotFixed);
+			const imageData = await scrollScreenshotGetImageData(true);
+			const captureResult = await new Promise<ArrayBuffer | undefined>(
+				(resolve) => {
+					if (imageData instanceof HTMLCanvasElement) {
+						imageData.toBlob(
+							async (blob) => {
+								resolve(await blob?.arrayBuffer());
+							},
+							"image/png",
+							1,
+						);
+					} else if (imageData instanceof ArrayBuffer) {
+						resolve(imageData);
+					} else {
+						resolve(undefined);
+					}
+				},
+			);
+
+			saveCaptureHistory(
+				captureResult,
+				CaptureHistorySource.ScrollScreenshotFixed,
+			);
 
 			createFixedContentWindow(true);
 			finishCapture(false);
@@ -1391,6 +1411,11 @@ const DrawPageCore: React.FC<{
 	useEffect(() => {
 		// 监听截图命令
 		const listenerId = addListener("execute-screenshot", (args) => {
+			appInfo("[DIAG] draw: execute-screenshot listener fired", {
+				label: appWindowRef.current?.label,
+				capturing: capturingRef.current,
+				drawPageState: drawPageStateRef.current,
+			});
 			const payload = (
 				args as {
 					payload: {

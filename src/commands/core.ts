@@ -39,9 +39,14 @@ export const autoScrollThrough = async (
 	return result;
 };
 
-export const createFixedContentWindow = async (scrollScreenshot?: boolean) => {
+export const createFixedContentWindow = async (
+	scrollScreenshot?: boolean,
+	// 指定要贴图的图片绝对路径
+	filePath?: string,
+) => {
 	const result = await invoke<void>("create_fixed_content_window", {
 		scrollScreenshot: scrollScreenshot ?? false,
+		filePath: filePath ? encodeURIComponent(filePath) : null,
 	});
 	return result;
 };
@@ -277,4 +282,16 @@ export const getCommitSha = async () => {
 
 export const setRememberWindowGeometry = async (remember: boolean) => {
 	await invoke("set_remember_window_geometry", { remember });
+};
+
+export const resetMainWindowGeometry = async () => {
+	await invoke("reset_main_window_geometry");
+};
+
+export const savePrevSelectRect = async (rect: ElementRect) => {
+	await invoke("save_prev_select_rect", { rect });
+};
+
+export const readPrevSelectRect = async (): Promise<ElementRect | null> => {
+	return await invoke<ElementRect | null>("read_prev_select_rect");
 };

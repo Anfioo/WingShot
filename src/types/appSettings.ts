@@ -1,4 +1,3 @@
-import type { ElementRect } from "./commands/screenshot";
 import type { AppFunction, AppFunctionConfig } from "./components/appFunction";
 import type {
 	DrawToolbarKeyEventKey,
@@ -58,6 +57,12 @@ export enum OcrDetectAfterAction {
 export enum HdrColorAlgorithm {
 	Linear = "Linear",
 	None = "None",
+}
+
+/** 渲染引擎（值与 PIXI ApplicationOptions.preference 保持一致） */
+export enum RenderBackend {
+	WebGL = "webgl",
+	WebGPU = "webgpu",
 }
 
 /** 运行日志级别 */
@@ -483,7 +488,6 @@ export type AppSettingsData = {
 		chatModelEnableThinking: boolean;
 		colorPickerColorFormatIndex: number;
 		prevImageFormat: ImageFormat;
-		prevSelectRect: ElementRect;
 		enableMicrophone: boolean;
 		/** 是否启用锁定绘制工具 */
 		enableLockDrawTool: boolean;
@@ -525,6 +529,8 @@ export type AppSettingsData = {
 	[AppSettingsGroup.AppFunction]: Record<AppFunction, AppFunctionConfig>;
 	[AppSettingsGroup.Render]: {
 		antialias: boolean;
+		/** 渲染引擎 */
+		renderBackend: RenderBackend;
 	};
 	[AppSettingsGroup.SystemCommon]: {
 		autoStart: boolean;
@@ -619,6 +625,8 @@ export type AppSettingsData = {
 		ocrAfterAction: OcrDetectAfterAction;
 		/** OCR 复制时复制文本 */
 		ocrCopyText: boolean;
+		/** 滚动截图单击自动滚动 */
+		longScreenshotAutoScroll: boolean;
 		/** 选区预设 */
 		selectRectPresetList: SelectRectPreset[];
 	};
@@ -651,6 +659,8 @@ export type AppSettingsData = {
 		initialPosition: AppSettingsFixedContentInitialPosition;
 		/** 双击后的行为 */
 		doubleClickAction: FixedContentDoubleClickAction;
+		/** 显示贴图时恢复默认大小 */
+		showStickerRestoreDefaultSize: boolean;
 	};
 	[AppSettingsGroup.FunctionFullScreenDraw]: {
 		/** 默认工具 */

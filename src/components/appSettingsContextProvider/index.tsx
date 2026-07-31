@@ -53,6 +53,7 @@ import {
 	type HdrColorAlgorithm,
 	type HistoryValidDuration,
 	OcrDetectAfterAction,
+	RenderBackend,
 	type RunLogLevel,
 	TranslationApiType,
 	type TranslationServiceConfig,
@@ -523,24 +524,6 @@ const AppSettingsContextProviderCore: React.FC<{
 					| AppSettingsData[typeof group]
 					| undefined;
 
-				let prevSelectRect = newSettings?.prevSelectRect ??
-					prevSettings?.prevSelectRect ?? {
-						min_x: 0,
-						min_y: 0,
-						max_x: 0,
-						max_y: 0,
-					};
-				prevSelectRect = {
-					min_x:
-						typeof prevSelectRect.min_x === "number" ? prevSelectRect.min_x : 0,
-					min_y:
-						typeof prevSelectRect.min_y === "number" ? prevSelectRect.min_y : 0,
-					max_x:
-						typeof prevSelectRect.max_x === "number" ? prevSelectRect.max_x : 0,
-					max_y:
-						typeof prevSelectRect.max_y === "number" ? prevSelectRect.max_y : 0,
-				};
-
 				settings = {
 					menuCollapsed:
 						typeof newSettings?.menuCollapsed === "boolean"
@@ -564,7 +547,6 @@ const AppSettingsContextProviderCore: React.FC<{
 						typeof newSettings?.prevImageFormat === "string"
 							? newSettings.prevImageFormat
 							: (prevSettings?.prevImageFormat ?? ImageFormat.PNG),
-					prevSelectRect,
 					enableMicrophone:
 						typeof newSettings?.enableMicrophone === "boolean"
 							? newSettings.enableMicrophone
@@ -926,6 +908,12 @@ const AppSettingsContextProviderCore: React.FC<{
 							? newSettings.antialias
 							: (prevSettings?.antialias ??
 								defaultAppSettingsData[group].antialias),
+					renderBackend:
+						newSettings?.renderBackend === RenderBackend.WebGL ||
+						newSettings?.renderBackend === RenderBackend.WebGPU
+							? newSettings.renderBackend
+							: (prevSettings?.renderBackend ??
+								defaultAppSettingsData[group].renderBackend),
 				};
 			} else if (group === AppSettingsGroup.SystemCommon) {
 				newSettings = newSettings as AppSettingsData[typeof group];
@@ -1275,6 +1263,10 @@ const AppSettingsContextProviderCore: React.FC<{
 						typeof newSettings?.ocrCopyText === "boolean"
 							? newSettings.ocrCopyText
 							: (prevSettings?.ocrCopyText ?? false),
+					longScreenshotAutoScroll:
+						typeof newSettings?.longScreenshotAutoScroll === "boolean"
+							? newSettings.longScreenshotAutoScroll
+							: (prevSettings?.longScreenshotAutoScroll ?? true),
 					focusedWindowCopyToClipboard:
 						typeof newSettings?.focusedWindowCopyToClipboard === "boolean"
 							? newSettings.focusedWindowCopyToClipboard
@@ -1560,6 +1552,11 @@ const AppSettingsContextProviderCore: React.FC<{
 							? newSettings.doubleClickAction
 							: (prevSettings?.doubleClickAction ??
 								defaultAppSettingsData[group].doubleClickAction),
+					showStickerRestoreDefaultSize:
+						typeof newSettings?.showStickerRestoreDefaultSize === "boolean"
+							? newSettings.showStickerRestoreDefaultSize
+							: (prevSettings?.showStickerRestoreDefaultSize ??
+								defaultAppSettingsData[group].showStickerRestoreDefaultSize),
 				};
 			} else if (group === AppSettingsGroup.SystemScreenshot) {
 				newSettings = newSettings as AppSettingsData[typeof group];

@@ -37,6 +37,9 @@ const LayoutAboutLazyRouteImport = createFileRoute('/_layout/about')()
 const LayoutToolsTranslationLazyRouteImport = createFileRoute(
   '/_layout/tools/translation',
 )()
+const LayoutToolsCollageLazyRouteImport = createFileRoute(
+  '/_layout/tools/collage',
+)()
 const LayoutToolsChatLazyRouteImport = createFileRoute('/_layout/tools/chat')()
 const LayoutToolsCaptureHistoryLazyRouteImport = createFileRoute(
   '/_layout/tools/captureHistory',
@@ -144,6 +147,13 @@ const LayoutToolsTranslationLazyRoute =
   } as any).lazy(() =>
     import('./routes/_layout/tools/translation.lazy').then((d) => d.Route),
   )
+const LayoutToolsCollageLazyRoute = LayoutToolsCollageLazyRouteImport.update({
+  id: '/tools/collage',
+  path: '/tools/collage',
+  getParentRoute: () => LayoutRouteRoute,
+} as any).lazy(() =>
+  import('./routes/_layout/tools/collage.lazy').then((d) => d.Route),
+)
 const LayoutToolsChatLazyRoute = LayoutToolsChatLazyRouteImport.update({
   id: '/tools/chat',
   path: '/tools/chat',
@@ -254,6 +264,7 @@ export interface FileRoutesByFullPath {
   '/settings/translationSettings': typeof LayoutSettingsTranslationSettingsLazyRoute
   '/tools/captureHistory': typeof LayoutToolsCaptureHistoryLazyRoute
   '/tools/chat': typeof LayoutToolsChatLazyRoute
+  '/tools/collage': typeof LayoutToolsCollageLazyRoute
   '/tools/translation': typeof LayoutToolsTranslationLazyRoute
 }
 export interface FileRoutesByTo {
@@ -276,6 +287,7 @@ export interface FileRoutesByTo {
   '/settings/translationSettings': typeof LayoutSettingsTranslationSettingsLazyRoute
   '/tools/captureHistory': typeof LayoutToolsCaptureHistoryLazyRoute
   '/tools/chat': typeof LayoutToolsChatLazyRoute
+  '/tools/collage': typeof LayoutToolsCollageLazyRoute
   '/tools/translation': typeof LayoutToolsTranslationLazyRoute
 }
 export interface FileRoutesById {
@@ -301,6 +313,7 @@ export interface FileRoutesById {
   '/_layout/settings/translationSettings': typeof LayoutSettingsTranslationSettingsLazyRoute
   '/_layout/tools/captureHistory': typeof LayoutToolsCaptureHistoryLazyRoute
   '/_layout/tools/chat': typeof LayoutToolsChatLazyRoute
+  '/_layout/tools/collage': typeof LayoutToolsCollageLazyRoute
   '/_layout/tools/translation': typeof LayoutToolsTranslationLazyRoute
 }
 export interface FileRouteTypes {
@@ -325,6 +338,7 @@ export interface FileRouteTypes {
     | '/settings/translationSettings'
     | '/tools/captureHistory'
     | '/tools/chat'
+    | '/tools/collage'
     | '/tools/translation'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -347,6 +361,7 @@ export interface FileRouteTypes {
     | '/settings/translationSettings'
     | '/tools/captureHistory'
     | '/tools/chat'
+    | '/tools/collage'
     | '/tools/translation'
   id:
     | '__root__'
@@ -371,6 +386,7 @@ export interface FileRouteTypes {
     | '/_layout/settings/translationSettings'
     | '/_layout/tools/captureHistory'
     | '/_layout/tools/chat'
+    | '/_layout/tools/collage'
     | '/_layout/tools/translation'
   fileRoutesById: FileRoutesById
 }
@@ -465,6 +481,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LayoutToolsTranslationLazyRouteImport
       parentRoute: typeof LayoutRouteRoute
     }
+    '/_layout/tools/collage': {
+      id: '/_layout/tools/collage'
+      path: '/tools/collage'
+      fullPath: '/tools/collage'
+      preLoaderRoute: typeof LayoutToolsCollageLazyRouteImport
+      parentRoute: typeof LayoutRouteRoute
+    }
     '/_layout/tools/chat': {
       id: '/_layout/tools/chat'
       path: '/tools/chat'
@@ -551,6 +574,7 @@ interface LayoutRouteRouteChildren {
   LayoutSettingsTranslationSettingsLazyRoute: typeof LayoutSettingsTranslationSettingsLazyRoute
   LayoutToolsCaptureHistoryLazyRoute: typeof LayoutToolsCaptureHistoryLazyRoute
   LayoutToolsChatLazyRoute: typeof LayoutToolsChatLazyRoute
+  LayoutToolsCollageLazyRoute: typeof LayoutToolsCollageLazyRoute
   LayoutToolsTranslationLazyRoute: typeof LayoutToolsTranslationLazyRoute
 }
 
@@ -570,6 +594,7 @@ const LayoutRouteRouteChildren: LayoutRouteRouteChildren = {
     LayoutSettingsTranslationSettingsLazyRoute,
   LayoutToolsCaptureHistoryLazyRoute: LayoutToolsCaptureHistoryLazyRoute,
   LayoutToolsChatLazyRoute: LayoutToolsChatLazyRoute,
+  LayoutToolsCollageLazyRoute: LayoutToolsCollageLazyRoute,
   LayoutToolsTranslationLazyRoute: LayoutToolsTranslationLazyRoute,
 }
 

@@ -3,8 +3,10 @@ use futures::stream::StreamExt;
 use serde::Serialize;
 use std::{
     path::PathBuf,
-    sync::Arc,
-    time::{SystemTime, UNIX_EPOCH},
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
 };
 use tauri::Emitter;
 use tauri::Manager;
@@ -150,11 +152,15 @@ pub async fn click_through(window: tauri::Window) -> Result<(), ()> {
     Ok(())
 }
 
+/// 用于生成唯一的「内容固定」窗口标签，避免同一秒内创建多个窗口时标签冲突
+static FIXED_CONTENT_WINDOW_COUNTER: AtomicU64 = AtomicU64::new(0);
+
 /// 创建内容固定到屏幕的窗口
 pub async fn create_fixed_content_window(
     app: tauri::AppHandle,
     hot_load_page_service: tauri::State<'_, Arc<HotLoadPageService>>,
     scroll_screenshot: bool,
+    file_path: Option<String>,
 ) -> Result<(), String> {
     let (_, _, monitor) = get_target_monitor()?;
 
@@ -175,7 +181,13 @@ pub async fn create_fixed_content_window(
         window_y = monitor_y / monitor_scale_factor;
     }
 
-    let url = format!("/fixedContent?scroll_screenshot={}", scroll_screenshot);
+    let url = match &file_path {
+        Some(file_path) => format!(
+            "/fixedContent?scroll_screenshot={}&file_path={}",
+            scroll_screenshot, file_path
+        ),
+        None => format!("/fixedContent?scroll_screenshot={}", scroll_screenshot),
+    };
 
     if let Some(window) = hot_load_page_service.pop_page().await {
         window.set_always_on_top(true).unwrap();
@@ -209,16 +221,15 @@ pub async fn create_fixed_content_window(
         return Ok(());
     }
 
-    let window = tauri::WebviewWindowBuilder::new(
+    let fixed_content_window_label = format!(
+        "fixed-content-{}",
+        FIXED_CONTENT_WINDOW_COUNTER.fetch_add(1, Ordering::SeqCst)
+    );
+
+    let window = match tauri::WebviewWindowBuilder::new(
         &app,
-        format!(
-            "fixed-content-{}",
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_secs()
-        ),
-        tauri::WebviewUrl::App(PathBuf::from(url)),
+        fixed_content_window_label,
+        tauri::WebviewUrl::App(PathBuf::from(format!("/#{}", url))),
     )
     .always_on_top(true)
     .resizable(false)
@@ -235,7 +246,16 @@ pub async fn create_fixed_content_window(
     .inner_size(500.0, 500.0)
     .position(0.0, 0.0)
     .build()
-    .unwrap();
+    {
+        Ok(window) => window,
+        Err(e) => {
+            log::error!("[create_fixed_content_window] Failed to build window: {}", e);
+            return Err(format!(
+                "[create_fixed_content_window] Failed to build window: {}",
+                e
+            ));
+        }
+    };
 
     window.hide().unwrap();
     window.center().unwrap();
@@ -314,9 +334,9 @@ pub async fn create_full_screen_draw_window(
                     window
                 }
                 None => tauri::WebviewWindowBuilder::new(
-                    &app,
-                    format!("full-screen-draw"),
-                    tauri::WebviewUrl::App(PathBuf::from(main_window_url.clone())),
+                &app,
+                format!("full-screen-draw"),
+                tauri::WebviewUrl::App(PathBuf::from(format!("/#{}", main_window_url.clone()))),
                 )
                 .always_on_top(true)
                 .resizable(false)
@@ -363,9 +383,9 @@ pub async fn create_full_screen_draw_window(
                     window
                 }
                 None => tauri::WebviewWindowBuilder::new(
-                    &app,
-                    format!("full-screen-draw-switch-mouse-through"),
-                    tauri::WebviewUrl::App(PathBuf::from(switch_mouse_through_window_url.clone())),
+                &app,
+                format!("full-screen-draw-switch-mouse-through"),
+                tauri::WebviewUrl::App(PathBuf::from(format!("/#{}", switch_mouse_through_window_url.clone()))),
                 )
                 .always_on_top(true)
                 .resizable(false)
@@ -626,7 +646,7 @@ pub async fn create_video_record_window(
                 None => tauri::WebviewWindowBuilder::new(
                     &app,
                     "video-recording",
-                    tauri::WebviewUrl::App(PathBuf::from(main_window_url.clone())),
+                    tauri::WebviewUrl::App(PathBuf::from(format!("/#{}", main_window_url.clone()))),
                 )
                 .always_on_top(true)
                 .resizable(false)
@@ -672,7 +692,7 @@ pub async fn create_video_record_window(
                 None => tauri::WebviewWindowBuilder::new(
                     &app,
                     "video-recording-toolbar",
-                    tauri::WebviewUrl::App(PathBuf::from(toolbar_window_url.clone())),
+                    tauri::WebviewUrl::App(PathBuf::from(format!("/#{}", toolbar_window_url.clone()))),
                 )
                 .always_on_top(true)
                 .resizable(false)

@@ -84,6 +84,9 @@ export const settings = {
 	"settings.resetSettings": "確定重置「{title}」為預設設定嗎？",
 	"settings.antialias": "反鋸齒",
 	"settings.renderSettings": "渲染",
+	"settings.renderBackend": "渲染引擎",
+	"settings.renderBackend.tip":
+		"切換後下次截圖生效。若目前環境不支援 WebGPU，將自動回退到 WebGL",
 	"settings.drawLine": "繪製線條",
 	"settings.enableDrawLineSimplify": "啟用簡化線條",
 	"settings.enableDrawLineSimplify.tip":
@@ -294,6 +297,8 @@ export const settings = {
 		"「取消截圖」的彈出視窗提示",
 	"settings.functionSettings.screenshotSettings.shortcutCanleTip.tip":
 		"透過快捷鍵「取消截圖」時，是否彈出視窗提示",
+	"settings.functionSettings.screenshotSettings.longScreenshotAutoScroll":
+		"滾動截圖單擊自動滾動",
 	"settings.functionSettings.screenshotSettings.lockDrawTool": "鎖定繪製工具",
 	"settings.functionSettings.screenshotSettings.ocrAfterAction":
 		"文字辨識後自動執行",
@@ -531,6 +536,8 @@ export const settings = {
 	"settings.functionSettings.fixedContentSettings.autoOcr": "自動文字辨識",
 	"settings.functionSettings.fixedContentSettings.autoCopyToClipboard":
 		"貼圖後自動複製到剪貼簿",
+	"settings.functionSettings.fixedContentSettings.showStickerRestoreDefaultSize":
+		"顯示貼圖同時恢復預設大小",
 	"settings.functionSettings.fixedContentSettings.initialPosition.monitorCenter":
 		"螢幕置中",
 	"settings.functionSettings.fixedContentSettings.initialPosition.mousePosition":

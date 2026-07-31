@@ -88,6 +88,9 @@ export const settings = {
 		'Are you sure you want to reset "{title}" to default settings?',
 	"settings.antialias": "Antialias",
 	"settings.renderSettings": "Render Settings",
+	"settings.renderBackend": "Render Backend",
+	"settings.renderBackend.tip":
+		"Takes effect on the next screenshot. Falls back to WebGL automatically if WebGPU is not supported",
 	"settings.drawLine": "Draw Line",
 	"settings.enableDrawLineSimplify": "Enable Line Simplification",
 	"settings.enableDrawLineSimplify.tip":
@@ -310,6 +313,8 @@ export const settings = {
 		"Cancel screenshot prompt",
 	"settings.functionSettings.screenshotSettings.shortcutCanleTip.tip":
 		"Whether to show a prompt when canceling screenshot via hotkey",
+	"settings.functionSettings.screenshotSettings.longScreenshotAutoScroll":
+		"Scroll screenshot click auto-scroll",
 	"settings.functionSettings.screenshotSettings.lockDrawTool":
 		"Lock Drawing Tool",
 	"settings.functionSettings.screenshotSettings.ocrAfterAction":
@@ -562,6 +567,8 @@ export const settings = {
 	"settings.functionSettings.fixedContentSettings.autoOcr": "Auto OCR",
 	"settings.functionSettings.fixedContentSettings.autoCopyToClipboard":
 		"Auto copy to clipboard after pinning",
+	"settings.functionSettings.fixedContentSettings.showStickerRestoreDefaultSize":
+		"Restore default size when showing sticker",
 	"settings.functionSettings.fixedContentSettings.initialPosition.monitorCenter":
 		"Monitor Center",
 	"settings.functionSettings.fixedContentSettings.initialPosition.mousePosition":

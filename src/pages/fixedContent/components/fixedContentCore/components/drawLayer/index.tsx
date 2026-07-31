@@ -56,6 +56,7 @@ export type FixedContentCoreDrawActionType = {
 	getDrawMenuSize: () => { width: number; height: number };
 	getCanvas: () => HTMLCanvasElement | null;
 	tryRenderElements: () => Promise<void>;
+	clearElements: () => void;
 };
 
 const DRAW_MENU_WIDTH = 200;
@@ -81,6 +82,9 @@ const DrawLayerCore: React.FC<{
 	getZoom: () => number;
 	switchDraw: () => void;
 	isImageLayerReady: () => boolean;
+	onCrop?: () => void;
+	/** 内容在窗口内的偏移（CSS 像素），编辑全屏时内容不在窗口原点 */
+	contentOffset?: { x: number; y: number };
 }> = ({
 	actionRef,
 	documentSize,
@@ -96,6 +100,8 @@ const DrawLayerCore: React.FC<{
 	getZoom,
 	switchDraw,
 	isImageLayerReady,
+	onCrop,
+	contentOffset,
 }) => {
 	const { token } = theme.useToken();
 
@@ -198,11 +204,15 @@ const DrawLayerCore: React.FC<{
 	const drawCoreContextValue = useMemo<DrawCoreContextValue>(() => {
 		return {
 			getLimitRect: () => {
+				// limitRect 用于工具栏/绘制菜单的定位（视口坐标），
+				// 编辑全屏时内容有偏移，需要把偏移计算在内
+				const offsetX = (contentOffset?.x ?? 0) * window.devicePixelRatio;
+				const offsetY = (contentOffset?.y ?? 0) * window.devicePixelRatio;
 				return {
-					min_x: 0,
-					min_y: 0,
-					max_x: documentSize.width * window.devicePixelRatio,
-					max_y: documentSize.height * window.devicePixelRatio,
+					min_x: offsetX,
+					min_y: offsetY,
+					max_x: offsetX + documentSize.width * window.devicePixelRatio,
+					max_y: offsetY + documentSize.height * window.devicePixelRatio,
 				};
 			},
 			getDevicePixelRatio: () => {
@@ -211,7 +221,7 @@ const DrawLayerCore: React.FC<{
 			getBaseOffset: (limitRect: ElementRect, devicePixelRatio: number) => {
 				return {
 					x: limitRect.max_x / devicePixelRatio + token.marginXXS,
-					y: limitRect.min_x / devicePixelRatio + 3,
+					y: limitRect.min_y / devicePixelRatio + 3,
 				};
 			},
 			getAction: () => {
@@ -304,7 +314,13 @@ const DrawLayerCore: React.FC<{
 				};
 			},
 		};
-	}, [documentSize.height, documentSize.width, token.marginXXS]);
+	}, [
+		documentSize.height,
+		documentSize.width,
+		token.marginXXS,
+		contentOffset?.x,
+		contentOffset?.y,
+	]);
 
 	const drawContextValue = useMemo<DrawContextType>(() => {
 		return {
@@ -459,6 +475,9 @@ const DrawLayerCore: React.FC<{
 				return drawCoreActionRef.current?.getCanvas() ?? null;
 			},
 			tryRenderElements,
+			clearElements: () => {
+				drawCoreActionRef.current?.updateScene({ elements: [] });
+			},
 		};
 	}, [getDrawMenuSize, tryRenderElements]);
 
@@ -493,6 +512,7 @@ const DrawLayerCore: React.FC<{
 						documentSize={documentSize}
 						onConfirm={onConfirm}
 						switchDraw={switchDraw}
+						onCrop={onCrop}
 					/>
 				</DrawCoreContext.Provider>
 
