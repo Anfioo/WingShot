@@ -75,7 +75,7 @@ Wing Shot 追求简单高效的使用体验，希望每个用户都能依照直�
 
 - 提交 [Issue](https://github.com/Anfioo/WingShot/issues)
 - B 站账号 [3N0W](https://space.bilibili.com/3546897042114689)
-- QQ 交流群 [974311403](https://qm.qq.com/q/cyUPEV4nwk)
+- QQ 交流群 [675141016](https://qm.qq.com/q/cyUPEV4nwk)
 - [了解更多](https://wingshot.anfioo.com/community/index.html)
 
 ## 文档

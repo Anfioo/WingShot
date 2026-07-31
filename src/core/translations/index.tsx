@@ -85,10 +85,15 @@ export const useTranslationRequest = (options?: {
 	const requestSequenceRef = useRef(0);
 
 	const requestTranslate = useCallback(
-		async (sourceContent: string[], requestId?: number) => {
+		async (
+			sourceContent: string[],
+			requestId?: number,
+			translationServicesOverride?: TranslationServiceInstance[],
+		) => {
 			const currentRequestSequence = requestSequenceRef.current + 1;
 			requestSequenceRef.current = currentRequestSequence;
-			const services = translationServicesRef.current;
+			const services =
+				translationServicesOverride ?? translationServicesRef.current;
 			const translationDomain = translationDomainRef.current;
 			const sourceLanguage = sourceLanguageRef.current;
 			const targetLanguage = targetLanguageRef.current;

@@ -5,6 +5,7 @@ import {
 	Flex,
 	Form,
 	Row,
+	Segmented,
 	Select,
 	type SelectProps,
 	Spin,
@@ -19,11 +20,13 @@ import React, {
 	useImperativeHandle,
 	useMemo,
 	useRef,
+	useState,
 } from "react";
 import { FormattedMessage, useIntl } from "react-intl";
 import { useTranslationRequest } from "@/core/translations";
 import { translationServiceMetaMap } from "@/core/translations/services";
 import { useStateRef } from "@/hooks/useStateRef";
+import type { TranslationServiceInstance } from "@/types/appSettings";
 import { TranslationDomain } from "@/types/servies/translation";
 import { writeTextToClipboard } from "@/utils/clipboard";
 
@@ -247,6 +250,10 @@ export const useTranslationDomainOptions = () => {
 	);
 };
 
+const translationSourceModes = ["auto", "manual"] as const;
+type TranslationSourceMode = (typeof translationSourceModes)[number];
+const translationSourceTipVisibleMs = 2400;
+
 const TranslatorCore: React.FC<{
 	actionRef: React.RefObject<TranslatorActionType | undefined>;
 }> = ({ actionRef }) => {
@@ -283,6 +290,64 @@ const TranslatorCore: React.FC<{
 		}, []),
 	);
 
+	const getTranslationServiceName = useCallback(
+		(service: TranslationServiceInstance) => {
+			const meta = translationServiceMetaMap[service.type];
+			return service.name?.trim()
+				? service.name
+				: intl.formatMessage({ id: meta.messageId });
+		},
+		[intl],
+	);
+	const [translationSourceMode, setTranslationSourceMode] =
+		useState<TranslationSourceMode>("auto");
+	const [selectedTranslationServiceId, setSelectedTranslationServiceId] =
+		useState<string>();
+	const enabledTranslationServices = useMemo(
+		() => translationServices.filter((service) => service.enabled !== false),
+		[translationServices],
+	);
+	const translationServiceOptions = useMemo(
+		() =>
+			enabledTranslationServices.map((service) => ({
+				label: getTranslationServiceName(service),
+				value: service.id,
+			})),
+		[enabledTranslationServices, getTranslationServiceName],
+	);
+
+	useEffect(() => {
+		const fallbackService = enabledTranslationServices[0];
+		if (!fallbackService) {
+			setSelectedTranslationServiceId(undefined);
+			return;
+		}
+
+		if (
+			!selectedTranslationServiceId ||
+			!enabledTranslationServices.some(
+				(service) => service.id === selectedTranslationServiceId,
+			)
+		) {
+			setSelectedTranslationServiceId(fallbackService.id);
+		}
+	}, [enabledTranslationServices, selectedTranslationServiceId]);
+
+	const selectedTranslationService = useMemo(
+		() =>
+			enabledTranslationServices.find(
+				(service) => service.id === selectedTranslationServiceId,
+			),
+		[enabledTranslationServices, selectedTranslationServiceId],
+	);
+	const activeTranslationServices = useMemo(() => {
+		if (translationSourceMode === "manual" && selectedTranslationService) {
+			return [selectedTranslationService];
+		}
+
+		return translationServices;
+	}, [selectedTranslationService, translationServices, translationSourceMode]);
+
 	const ignoreDebounceRef = useRef<boolean>(false);
 	const [sourceContent, setSourceContent] = useStateRef<string>("");
 
@@ -300,10 +365,14 @@ const TranslatorCore: React.FC<{
 		if (ignoreDebounceRef.current) {
 			ignoreDebounceRef.current = false;
 			setTimeout(() => {
-				requestTranslate([sourceContent]);
+				requestTranslate([sourceContent], undefined, activeTranslationServices);
 			}, 17);
 		} else {
-			requestTranslateDebounce([sourceContent]);
+			requestTranslateDebounce(
+				[sourceContent],
+				undefined,
+				activeTranslationServices,
+			);
 		}
 	}, [
 		sourceContent,
@@ -312,7 +381,7 @@ const TranslatorCore: React.FC<{
 		sourceLanguage,
 		targetLanguage,
 		translationDomain,
-		translationServices,
+		activeTranslationServices,
 	]);
 
 	const onCopy = useCallback(() => {
@@ -326,11 +395,27 @@ const TranslatorCore: React.FC<{
 	const hasTranslatedContent = !!translatedContent;
 	const usedServiceName = useMemo(() => {
 		if (!usedTranslationService) return "";
-		const meta = translationServiceMetaMap[usedTranslationService.type];
-		return usedTranslationService.name?.trim()
-			? usedTranslationService.name
-			: intl.formatMessage({ id: meta.messageId });
-	}, [intl, usedTranslationService]);
+		return getTranslationServiceName(usedTranslationService);
+	}, [getTranslationServiceName, usedTranslationService]);
+	const showAutoUsedService =
+		translationSourceMode === "auto" &&
+		hasTranslatedContent &&
+		!!usedServiceName;
+	const [showUsedServiceToast, setShowUsedServiceToast] = useState(false);
+
+	useEffect(() => {
+		if (!showAutoUsedService) {
+			setShowUsedServiceToast(false);
+			return;
+		}
+
+		setShowUsedServiceToast(true);
+		const timer = window.setTimeout(() => {
+			setShowUsedServiceToast(false);
+		}, translationSourceTipVisibleMs);
+
+		return () => window.clearTimeout(timer);
+	}, [showAutoUsedService]);
 
 	const sourceContentRef = useRef<TextAreaRef>(null);
 	useImperativeHandle(
@@ -409,7 +494,7 @@ const TranslatorCore: React.FC<{
 							/>
 						</Form.Item>
 					</Flex>
-					<Flex gap={token.margin}>
+					<Flex gap={token.margin} align="flex-start" justify="end">
 						<Form.Item
 							style={{ marginBottom: token.marginXS }}
 							label={<FormattedMessage id="tools.translation.domain" />}
@@ -431,6 +516,42 @@ const TranslatorCore: React.FC<{
 								}}
 								variant="underlined"
 							/>
+						</Form.Item>
+						<Form.Item
+							style={{ marginBottom: token.marginXS }}
+							label={<FormattedMessage id="tools.translation.source" />}
+						>
+							<Flex gap={token.marginXXS} align="center" justify="end">
+								{translationSourceMode === "manual" ? (
+									<Select
+										value={selectedTranslationServiceId}
+										onChange={(value) => {
+											ignoreDebounceRef.current = true;
+											setSelectedTranslationServiceId(value);
+										}}
+										options={translationServiceOptions}
+										variant="underlined"
+										placeholder={intl.formatMessage({
+											id: "tools.translation.source.placeholder",
+										})}
+										disabled={translationServiceOptions.length === 0}
+										style={{ minWidth: 160 }}
+									/>
+								) : null}
+								<Segmented
+									value={translationSourceMode}
+									onChange={(value) => {
+										ignoreDebounceRef.current = true;
+										setTranslationSourceMode(value as TranslationSourceMode);
+									}}
+									options={translationSourceModes.map((mode) => ({
+										label: intl.formatMessage({
+											id: `tools.translation.sourceMode.${mode}`,
+										}),
+										value: mode,
+									}))}
+								/>
+							</Flex>
 						</Form.Item>
 					</Flex>
 				</Flex>
@@ -471,7 +592,7 @@ const TranslatorCore: React.FC<{
 										right: token.marginLG,
 									}}
 								/>
-								{hasTranslatedContent && usedServiceName ? (
+								{showUsedServiceToast ? (
 									<Tag className="tool-translator-container-used-service">
 										<FormattedMessage
 											id="tools.translation.usedService"
@@ -536,11 +657,12 @@ const TranslatorCore: React.FC<{
                     position: absolute;
                     top: ${token.marginXXS}px;
                     right: ${token.marginXXS}px;
-                    z-index: 1;
+                    z-index: 2;
                     max-width: calc(100% - ${token.marginXXS * 2}px);
                     overflow: hidden;
                     text-overflow: ellipsis;
                     white-space: nowrap;
+                    pointer-events: none;
                 }
 
                 :global(.tool-translator-container-translate-button-container) {

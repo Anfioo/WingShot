@@ -14,7 +14,7 @@ export const about = {
 	"about.contact.github": "GitHub Issue",
 	"about.contact.bilibili": "B站 3N0W",
 	"about.contact.email": "邮件: anfioo@wingshot.anfioo.com",
-	"about.contact.qqGroup": "QQ 交流群: 974311403",
+	"about.contact.qqGroup": "QQ 交流群: 675141016",
 	"about.newVersion": "新版本",
 	"about.update.checking": "检查更新中...",
 	"about.update.upToDate": "当前已是最新版本",
