@@ -82,7 +82,7 @@ import {
 	getImagePathFromSettings,
 	showImageDialog,
 } from "@/utils/file";
-import { appError, appWarn, appInfo } from "@/utils/log";
+import { appError, appInfo, appWarn } from "@/utils/log";
 import { MousePosition } from "@/utils/mousePosition";
 import { ScreenshotType } from "@/utils/types";
 import { setWindowRect, showWindow as showCurrentWindow } from "@/utils/window";
@@ -830,7 +830,7 @@ const DrawPageCore: React.FC<{
 				source,
 			);
 		},
-		[getAppSettings, updateAppSettings, getScreenshotType],
+		[getAppSettings, getScreenshotType],
 	);
 
 	const onSave = useCallback(

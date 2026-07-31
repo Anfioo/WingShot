@@ -22,6 +22,7 @@ import {
 import { useHotkeysContext } from "react-hotkeys-hook";
 import { FormattedMessage, useIntl } from "react-intl";
 import RSC from "react-scrollbars-custom";
+import { readPrevSelectRect } from "@/commands/core";
 import { defaultAppSettingsData } from "@/constants/appSettings";
 import {
 	AppSettingsActionContext,
@@ -37,7 +38,6 @@ import {
 } from "@/types/appSettings";
 import type { ElementRect } from "@/types/commands/screenshot";
 import { HotkeysScope } from "@/types/core/appHotKeys";
-import { readPrevSelectRect } from "@/commands/core";
 
 export type ResizeModalActionType = {
 	show: (
@@ -80,7 +80,7 @@ export const ResizeModal: React.FC<{
 		selectRectPresetListRef,
 	] = useStateRef<SelectRectPreset[]>([]);
 	const { updateAppSettings } = useContext(AppSettingsActionContext);
-	const [getAppSettings] = useStateSubscriber(
+	const [_getAppSettings] = useStateSubscriber(
 		AppSettingsPublisher,
 		useCallback(
 			(appSettings: AppSettingsData) => {
@@ -200,7 +200,7 @@ export const ResizeModal: React.FC<{
 			if (value === "currentSelectRect" || value === "previousSelectRect") {
 				let targetSelectRect: ElementRect | undefined;
 				if (value === "previousSelectRect") {
-					targetSelectRect = await readPrevSelectRect() ?? {
+					targetSelectRect = (await readPrevSelectRect()) ?? {
 						min_x: 0,
 						min_y: 0,
 						max_x: 0,
@@ -312,8 +312,6 @@ export const ResizeModal: React.FC<{
 			currentSelectRect?.min_y,
 			currentSelectRectRef,
 			form,
-			getAppSettings,
-			readPrevSelectRect,
 			selectRectPresetListRef,
 		],
 	);

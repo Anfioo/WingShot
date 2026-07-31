@@ -638,7 +638,12 @@ export const ScrollScreenshot: React.FC<{
 		enableIgnoreCursorEventsRef.current = true;
 		await clickThrough();
 		enableIgnoreCursorEventsRef.current = false;
-	}, [stopAutoScrollThrough, tryEnableAutoScrollThroughCore, setShowTip]);
+	}, [
+		stopAutoScrollThrough,
+		tryEnableAutoScrollThroughCore,
+		setShowTip,
+		getAppSettings,
+	]);
 
 	const startCapture = useCallback(async () => {
 		enableScrollThroughRef.current = false;

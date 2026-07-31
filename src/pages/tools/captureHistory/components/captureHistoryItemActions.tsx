@@ -1,10 +1,10 @@
-import { FixedIcon } from "@/components/icons";
 import { CopyOutlined, DeleteOutlined, EditOutlined } from "@ant-design/icons";
 import { Button, Popconfirm, Space } from "antd";
 import { useCallback, useState } from "react";
 import { FormattedMessage } from "react-intl";
-import { executeScreenshot } from "@/functions/screenshot";
 import { createFixedContentWindow } from "@/commands/core";
+import { FixedIcon } from "@/components/icons";
+import { executeScreenshot } from "@/functions/screenshot";
 import type { CaptureHistory } from "@/utils/captureHistory";
 import { writeFilePathToClipboard } from "@/utils/clipboard";
 import { ScreenshotType } from "@/utils/types";

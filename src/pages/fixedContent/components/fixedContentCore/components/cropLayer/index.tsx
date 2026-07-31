@@ -4,7 +4,8 @@ import {
 	ReloadOutlined,
 } from "@ant-design/icons";
 import { Button, theme } from "antd";
-import React, {
+import type React from "react";
+import {
 	useCallback,
 	useEffect,
 	useLayoutEffect,
@@ -13,9 +14,9 @@ import React, {
 } from "react";
 import { FormattedMessage, useIntl } from "react-intl";
 import { updateElementPosition } from "@/pages/draw/components/drawToolbar/components/dragButton/extra";
+import type { ElementRect } from "@/types/commands/screenshot";
 import { MousePosition } from "@/utils/mousePosition";
 import { zIndexs } from "@/utils/zIndex";
-import type { ElementRect } from "@/types/commands/screenshot";
 
 export type CropLayerProps = {
 	/** 当前内容的快照（画布坐标系分辨率，即画布原始像素） */
@@ -98,11 +99,14 @@ export const CropLayer: React.FC<CropLayerProps> = ({
 	});
 
 	const dragModeRef = useRef<DragMode | undefined>(undefined);
-	const dragStartRef = useRef<{
-		x: number;
-		y: number;
-		rect: ElementRect;
-	} | undefined>(undefined);
+	const dragStartRef = useRef<
+		| {
+				x: number;
+				y: number;
+				rect: ElementRect;
+		  }
+		| undefined
+	>(undefined);
 
 	// 测量容器真实显示尺寸
 	useEffect(() => {
@@ -217,7 +221,13 @@ export const CropLayer: React.FC<CropLayerProps> = ({
 				handleSize,
 			);
 		}
-	}, [selectRect, viewSize.width, viewSize.height, token.colorPrimary, token.colorWhite]);
+	}, [
+		selectRect,
+		viewSize.width,
+		viewSize.height,
+		token.colorPrimary,
+		token.colorWhite,
+	]);
 
 	useEffect(() => {
 		drawOverlay();
@@ -268,12 +278,7 @@ export const CropLayer: React.FC<CropLayerProps> = ({
 				}
 			}
 			// 选区内部 → 移动；选区外部 → 重新框选
-			if (
-				x > sel.min_x &&
-				x < sel.max_x &&
-				y > sel.min_y &&
-				y < sel.max_y
-			) {
+			if (x > sel.min_x && x < sel.max_x && y > sel.min_y && y < sel.max_y) {
 				return "move";
 			}
 			return "create";
@@ -490,9 +495,8 @@ export const CropLayer: React.FC<CropLayerProps> = ({
 		selectRect,
 		canvasSize.width,
 		canvasSize.height,
-		viewSize.width,
-		viewSize.height,
 		token.margin,
+		hasSelection,
 	]);
 
 	// 布局阶段即计算位置，避免按钮在 (0,0) 闪烁
@@ -598,10 +602,7 @@ export const CropLayer: React.FC<CropLayerProps> = ({
 					e.stopPropagation();
 				}}
 			>
-				<Button
-					icon={<CloseOutlined />}
-					onClick={onCancel}
-				>
+				<Button icon={<CloseOutlined />} onClick={onCancel}>
 					<FormattedMessage id="draw.crop.cancel" />
 				</Button>
 				<Button

@@ -34,8 +34,8 @@ import { useAppSettingsLoad } from "@/hooks/useAppSettingsLoad";
 import { useStateRef } from "@/hooks/useStateRef";
 import { useStateSubscriber } from "@/hooks/useStateSubscriber";
 import {
-	useDragElement,
 	type DragElementOptionalConfig,
+	useDragElement,
 } from "@/pages/draw/components/drawToolbar/components/dragButton";
 import { HistoryControls } from "@/pages/draw/components/drawToolbar/components/historyControls";
 import { ToolButton } from "@/pages/draw/components/drawToolbar/components/toolButton";

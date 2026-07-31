@@ -63,8 +63,9 @@ export const FixedContentPage: React.FC = () => {
 			urlParams = new URL(targetUrl, window.location.origin).searchParams;
 		} else {
 			const hash = window.location.hash;
-			const search =
-				hash.includes("?") ? hash.slice(hash.indexOf("?")) : window.location.search;
+			const search = hash.includes("?")
+				? hash.slice(hash.indexOf("?"))
+				: window.location.search;
 			urlParams = new URLSearchParams(search);
 		}
 

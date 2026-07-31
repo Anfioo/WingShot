@@ -1,4 +1,8 @@
-import { createRouter, RouterProvider, createHashHistory } from "@tanstack/react-router";
+import {
+	createHashHistory,
+	createRouter,
+	RouterProvider,
+} from "@tanstack/react-router";
 
 import { routeTree } from "./routeTree.gen";
 import "./styles.css";

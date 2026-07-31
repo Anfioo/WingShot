@@ -396,8 +396,7 @@ export const CaptureHistoryPage = () => {
 						search: false,
 						cardActionProps: "extra",
 						render: (_, item: CaptureHistoryRecordItem) => {
-							const showCaptureResult =
-								showCaptureResultMap[item.id] ?? true;
+							const showCaptureResult = showCaptureResultMap[item.id] ?? true;
 							const pinImagePath = showCaptureResult
 								? (item.capture_result_file_path ?? item.file_path)
 								: item.file_path;
@@ -418,9 +417,7 @@ export const CaptureHistoryPage = () => {
 							return (
 								<CaptureHistoryItemPreview
 									item={item}
-									showCaptureResult={
-										showCaptureResultMap[item.id] ?? true
-									}
+									showCaptureResult={showCaptureResultMap[item.id] ?? true}
 									onToggleShowCaptureResult={() => {
 										setShowCaptureResultMap((prev) => ({
 											...prev,

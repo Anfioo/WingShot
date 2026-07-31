@@ -1,9 +1,5 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import React, {
-	useContext,
-	useEffect,
-	useRef,
-} from "react";
+import React, { useContext, useEffect, useRef } from "react";
 import { EventListenerContext } from "@/components/eventListener";
 import {
 	FIXED_CONTENT_FOCUS_MODE_CLOSE_ALL_WINDOW,

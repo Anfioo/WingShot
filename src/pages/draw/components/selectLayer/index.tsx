@@ -1669,7 +1669,6 @@ const SelectLayerCore: React.FC<SelectLayerProps> = ({ actionRef }) => {
 		setPrevSelectRect,
 		enableTabFindChildrenElementsRef,
 		updateAppSettings,
-		readPrevSelectRect,
 	]);
 
 	useEffect(() => {

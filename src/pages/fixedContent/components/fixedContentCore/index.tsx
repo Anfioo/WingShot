@@ -60,8 +60,6 @@ import {
 	saveCanvasToCloud,
 } from "@/pages/draw/actions";
 import type { SelectRectParams } from "@/pages/draw/components/selectLayer";
-import type { ElementRect } from "@/types/commands/screenshot";
-import { CropLayer } from "./components/cropLayer";
 import {
 	type CaptureBoundingBoxInfo,
 	DrawEvent,
@@ -73,6 +71,7 @@ import {
 	AppSettingsGroup,
 	FixedContentDoubleClickAction,
 } from "@/types/appSettings";
+import type { ElementRect } from "@/types/commands/screenshot";
 import {
 	CommonKeyEventKey,
 	type CommonKeyEventValue,
@@ -96,6 +95,7 @@ import {
 } from "../ocrResult";
 import { getOcrResultIframeSrcDoc } from "../ocrResult/extra";
 import { renderToCanvasAction } from "./actions";
+import { CropLayer } from "./components/cropLayer";
 import {
 	DrawLayer,
 	type FixedContentCoreDrawActionType,
@@ -271,7 +271,9 @@ const FixedContentCoreInner: React.FC<{
 	});
 
 	// 贴图首次加载完成时的缩放比例，作为“默认大小”
-	const defaultScaleRef = useRef<{ x: number; y: number } | undefined>(undefined);
+	const defaultScaleRef = useRef<{ x: number; y: number } | undefined>(
+		undefined,
+	);
 
 	// 记录贴图首次加载完成时的缩放比例作为“默认大小”
 	const captureDefaultScale = useCallback(() => {
@@ -1205,9 +1207,8 @@ const FixedContentCoreInner: React.FC<{
 		getWindowPhysicalSize,
 		scaleRef,
 		setScale,
-		appWindowRef,
-		originWindowSizeAndPositionRef,
 		setIsThumbnail,
+		isThumbnailRef.current,
 	]);
 
 	const copyToClipboard = useCallback(async () => {
@@ -1396,7 +1397,7 @@ const FixedContentCoreInner: React.FC<{
 
 		// 窗口已在最终全屏位置且内容偏移正确，整窗显示即一步到位，无任何闪烁
 		await appWindow.show();
-	}, [appWindowRef]);
+	}, []);
 
 	// 退出编辑全屏：把窗口还原到内容所在的屏幕位置
 	const exitEditFullScreen = useCallback(async () => {
@@ -1428,7 +1429,7 @@ const FixedContentCoreInner: React.FC<{
 
 		// 窗口已还原到内容原位置，整窗显示即一步到位，无任何闪烁
 		await appWindow.show();
-	}, [appWindowRef, getWindowPhysicalSize, scaleRef]);
+	}, [getWindowPhysicalSize, scaleRef]);
 
 	const switchDrawCore = useCallback(async () => {
 		const nextEnableDraw = !enableDrawRef.current;
@@ -1440,7 +1441,12 @@ const FixedContentCoreInner: React.FC<{
 		}
 
 		setEnableDraw((enable) => !enable);
-	}, [setEnableDraw, enterEditFullScreen, exitEditFullScreen]);
+	}, [
+		setEnableDraw,
+		enterEditFullScreen,
+		exitEditFullScreen,
+		enableDrawRef.current,
+	]);
 
 	const switchSelectText = useCallback(async () => {
 		if (isThumbnailRef.current) {
@@ -1863,12 +1869,12 @@ const FixedContentCoreInner: React.FC<{
 		});
 		setCropDisplaySize({
 			width:
-				(windowSizeRef.current.width / contentScaleFactor) *
-				scaleRef.current.x /
+				((windowSizeRef.current.width / contentScaleFactor) *
+					scaleRef.current.x) /
 				100,
 			height:
-				(windowSizeRef.current.height / contentScaleFactor) *
-				scaleRef.current.y /
+				((windowSizeRef.current.height / contentScaleFactor) *
+					scaleRef.current.y) /
 				100,
 		});
 		setEnableCrop(true);
@@ -1878,6 +1884,10 @@ const FixedContentCoreInner: React.FC<{
 		renderToCanvas,
 		contentScaleFactor,
 		enterEditFullScreen,
+		scaleRef.current.x,
+		scaleRef.current.y,
+		windowSizeRef.current.height,
+		windowSizeRef.current.width,
 	]);
 
 	const cancelCrop = useCallback(() => {
@@ -1902,145 +1912,128 @@ const FixedContentCoreInner: React.FC<{
 	const confirmCrop = useCallback(
 		async (cropRect: ElementRect) => {
 			try {
-			const source = cropSourceRef.current;
-			if (!source) {
-				setEnableCrop(false);
-				return;
-			}
+				const source = cropSourceRef.current;
+				if (!source) {
+					setEnableCrop(false);
+					return;
+				}
 
-			const cropW = Math.max(
-				1,
-				Math.round(cropRect.max_x - cropRect.min_x),
-			);
-			const cropH = Math.max(
-				1,
-				Math.round(cropRect.max_y - cropRect.min_y),
-			);
+				const cropW = Math.max(1, Math.round(cropRect.max_x - cropRect.min_x));
+				const cropH = Math.max(1, Math.round(cropRect.max_y - cropRect.min_y));
 
-			const out = document.createElement("canvas");
-			out.width = cropW;
-			out.height = cropH;
-			const ctx = out.getContext("2d");
-			if (!ctx) {
-				setEnableCrop(false);
-				return;
-			}
-			ctx.drawImage(
-				source,
-				cropRect.min_x,
-				cropRect.min_y,
-				cropW,
-				cropH,
-				0,
-				0,
-				cropW,
-				cropH,
-			);
+				const out = document.createElement("canvas");
+				out.width = cropW;
+				out.height = cropH;
+				const ctx = out.getContext("2d");
+				if (!ctx) {
+					setEnableCrop(false);
+					return;
+				}
+				ctx.drawImage(
+					source,
+					cropRect.min_x,
+					cropRect.min_y,
+					cropW,
+					cropH,
+					0,
+					0,
+					cropW,
+					cropH,
+				);
 
-			let bitmap: ImageBitmap;
-			try {
-				bitmap = await createImageBitmap(out);
-			} catch {
-				setEnableCrop(false);
-				return;
-			}
+				let bitmap: ImageBitmap;
+				try {
+					bitmap = await createImageBitmap(out);
+				} catch {
+					setEnableCrop(false);
+					return;
+				}
 
-			// 重置图像处理配置（旋转、翻转已通过裁剪固化为内容本身）
-			setProcessImageConfig({
-				angle: 0,
-				horizontalFlip: false,
-				verticalFlip: false,
-			});
-			// 清除绘制层中的元素（裁剪会丢弃选区外内容）
-			drawActionRef.current?.clearElements?.();
+				// 重置图像处理配置（旋转、翻转已通过裁剪固化为内容本身）
+				setProcessImageConfig({
+					angle: 0,
+					horizontalFlip: false,
+					verticalFlip: false,
+				});
+				// 清除绘制层中的元素（裁剪会丢弃选区外内容）
+				drawActionRef.current?.clearElements?.();
 
-			const imageLayerAction =
-				imageLayerActionRef.current?.getImageLayerAction();
-			if (!imageLayerAction) {
-				setEnableCrop(false);
-				return;
-			}
-			await imageLayerActionRef.current?.setBaseImage(bitmap);
-			await imageLayerAction.applyProcessImageConfigToCanvas(
-				INIT_CONTAINER_KEY,
-				{ angle: 0, horizontalFlip: false, verticalFlip: false },
-				cropW,
-				cropH,
-			);
+				const imageLayerAction =
+					imageLayerActionRef.current?.getImageLayerAction();
+				if (!imageLayerAction) {
+					setEnableCrop(false);
+					return;
+				}
+				await imageLayerActionRef.current?.setBaseImage(bitmap);
+				await imageLayerAction.applyProcessImageConfigToCanvas(
+					INIT_CONTAINER_KEY,
+					{ angle: 0, horizontalFlip: false, verticalFlip: false },
+					cropW,
+					cropH,
+				);
 
-			const scaleFactor = canvasPropsRef.current.scaleFactor;
-			canvasPropsRef.current = {
-				...canvasPropsRef.current,
-				width: cropW,
-				height: cropH,
-			};
-			setWindowSize({
-				width: cropW / scaleFactor,
-				height: cropH / scaleFactor,
-			});
+				const scaleFactor = canvasPropsRef.current.scaleFactor;
+				canvasPropsRef.current = {
+					...canvasPropsRef.current,
+					width: cropW,
+					height: cropH,
+				};
+				setWindowSize({
+					width: cropW / scaleFactor,
+					height: cropH / scaleFactor,
+				});
 
-			// 保持窗口中心不变，调整窗口大小
-			const appWindow = appWindowRef.current;
-			if (enableDrawRef.current && drawFullScreenRef.current) {
-				// 全屏绘制模式下继续绘制，保持全屏，无需调整窗口
-			} else if (drawFullScreenRef.current) {
-				// 右键菜单直接进入的裁剪（非绘制模式）：退出全屏，
-				// 按裁剪后的内容尺寸恢复窗口并保持原窗口中心
-				await exitEditFullScreen();
-			} else if (appWindow) {
-				const newPhysicalSize = getWindowPhysicalSize(scaleRef.current.x);
-				// 与 updateDrawWindowSize 一致的窗口尺寸计算，确保窗口包含工具栏和绘制菜单空间
-				const toolbarSize =
-					drawActionRef.current?.getToolbarSize() ?? {
+				// 保持窗口中心不变，调整窗口大小
+				const appWindow = appWindowRef.current;
+				if (enableDrawRef.current && drawFullScreenRef.current) {
+					// 全屏绘制模式下继续绘制，保持全屏，无需调整窗口
+				} else if (drawFullScreenRef.current) {
+					// 右键菜单直接进入的裁剪（非绘制模式）：退出全屏，
+					// 按裁剪后的内容尺寸恢复窗口并保持原窗口中心
+					await exitEditFullScreen();
+				} else if (appWindow) {
+					const newPhysicalSize = getWindowPhysicalSize(scaleRef.current.x);
+					// 与 updateDrawWindowSize 一致的窗口尺寸计算，确保窗口包含工具栏和绘制菜单空间
+					const toolbarSize = drawActionRef.current?.getToolbarSize() ?? {
 						width: 0,
 						height: 0,
 					};
-				const drawMenuSize =
-					drawActionRef.current?.getDrawMenuSize() ?? {
+					const drawMenuSize = drawActionRef.current?.getDrawMenuSize() ?? {
 						width: 0,
 						height: 0,
 					};
-				const dpr = window.devicePixelRatio;
-				let totalPhysicalWidth = newPhysicalSize.width;
-				let totalPhysicalHeight = newPhysicalSize.height;
-				if (enableDrawRef.current) {
-					const toolbarPhysicalWidth = Math.ceil(
-						toolbarSize.width * dpr,
-					);
-					const toolbarPhysicalHeight = Math.ceil(
-						toolbarSize.height * dpr,
-					);
-					const drawMenuPhysicalWidth = Math.ceil(
-						drawMenuSize.width * dpr,
-					);
-					const drawMenuPhysicalHeight = Math.ceil(
-						drawMenuSize.height * dpr,
-					);
-					totalPhysicalHeight = Math.max(
-						newPhysicalSize.height + toolbarPhysicalHeight,
-						drawMenuPhysicalHeight,
-					);
-					totalPhysicalWidth = Math.max(
-						drawMenuPhysicalWidth + newPhysicalSize.width,
-						toolbarPhysicalWidth,
+					const dpr = window.devicePixelRatio;
+					let totalPhysicalWidth = newPhysicalSize.width;
+					let totalPhysicalHeight = newPhysicalSize.height;
+					if (enableDrawRef.current) {
+						const toolbarPhysicalWidth = Math.ceil(toolbarSize.width * dpr);
+						const toolbarPhysicalHeight = Math.ceil(toolbarSize.height * dpr);
+						const drawMenuPhysicalWidth = Math.ceil(drawMenuSize.width * dpr);
+						const drawMenuPhysicalHeight = Math.ceil(drawMenuSize.height * dpr);
+						totalPhysicalHeight = Math.max(
+							newPhysicalSize.height + toolbarPhysicalHeight,
+							drawMenuPhysicalHeight,
+						);
+						totalPhysicalWidth = Math.max(
+							drawMenuPhysicalWidth + newPhysicalSize.width,
+							toolbarPhysicalWidth,
+						);
+					}
+					const [currentSize, currentPosition] = await Promise.all([
+						appWindow.outerSize(),
+						appWindow.outerPosition(),
+					]);
+					const centerX = currentPosition.x + currentSize.width / 2;
+					const centerY = currentPosition.y + currentSize.height / 2;
+					const newX = Math.round(centerX - totalPhysicalWidth / 2);
+					const newY = Math.round(centerY - totalPhysicalHeight / 2);
+					await setWindowRect(
+						newX,
+						newY,
+						newX + totalPhysicalWidth,
+						newY + totalPhysicalHeight,
 					);
 				}
-				const [currentSize, currentPosition] = await Promise.all([
-					appWindow.outerSize(),
-					appWindow.outerPosition(),
-				]);
-				const centerX = currentPosition.x + currentSize.width / 2;
-				const centerY = currentPosition.y + currentSize.height / 2;
-				const newX = Math.round(centerX - totalPhysicalWidth / 2);
-				const newY = Math.round(centerY - totalPhysicalHeight / 2);
-				await setWindowRect(
-					newX,
-					newY,
-					newX + totalPhysicalWidth,
-					newY + totalPhysicalHeight,
-				);
-			}
-
 			} catch (error) {
 				appError("[confirmCrop] crop failed", error);
 			} finally {
@@ -2052,9 +2045,9 @@ const FixedContentCoreInner: React.FC<{
 			scaleRef,
 			setProcessImageConfig,
 			setWindowSize,
-			appWindowRef,
 			enableDrawRef,
 			exitEditFullScreen,
+			getWindowPhysicalSize,
 		],
 	);
 
@@ -3400,31 +3393,31 @@ const FixedContentCoreInner: React.FC<{
 							/>
 						</>
 					)}
-			</Space>
+				</Space>
 
-			{/* 编辑全屏（绘制/裁剪）下的取消按钮，与截图取消 X 一致 */}
-			{(enableDraw || enableCrop) && (
-				<Button
-					icon={<CloseOutlined style={{ color: token.colorError }} />}
-					style={{
-						position: "fixed",
-						top: token.margin,
-						right: token.margin,
-						backgroundColor: token.colorBgMask,
-						zIndex: zIndexs.FixedToScreen_CloseButton,
-						transition: `background-color ${token.motionDurationFast} ${token.motionEaseInOut}`,
-					}}
-					className="fixed-image-edit-cancel-button"
-					type="primary"
-					shape="circle"
-					variant="solid"
-					onClick={() => {
-						cancelEditFullScreen();
-					}}
-				/>
-			)}
+				{/* 编辑全屏（绘制/裁剪）下的取消按钮，与截图取消 X 一致 */}
+				{(enableDraw || enableCrop) && (
+					<Button
+						icon={<CloseOutlined style={{ color: token.colorError }} />}
+						style={{
+							position: "fixed",
+							top: token.margin,
+							right: token.margin,
+							backgroundColor: token.colorBgMask,
+							zIndex: zIndexs.FixedToScreen_CloseButton,
+							transition: `background-color ${token.motionDurationFast} ${token.motionEaseInOut}`,
+						}}
+						className="fixed-image-edit-cancel-button"
+						type="primary"
+						shape="circle"
+						variant="solid"
+						onClick={() => {
+							cancelEditFullScreen();
+						}}
+					/>
+				)}
 
-			<div className="scale-info" style={{ opacity: showScaleInfo ? 1 : 0 }}>
+				<div className="scale-info" style={{ opacity: showScaleInfo ? 1 : 0 }}>
 					<FormattedMessage
 						id="settings.hotKeySettings.fixedContent.scaleInfo"
 						values={{ scale: scale.x.toFixed(0) }}
