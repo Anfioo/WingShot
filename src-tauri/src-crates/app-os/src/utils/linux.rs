@@ -60,3 +60,8 @@ pub fn restart() -> Result<(), String> {
 pub fn is_admin() -> bool {
     false
 }
+
+/// 设置当前进程优先级（Windows 专用）
+pub fn set_process_priority(_enable: bool) -> Result<(), String> {
+    Ok(())
+}

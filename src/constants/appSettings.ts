@@ -25,6 +25,7 @@ import {
 	KeyDisplayDirection,
 	OcrDetectAfterAction,
 	OcrModel,
+	RenderBackend,
 	RunLogLevel,
 	TranslationServiceType,
 	TrayIconClickAction,
@@ -140,12 +141,6 @@ export const defaultAppSettingsData: AppSettingsData = {
 		chatModelEnableThinking: false,
 		colorPickerColorFormatIndex: 0,
 		prevImageFormat: ImageFormat.PNG,
-		prevSelectRect: {
-			min_x: 0,
-			min_y: 0,
-			max_x: 0,
-			max_y: 0,
-		},
 		enableMicrophone: false,
 		enableLockDrawTool: false,
 		disableArrowPicker: true,
@@ -167,6 +162,7 @@ export const defaultAppSettingsData: AppSettingsData = {
 	[AppSettingsGroup.AppFunction]: defaultAppFunctionConfigs,
 	[AppSettingsGroup.Render]: {
 		antialias: true,
+		renderBackend: RenderBackend.WebGL,
 	},
 	[AppSettingsGroup.SystemCommon]: {
 		autoStart: true,
@@ -340,6 +336,7 @@ Priority order (highest to lowest):
 		saveFileFormat: ImageFormat.PNG,
 		ocrAfterAction: OcrDetectAfterAction.None,
 		ocrCopyText: true,
+		longScreenshotAutoScroll: true,
 		selectRectPresetList: [],
 	},
 	[AppSettingsGroup.SystemScrollScreenshot]: {
@@ -357,6 +354,7 @@ Priority order (highest to lowest):
 		autoCopyToClipboard: false,
 		initialPosition: AppSettingsFixedContentInitialPosition.MousePosition,
 		doubleClickAction: FixedContentDoubleClickAction.SwitchThumbnail,
+		showStickerRestoreDefaultSize: false,
 	},
 	[AppSettingsGroup.FunctionOutput]: {
 		manualSaveFileNameFormat: `WingShot_{{YYYY-MM-DD_HH-mm-ss}}`,

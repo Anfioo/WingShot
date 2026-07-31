@@ -74,10 +74,19 @@ fn save_main_window_geometry(app: &tauri::AppHandle) {
     let Some(window) = app.get_webview_window("main") else {
         return;
     };
+    // 最小化时 outer 尺寸/位置是系统占位值（如 Windows 的 -32000），
+    // 此时保存会把窗口“丢”到屏幕外，应跳过，保留上一次正常几何
+    if matches!(window.is_minimized(), Ok(true)) {
+        return;
+    }
     let (size, pos) = match (window.outer_size(), window.outer_position()) {
         (Ok(s), Ok(p)) => (s, p),
         _ => return,
     };
+    // 兜底校验：过滤异常几何（最小化残留、拖出屏幕外等）
+    if size.width < 10 || size.height < 10 || pos.x < 0 || pos.y < 0 {
+        return;
+    }
     let geo = MainWindowGeometry {
         width: size.width,
         height: size.height,
@@ -106,7 +115,7 @@ fn restore_main_window_geometry(app: &tauri::AppHandle) {
     let Ok(geo) = serde_json::from_str::<MainWindowGeometry>(&content) else {
         return;
     };
-    if geo.width == 0 || geo.height == 0 {
+    if geo.width < 10 || geo.height < 10 || geo.x < 0 || geo.y < 0 {
         return;
     }
 
@@ -147,15 +156,81 @@ fn restore_main_window_geometry(app: &tauri::AppHandle) {
 /// 关闭时删除已保存的几何文件，使下次启动恢复默认。
 #[tauri::command]
 fn set_remember_window_geometry(app: tauri::AppHandle, remember: Option<bool>) {
-    // 前端旧配置/未加载时可能传入 undefined，JSON 序列化后该 key 被丢弃，
-    // 这里回退到默认 true，避免命令因缺少必需参数而报错。
-    let remember = remember.unwrap_or(true);
-    set_remember_window_geometry_enabled(remember);
-    if !remember {
-        if let Ok(dir) = app.path().app_config_dir() {
-            let _ = std::fs::remove_file(dir.join("main-window-geometry.json"));
-        }
+	// 前端旧配置/未加载时可能传入 undefined，JSON 序列化后该 key 被丢弃，
+	// 这里回退到默认 true，避免命令因缺少必需参数而报错。
+	let remember = remember.unwrap_or(true);
+	set_remember_window_geometry_enabled(remember);
+	if !remember {
+		if let Ok(dir) = app.path().app_config_dir() {
+			let _ = std::fs::remove_file(dir.join("main-window-geometry.json"));
+		}
+	}
+}
+
+/// 恢复主窗口到默认尺寸/位置：
+/// 删除已保存的几何文件，并将窗口重置为配置文件中的默认宽高并居中。
+#[tauri::command]
+fn reset_main_window_geometry(app: tauri::AppHandle) {
+	let Some(window) = app.get_webview_window("main") else {
+		return;
+	};
+
+	// 删除已保存的几何信息，使下次启动同样恢复默认
+	if let Ok(dir) = app.path().app_config_dir() {
+		let _ = std::fs::remove_file(dir.join("main-window-geometry.json"));
+	}
+
+	// 从配置读取主窗口默认宽高（写死兜底，防止配置缺失）
+	let (width, height) = app
+		.config()
+		.app
+		.windows
+		.iter()
+		.find(|w| w.label == "main")
+		.map(|w| (w.width as u32, w.height as u32))
+		.unwrap_or((1024, 632));
+
+	let _ = window.set_size(tauri::PhysicalSize::new(width, height));
+	let _ = window.center();
+}
+
+/// 上一次选定的截图区域。
+#[derive(Serialize, Deserialize, Clone, Copy)]
+struct PrevSelectRect {
+    min_x: f64,
+    min_y: f64,
+    max_x: f64,
+    max_y: f64,
+}
+
+const PREV_SELECT_RECT_FILE: &str = "prev-select-rect.json";
+
+/// 将上一次选定的截图区域落盘到独立文件。
+/// 仅当区域有效（min < max）时才写入，避免把空区域持久化。
+#[tauri::command]
+fn save_prev_select_rect(app: tauri::AppHandle, rect: PrevSelectRect) {
+    if rect.min_x >= rect.max_x || rect.min_y >= rect.max_y {
+        return;
     }
+    let Ok(dir) = app.path().app_config_dir() else {
+        return;
+    };
+    let _ = std::fs::create_dir_all(&dir);
+    if let Ok(content) = serde_json::to_string(&rect) {
+        let _ = std::fs::write(dir.join(PREV_SELECT_RECT_FILE), content);
+    }
+}
+
+/// 读取上一次选定的截图区域；文件不存在或解析失败返回 None。
+#[tauri::command]
+fn read_prev_select_rect(app: tauri::AppHandle) -> Option<PrevSelectRect> {
+    let Ok(dir) = app.path().app_config_dir() else {
+        return None;
+    };
+    let Ok(content) = std::fs::read_to_string(dir.join(PREV_SELECT_RECT_FILE)) else {
+        return None;
+    };
+    serde_json::from_str::<PrevSelectRect>(&content).ok()
 }
 
 #[cfg(feature = "dhat-heap")]
@@ -449,6 +524,9 @@ pub fn run() {
             core::set_window_rect,
             core::get_commit_sha,
             set_remember_window_geometry,
+            reset_main_window_geometry,
+            save_prev_select_rect,
+            read_prev_select_rect,
             scroll_screenshot::scroll_screenshot_get_image_data,
             scroll_screenshot::scroll_screenshot_init,
             scroll_screenshot::scroll_screenshot_capture,

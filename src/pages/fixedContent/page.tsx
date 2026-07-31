@@ -62,11 +62,24 @@ export const FixedContentPage: React.FC = () => {
 		if (targetUrl) {
 			urlParams = new URL(targetUrl, window.location.origin).searchParams;
 		} else {
-			urlParams = new URLSearchParams(window.location.search);
+			const hash = window.location.hash;
+			const search = hash.includes("?")
+				? hash.slice(hash.indexOf("?"))
+				: window.location.search;
+			urlParams = new URLSearchParams(search);
 		}
 
 		if (urlParams.get("idle_page") === "true") {
 			setEnableIdlePage(true);
+			return;
+		}
+
+		// 贴图指定的本地图片文件
+		const filePath = urlParams.get("file_path");
+		if (filePath) {
+			fixedContentActionRef.current?.init({
+				imageContent: convertFileSrc(filePath),
+			});
 			return;
 		}
 

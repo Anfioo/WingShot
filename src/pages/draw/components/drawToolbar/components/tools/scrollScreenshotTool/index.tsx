@@ -449,7 +449,10 @@ export const ScrollScreenshot: React.FC<{
 				max_x: rect.max_x * scale,
 				max_y: rect.max_y * scale,
 			});
-			setShowTip(true);
+			setShowTip(
+				getAppSettings()[AppSettingsGroup.FunctionScreenshot]
+					.longScreenshotAutoScroll,
+			);
 
 			const scrollSettings =
 				getAppSettings()[AppSettingsGroup.SystemScrollScreenshot];
@@ -622,12 +625,25 @@ export const ScrollScreenshot: React.FC<{
 			return;
 		}
 
+		if (
+			!getAppSettings()[AppSettingsGroup.FunctionScreenshot]
+				.longScreenshotAutoScroll
+		) {
+			// 已关闭滚动截图单击自动滚动，不启动自动滚动
+			return;
+		}
+
 		tryEnableAutoScrollThroughCore();
 
 		enableIgnoreCursorEventsRef.current = true;
 		await clickThrough();
 		enableIgnoreCursorEventsRef.current = false;
-	}, [stopAutoScrollThrough, tryEnableAutoScrollThroughCore, setShowTip]);
+	}, [
+		stopAutoScrollThrough,
+		tryEnableAutoScrollThroughCore,
+		setShowTip,
+		getAppSettings,
+	]);
 
 	const startCapture = useCallback(async () => {
 		enableScrollThroughRef.current = false;

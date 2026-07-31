@@ -828,6 +828,20 @@ export const FunctionSettingsPage = () => {
 								layout="horizontal"
 							/>
 						</Col>
+
+						<Col span={12}>
+							<ProFormSwitch
+								label={
+									<IconLabel
+										label={
+											<FormattedMessage id="settings.functionSettings.screenshotSettings.longScreenshotAutoScroll" />
+										}
+									/>
+								}
+								name="longScreenshotAutoScroll"
+								layout="horizontal"
+							/>
+						</Col>
 					</Row>
 
 					{currentPlatform !== "macos" && (
@@ -1373,6 +1387,16 @@ export const FunctionSettingsPage = () => {
 									<FormattedMessage id="settings.functionSettings.fixedContentSettings.autoCopyToClipboard" />
 								}
 								name="autoCopyToClipboard"
+								layout="horizontal"
+							/>
+						</Col>
+
+						<Col span={12}>
+							<ProFormSwitch
+								label={
+									<FormattedMessage id="settings.functionSettings.fixedContentSettings.showStickerRestoreDefaultSize" />
+								}
+								name="showStickerRestoreDefaultSize"
 								layout="horizontal"
 							/>
 						</Col>
