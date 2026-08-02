@@ -15,7 +15,6 @@ import {
 	Select,
 	type SelectProps,
 	Spin,
-	Tag,
 	theme,
 } from "antd";
 import TextArea, { type TextAreaRef } from "antd/es/input/TextArea";
@@ -258,7 +257,6 @@ export const useTranslationDomainOptions = () => {
 
 const translationSourceModes = ["auto", "manual"] as const;
 type TranslationSourceMode = (typeof translationSourceModes)[number];
-const translationSourceTipVisibleMs = 2400;
 
 const TranslatorCore: React.FC<{
 	actionRef: React.RefObject<TranslatorActionType | undefined>;
@@ -418,21 +416,22 @@ const TranslatorCore: React.FC<{
 		translationSourceMode === "auto" &&
 		hasTranslatedContent &&
 		!!usedServiceName;
-	const [showUsedServiceToast, setShowUsedServiceToast] = useState(false);
-
-	useEffect(() => {
-		if (!showAutoUsedService) {
-			setShowUsedServiceToast(false);
-			return;
-		}
-
-		setShowUsedServiceToast(true);
-		const timer = window.setTimeout(() => {
-			setShowUsedServiceToast(false);
-		}, translationSourceTipVisibleMs);
-
-		return () => window.clearTimeout(timer);
-	}, [showAutoUsedService]);
+	const translationSourceOptions = useMemo(
+		() =>
+			translationSourceModes.map((mode) => {
+				const label = intl.formatMessage({
+					id: `tools.translation.sourceMode.${mode}`,
+				});
+				return {
+					label:
+						mode === "auto" && showAutoUsedService
+							? `${label} · ${usedServiceName}`
+							: label,
+					value: mode,
+				};
+			}),
+		[intl, showAutoUsedService, usedServiceName],
+	);
 
 	const sourceContentRef = useRef<TextAreaRef>(null);
 	useImperativeHandle(
@@ -561,12 +560,7 @@ const TranslatorCore: React.FC<{
 										ignoreDebounceRef.current = true;
 										setTranslationSourceMode(value as TranslationSourceMode);
 									}}
-									options={translationSourceModes.map((mode) => ({
-										label: intl.formatMessage({
-											id: `tools.translation.sourceMode.${mode}`,
-										}),
-										value: mode,
-									}))}
+									options={translationSourceOptions}
 								/>
 							</Flex>
 						</Form.Item>
@@ -642,15 +636,6 @@ const TranslatorCore: React.FC<{
 										right: token.marginLG,
 									}}
 								/>
-								{showUsedServiceToast ? (
-									<Tag className="tool-translator-container-used-service">
-										<FormattedMessage
-											id="tools.translation.usedService"
-											values={{ service: usedServiceName }}
-										/>
-									</Tag>
-								) : null}
-
 								<TextArea
 									rows={isVerticalLayout ? 6 : 12}
 									variant="filled"
@@ -701,18 +686,6 @@ const TranslatorCore: React.FC<{
                     pointer-events: ${hasSourceContent ? "auto" : "none"};
                     opacity: ${hasSourceContent ? 1 : 0};
                     transition: opacity ${token.motionDurationMid} ${token.motionEaseInOut};
-                }
-
-                :global(.tool-translator-container-used-service) {
-                    position: absolute;
-                    top: ${token.marginXXS}px;
-                    right: ${token.marginXXS}px;
-                    z-index: 2;
-                    max-width: calc(100% - ${token.marginXXS * 2}px);
-                    overflow: hidden;
-                    text-overflow: ellipsis;
-                    white-space: nowrap;
-                    pointer-events: none;
                 }
 
                 :global(.tool-translator-container-translate-button-container) {
