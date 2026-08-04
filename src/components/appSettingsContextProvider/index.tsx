@@ -52,6 +52,7 @@ import {
 	ExtraToolList,
 	type HdrColorAlgorithm,
 	type HistoryValidDuration,
+	type LogRetentionDuration,
 	OcrDetectAfterAction,
 	RenderBackend,
 	type RunLogLevel,
@@ -936,6 +937,11 @@ const AppSettingsContextProviderCore: React.FC<{
 						typeof newSettings?.runLog === "string"
 							? (newSettings.runLog as RunLogLevel)
 							: (prevSettings?.runLog ?? defaultAppSettingsData[group].runLog),
+					logRetentionDuration:
+						typeof newSettings?.logRetentionDuration === "number"
+							? (newSettings.logRetentionDuration as LogRetentionDuration)
+							: (prevSettings?.logRetentionDuration ??
+								defaultAppSettingsData[group].logRetentionDuration),
 					boostProcessPriority:
 						typeof newSettings?.boostProcessPriority === "boolean"
 							? newSettings.boostProcessPriority
