@@ -20,6 +20,7 @@ import {
 	ExtraToolList,
 } from "@/types/appSettings";
 import { DrawState } from "@/types/draw";
+import { appError, appInfo } from "@/utils/log";
 import { getPlatform } from "@/utils/platform";
 import { getButtonTypeByState } from "../../../extra";
 import { ToolbarPopover } from "../../toolbarPopover";
@@ -57,18 +58,30 @@ export const ExtraTool: React.FC<{
 	}, []);
 
 	const executeVideoRecord = useCallback(() => {
+		appInfo("[DIAG] executeVideoRecord: start");
 		const captureBoundingBoxInfo = captureBoundingBoxInfoRef.current;
 		const selectRect = selectLayerActionRef.current?.getSelectRect();
 		if (!captureBoundingBoxInfo || !selectRect) {
+			appInfo("[DIAG] executeVideoRecord: no boundingBoxInfo or selectRect", {
+				hasBoundingBoxInfo: !!captureBoundingBoxInfo,
+				hasSelectRect: !!selectRect,
+			});
 			return;
 		}
 
 		const monitorRect = captureBoundingBoxInfo.transformWindowRect(selectRect);
+		appInfo("[DIAG] executeVideoRecord: monitorRect", {
+			min_x: monitorRect.min_x,
+			min_y: monitorRect.min_y,
+			max_x: monitorRect.max_x,
+			max_y: monitorRect.max_y,
+		});
 
 		if (
 			getPlatform() === "macos" &&
 			captureBoundingBoxInfo.getActiveMonitorRectList(monitorRect).length > 1
 		) {
+			appInfo("[DIAG] executeVideoRecord: multiMonitor, aborting");
 			message.warning(
 				intl.formatMessage({
 					id: "draw.extraTool.videoRecord.multiMonitor",
@@ -77,17 +90,26 @@ export const ExtraTool: React.FC<{
 			return;
 		}
 
+		appInfo("[DIAG] executeVideoRecord: creating videoRecord window");
 		createVideoRecordWindow(
 			monitorRect.min_x,
 			monitorRect.min_y,
 			monitorRect.max_x,
 			monitorRect.max_y,
-		);
-
-		// 快捷执行时立刻 finish 可能窗口很多数据还没初始化好，所以延迟执行
-		setTimeout(() => {
-			finishCapture();
-		}, 0);
+		)
+			.then(() => {
+				appInfo(
+					"[DIAG] executeVideoRecord: window created, calling finishCapture",
+				);
+				// 等待录屏窗口创建完成后，再关闭 draw 窗口，避免竞态
+				finishCapture();
+			})
+			.catch((error) => {
+				appError(
+					"[DIAG] executeVideoRecord: createVideoRecordWindow failed",
+					error,
+				);
+			});
 	}, [
 		captureBoundingBoxInfoRef,
 		finishCapture,
