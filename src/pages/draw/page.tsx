@@ -1217,23 +1217,32 @@ const DrawPageCore: React.FC<{
 			return;
 		}
 
-		// 先调用 OCR 检测，OCR 结束后再跳转翻译页（与 OCR 翻译按钮行为一致）
-		await handleOcrDetect(
-			captureBoundingBoxInfoRef.current,
-			selectLayerActionRef.current,
-			imageLayerActionRef.current,
-			drawLayerActionRef.current,
-			ocrBlocksActionRef.current,
-			true,
-		);
+		let ocrResult = ocrBlocksActionRef.current
+			.getOcrResultAction()
+			?.getAllOcrResult()?.ocrResult;
 
-		const ocrResult = ocrBlocksActionRef.current
-			?.getOcrResultAction()
-			?.getOcrResult();
 		if (!ocrResult?.result) {
+			await handleOcrDetect(
+				captureBoundingBoxInfoRef.current,
+				selectLayerActionRef.current,
+				imageLayerActionRef.current,
+				drawLayerActionRef.current,
+				ocrBlocksActionRef.current,
+				true,
+			);
+
+			ocrResult = ocrBlocksActionRef.current
+				.getOcrResultAction()
+				?.getAllOcrResult()?.ocrResult;
+		}
+
+		const text = ocrResult?.result
+			? covertOcrResultToText(ocrResult.result).trim()
+			: "";
+		if (!text) {
 			return;
 		}
-		executeTranslateOcrText(covertOcrResultToText(ocrResult.result));
+		executeTranslateOcrText(text);
 	}, []);
 
 	const onCopyToClipboard = useCallback(async () => {
