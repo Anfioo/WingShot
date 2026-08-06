@@ -32,6 +32,7 @@ import {
 	WING_SHOT_GITHUB_RELEASES_URL,
 	WING_SHOT_WEBSITE_URL,
 } from "@/services/version";
+import { appError } from "@/utils/log";
 
 const { Title, Paragraph, Text } = Typography;
 
@@ -113,6 +114,12 @@ export const AboutPage = () => {
 								await result.update.download();
 								await result.update.install();
 								await relaunch();
+							} catch (error) {
+								appError("[AboutPage] Failed to install update:", error);
+								messageApi.error({
+									content: String(error),
+									key: "about-update-error",
+								});
 							} finally {
 								hide();
 							}

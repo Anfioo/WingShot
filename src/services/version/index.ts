@@ -76,7 +76,11 @@ export const checkAppUpdate = async (
 	try {
 		currentVersion = await getVersion();
 
-		if (options.includeInstallerUpdate && !(await isPortableApp())) {
+		if (
+			process.env.NODE_ENV !== "development" &&
+			options.includeInstallerUpdate &&
+			!(await isPortableApp())
+		) {
 			try {
 				const update = await check();
 				if (update) {

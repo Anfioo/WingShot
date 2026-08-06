@@ -51,15 +51,6 @@ const notifyReleaseUpdate = async (
 
 export const CheckVersion: React.FC = () => {
 	const intl = useIntl();
-	const intervalRef = useRef<NodeJS.Timeout | null>(null);
-
-	const clearIntervalRef = useCallback(() => {
-		if (intervalRef.current) {
-			clearInterval(intervalRef.current);
-			intervalRef.current = null;
-		}
-	}, []);
-
 	// 是否已经发送过通知
 	const hasSendRef = useRef(false);
 
@@ -85,18 +76,29 @@ export const CheckVersion: React.FC = () => {
 						id: "common.newVersion.updateLater",
 					}),
 					onOk: async () => {
-						await update.install();
-						await relaunch();
+						try {
+							await update.install();
+							await relaunch();
+						} catch (error) {
+							appError("[CheckVersion] Failed to install update:", error);
+							Modal.error({
+								title: intl.formatMessage({ id: "common.newVersion.title" }),
+								content: String(error),
+							});
+						}
 					},
 				});
 
 				hasSendRef.current = true;
-				clearIntervalRef();
 			} catch (downloadError) {
 				appError("[CheckVersion] Failed to download update:", downloadError);
+				Modal.error({
+					title: intl.formatMessage({ id: "common.newVersion.title" }),
+					content: String(downloadError),
+				});
 			}
 		},
-		[clearIntervalRef, intl],
+		[intl],
 	);
 
 	// 主版本检查逻辑
@@ -122,7 +124,6 @@ export const CheckVersion: React.FC = () => {
 				);
 				if (notified) {
 					hasSendRef.current = true;
-					clearIntervalRef();
 				}
 				return;
 			}
@@ -133,7 +134,7 @@ export const CheckVersion: React.FC = () => {
 		} catch (error) {
 			appError("[CheckVersion] Failed to check version:", error);
 		}
-	}, [clearIntervalRef, installWithTauriUpdater, intl]);
+	}, [installWithTauriUpdater, intl]);
 
 	const checkVersionLoadingRef = useRef(false);
 	const checkVersion = useCallback(async () => {
@@ -160,6 +161,10 @@ export const CheckVersion: React.FC = () => {
 
 	const hasCheckedVersionRef = useRef(false);
 	useEffect(() => {
+		if (process.env.NODE_ENV === "development") {
+			return;
+		}
+
 		if (autoCheckVersion === undefined) {
 			return;
 		}
@@ -169,21 +174,8 @@ export const CheckVersion: React.FC = () => {
 				checkVersion();
 				hasCheckedVersionRef.current = true;
 			}
-
-			clearIntervalRef();
-
-			intervalRef.current = setInterval(checkVersion, 1000 * 60 * 60);
-		} else {
-			clearIntervalRef();
 		}
-
-		return () => {
-			if (intervalRef.current) {
-				clearInterval(intervalRef.current);
-				intervalRef.current = null;
-			}
-		};
-	}, [autoCheckVersion, checkVersion, clearIntervalRef]);
+	}, [autoCheckVersion, checkVersion]);
 
 	return undefined;
 };

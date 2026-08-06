@@ -130,19 +130,30 @@ jobs:
         shell: pwsh
 
       # 执行构建
-      - name: Prepare updater config
+      - name: Configure updater endpoints and signing key
         shell: pwsh
         env:
-          TAURI_UPDATER_PUBKEY: ${{ secrets.TAURI_UPDATER_PUBKEY }}
+          TAURI_SIGNING_PUBLIC_KEY: ${{ secrets.TAURI_SIGNING_PUBLIC_KEY }}
+          TAURI_UPDATER_ENDPOINT: ${{ secrets.TAURI_UPDATER_ENDPOINT }}
+          TAURI_UPDATER_ENDPOINT_CUSTOM: ${{ secrets.TAURI_UPDATER_ENDPOINT_CUSTOM }}
         run: |
-          if ([string]::IsNullOrWhiteSpace($env:TAURI_UPDATER_PUBKEY)) {
-            throw "TAURI_UPDATER_PUBKEY secret is required for Windows updater builds"
+          if ([string]::IsNullOrWhiteSpace($env:TAURI_SIGNING_PUBLIC_KEY)) {
+            throw "TAURI_SIGNING_PUBLIC_KEY secret is required for updater builds"
           }
-          $config = @{
-            plugins = @{ updater = @{ pubkey = $env:TAURI_UPDATER_PUBKEY; endpoints = @('https://github.com/Anfioo/WingShot/releases/latest/download/latest.json') } }
-            bundle = @{ createUpdaterArtifacts = $true }
+          if ([string]::IsNullOrWhiteSpace($env:TAURI_UPDATER_ENDPOINT)) {
+            throw "TAURI_UPDATER_ENDPOINT secret is required for updater builds"
           }
-          $config | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath 'src-tauri/ci-updater.json' -Encoding utf8
+          $endpoint = $env:TAURI_UPDATER_ENDPOINT
+          $customEndpoint = if ([string]::IsNullOrWhiteSpace($env:TAURI_UPDATER_ENDPOINT_CUSTOM)) { "" } else { $env:TAURI_UPDATER_ENDPOINT_CUSTOM }
+          foreach ($file in @('src-tauri/tauri.windows.conf.json', 'src-tauri/tauri.macos.conf.json')) {
+            $text = Get-Content -LiteralPath $file -Raw
+            $text = $text.Replace('__TAURI_UPDATER_PUBKEY__', $env:TAURI_SIGNING_PUBLIC_KEY)
+            $text = $text.Replace('__TAURI_UPDATER_ENDPOINT__', $endpoint)
+            $text = $text.Replace('__TAURI_UPDATER_ENDPOINT_CUSTOM__', $customEndpoint)
+            $config = $text | ConvertFrom-Json
+            $config.plugins.updater.endpoints = @($config.plugins.updater.endpoints | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+            $config | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $file -Encoding utf8
+          }
 
       - name: Build the app
         uses: tauri-apps/tauri-action@v0
@@ -152,7 +163,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          args: --target x86_64-pc-windows-msvc --config src-tauri/ci-updater.json
+          args: --target x86_64-pc-windows-msvc
 
       # 上传构建产物到 Action 附件
       - name: Upload build artifact

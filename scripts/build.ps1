@@ -2,7 +2,8 @@
 param(
 	[string]$PrivateKeyPath,
 	[string]$PublicKeyPath,
-	[string]$UpdaterEndpoint = "https://github.com/Anfioo/WingShot/releases/latest/download/latest.json"
+	[string]$UpdaterEndpoint = "https://github.com/Anfioo/WingShot/releases/latest/download/latest.json",
+	[string]$CustomUpdaterEndpoint
 )
 
 $ErrorActionPreference = "Stop"
@@ -58,7 +59,8 @@ if ($null -eq $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD) {
 }
 
 try {
-	$overlay = @{ plugins = @{ updater = @{ pubkey = $publicKey; endpoints = @($UpdaterEndpoint) } }; bundle = @{ createUpdaterArtifacts = $true } }
+	$endpoints = @($UpdaterEndpoint, $CustomUpdaterEndpoint) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+	$overlay = @{ plugins = @{ updater = @{ pubkey = $publicKey; endpoints = $endpoints } }; bundle = @{ createUpdaterArtifacts = $true } }
 	$overlay | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $temporaryConfigPath -Encoding utf8
 	& pnpm exec tauri build --config $temporaryConfigPath
 	if ($LASTEXITCODE -ne 0) { throw "Tauri build failed with exit code $LASTEXITCODE" }
