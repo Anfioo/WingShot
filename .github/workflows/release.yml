@@ -83,16 +83,19 @@ jobs:
           # Windows standard
           - platform: "windows-latest"
             target: "x86_64-pc-windows-msvc"
+            updaterConfig: "src-tauri/ci-updater.json"
 
           # Windows with fixed runtime
           - platform: "windows-latest"
             target: "x86_64-pc-windows-msvc"
             fixedRuntime: true
+            updaterConfig: "src-tauri/ci-updater.json"
 
           # Windows offline version
           - platform: "windows-latest"
             target: "x86_64-pc-windows-msvc"
             offline: true
+            updaterConfig: "src-tauri/ci-updater.json"
 
     runs-on: ${{ matrix.platform }}
     steps:
@@ -339,6 +342,21 @@ jobs:
         shell: bash
 
       # 执行构建，以及推送 github release
+      - name: Prepare updater config
+        if: matrix.updaterConfig != ''
+        shell: pwsh
+        env:
+          TAURI_UPDATER_PUBKEY: ${{ secrets.TAURI_UPDATER_PUBKEY }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:TAURI_UPDATER_PUBKEY)) {
+            throw "TAURI_UPDATER_PUBKEY secret is required for Windows updater builds"
+          }
+          $config = @{
+            plugins = @{ updater = @{ pubkey = $env:TAURI_UPDATER_PUBKEY; endpoints = @('https://github.com/Anfioo/WingShot/releases/latest/download/latest.json') } }
+            bundle = @{ createUpdaterArtifacts = $true }
+          }
+          $config | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath 'src-tauri/ci-updater.json' -Encoding utf8
+
       - name: Build the app
         uses: tauri-apps/tauri-action@v0
         env:
@@ -354,4 +372,4 @@ jobs:
           releaseBody: ""
           releaseDraft: true
           prerelease: false
-          args: --target ${{ matrix.target }}
+          args: --target ${{ matrix.target }} ${{ matrix.updaterConfig && format('--config {0}', matrix.updaterConfig) || '' }}

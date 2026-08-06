@@ -130,6 +130,20 @@ jobs:
         shell: pwsh
 
       # 执行构建
+      - name: Prepare updater config
+        shell: pwsh
+        env:
+          TAURI_UPDATER_PUBKEY: ${{ secrets.TAURI_UPDATER_PUBKEY }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:TAURI_UPDATER_PUBKEY)) {
+            throw "TAURI_UPDATER_PUBKEY secret is required for Windows updater builds"
+          }
+          $config = @{
+            plugins = @{ updater = @{ pubkey = $env:TAURI_UPDATER_PUBKEY; endpoints = @('https://github.com/Anfioo/WingShot/releases/latest/download/latest.json') } }
+            bundle = @{ createUpdaterArtifacts = $true }
+          }
+          $config | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath 'src-tauri/ci-updater.json' -Encoding utf8
+
       - name: Build the app
         uses: tauri-apps/tauri-action@v0
         env:
@@ -138,7 +152,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          args: --target x86_64-pc-windows-msvc
+          args: --target x86_64-pc-windows-msvc --config src-tauri/ci-updater.json
 
       # 上传构建产物到 Action 附件
       - name: Upload build artifact

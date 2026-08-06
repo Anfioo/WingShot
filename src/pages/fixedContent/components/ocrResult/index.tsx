@@ -388,7 +388,7 @@ export const OcrResult: React.FC<{
 					textBackgroundElement.style.backgroundColor = Color(
 						token.colorBgContainer,
 					)
-						.alpha(0.42)
+						.alpha(ocrResultType === OcrResultType.Translated ? 1 : 0.42)
 						.toString();
 
 					const isVertical = !ignoreScale && height > width * 1.5;
