@@ -1,84 +1,102 @@
-# .github/workflows/sync-to-mirrors.yml
-name: Sync Releases to Multiple Mirrors
+name: Sync Release To Mirrors
 
 on:
-  workflow_dispatch:  # 手动触发
+  workflow_dispatch:
     inputs:
       tag_name:
-        description: 'Release Tag Name (留空则同步最新)'
+        description: "Release tag; empty means the latest published release"
         required: false
-        default: ''
-      platforms:
-        description: '目标平台 (逗号分隔: gitee,gitcode,coding)'
-        required: false
-        default: 'gitee'
+        type: string
+        default: ""
+      gitee:
+        description: "Sync to Gitee"
+        required: true
+        type: boolean
+        default: true
+      gitea:
+        description: "Sync to self-hosted Gitea"
+        required: true
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sync-release-to-mirrors
+  cancel-in-progress: false
 
 jobs:
   sync:
     runs-on: ubuntu-latest
 
-    strategy:
-      matrix:
-        platform: ${{ fromJson(format('[{0}]', inputs.platforms)) }}
-      fail-fast: false  # 一个平台失败不影响其他
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      REQUESTED_TAG: ${{ inputs.tag_name }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # 获取要同步的 Tag
-      - name: Get Target Tag
-        id: target_tag
+      - name: Resolve Release
+        id: release
+        shell: bash
         run: |
-          if [ -z "${{ inputs.tag_name }}" ]; then
-            # 获取最新的 Release Tag
-            LATEST_TAG=$(curl -s \
-              -H "Accept: application/vnd.github.v3+json" \
-              "https://api.github.com/repos/${{ github.repository }}/releases/latest" | \
-              grep -o '"tag_name":"[^"]*"' | cut -d'"' -f4)
-            echo "TAG_NAME=$LATEST_TAG" >> $GITHUB_OUTPUT
+          set -euo pipefail
+
+          if [[ -n "$REQUESTED_TAG" ]]; then
+            tag="$REQUESTED_TAG"
           else
-            echo "TAG_NAME=${{ inputs.tag_name }}" >> $GITHUB_OUTPUT
+            tag="$(gh release list \
+              --repo "$GITHUB_REPOSITORY" \
+              --limit 100 \
+              --exclude-drafts \
+              --exclude-pre-releases \
+              --json tagName \
+              --jq '.[0].tagName')"
           fi
 
-      # 下载产物
-      - name: Download Assets
-        uses: robinraju/release-downloader@v1.8
-        with:
-          repository: ${{ github.repository }}
-          tag: ${{ steps.target_tag.outputs.TAG_NAME }}
-          fileName: "*"
-          out-file-path: "assets"
+          if [[ -z "$tag" ]]; then
+            echo "No published GitHub Release was found" >&2
+            exit 1
+          fi
 
-      # 同步到 Gitee
-      - name: Sync to Gitee
-        if: contains(inputs.platforms, 'gitee')
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$tag" > release.json
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Download Release Assets
         env:
+          TAG_NAME: ${{ steps.release.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf assets
+          mkdir -p assets
+          gh release download "$TAG_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --dir assets \
+            --pattern "*" \
+            --clobber
+
+      - name: Sync To Gitee
+        if: inputs.gitee
+        env:
+          PLATFORM: gitee
           PLATFORM_TOKEN: ${{ secrets.GITEE_TOKEN }}
-          PLATFORM_REPO: ${{ secrets.GITEE_REPO }}
-          API_BASE: "https://gitee.com/api/v5"
-          TAG_NAME: ${{ steps.target_tag.outputs.TAG_NAME }}
-        run: |
-          bash .github/scripts/sync-to-platform.sh
+          PLATFORM_REPO: ${{ vars.GITEE_REPO }}
+          TAG_NAME: ${{ steps.release.outputs.tag }}
+          ASSETS_DIR: assets
+        shell: bash
+        run: bash .github/scripts/sync-release.sh
 
-      # 同步到 GitCode（如果配置了）
-      - name: Sync to GitCode
-        if: contains(inputs.platforms, 'gitcode')
+      - name: Sync To Gitea
+        if: inputs.gitea
         env:
-          PLATFORM_TOKEN: ${{ secrets.GITCODE_TOKEN }}
-          PLATFORM_REPO: ${{ secrets.GITCODE_REPO }}
-          API_BASE: "https://gitcode.com/api/v5"
-          TAG_NAME: ${{ steps.target_tag.outputs.TAG_NAME }}
-        run: |
-          bash .github/scripts/sync-to-platform.sh
-
-      # 同步到 CODING（如果配置了）
-      - name: Sync to CODING
-        if: contains(inputs.platforms, 'coding')
-        env:
-          PLATFORM_TOKEN: ${{ secrets.CODING_TOKEN }}
-          PLATFORM_REPO: ${{ secrets.CODING_REPO }}
-          API_BASE: "https://coding.net/api"
-          TAG_NAME: ${{ steps.target_tag.outputs.TAG_NAME }}
-        run: |
-          bash .github/scripts/sync-to-platform.sh
+          PLATFORM: gitea
+          PLATFORM_TOKEN: ${{ secrets.GITEA_TOKEN }}
+          PLATFORM_URL: ${{ vars.GITEA_URL }}
+          PLATFORM_REPO: ${{ vars.GITEA_REPO }}
+          TAG_NAME: ${{ steps.release.outputs.tag }}
+          ASSETS_DIR: assets
+        shell: bash
+        run: bash .github/scripts/sync-release.sh
