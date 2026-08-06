@@ -373,6 +373,21 @@ jobs:
           fi
           node -e 'const fs=require("fs"); const endpoint=process.env.TAURI_UPDATER_ENDPOINT||`https://github.com/${process.env.GITHUB_REPOSITORY}/releases/latest/download/latest.json`; const custom=process.env.TAURI_UPDATER_ENDPOINT_CUSTOM||""; for (const file of ["src-tauri/tauri.windows.conf.json","src-tauri/tauri.macos.conf.json"]) { let text=fs.readFileSync(file,"utf8").replaceAll("__TAURI_UPDATER_PUBKEY__",process.env.TAURI_SIGNING_PUBLIC_KEY).replaceAll("__TAURI_UPDATER_ENDPOINT__",endpoint).replaceAll("__TAURI_UPDATER_ENDPOINT_CUSTOM__",custom); const config=JSON.parse(text); config.plugins.updater.endpoints=config.plugins.updater.endpoints.filter(Boolean); fs.writeFileSync(file,JSON.stringify(config,null,2)+"\n"); }'
 
+      - name: Resolve draft release
+        id: draft_release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+          RELEASE_TAG: ${{ needs.create-release.outputs.app_version }}
+        run: |
+          release_id="$(gh api "repos/${REPOSITORY}/releases?per_page=100" | jq -r --arg tag "$RELEASE_TAG" '[.[] | select(.tag_name == $tag and .draft == true)][0].id // empty')"
+          if [ -z "$release_id" ]; then
+            echo "Draft release not found for tag $RELEASE_TAG" >&2
+            exit 1
+          fi
+          echo "id=$release_id" >> "$GITHUB_OUTPUT"
+
       - name: Build the app
         uses: tauri-apps/tauri-action@v0
         env:
@@ -382,12 +397,8 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          tagName: ${{ needs.create-release.outputs.app_version }}
-          releaseName: Wing Shot ${{ needs.create-release.outputs.app_version }}
+          releaseId: ${{ steps.draft_release.outputs.id }}
           assetNamePattern: ${{ steps.asset_pattern.outputs.pattern }}
-          releaseBody: ""
-          releaseDraft: false
-          prerelease: false
           uploadUpdaterJson: false
           uploadUpdaterSignatures: ${{ matrix.uploadUpdaterSignatures }}
           args: --target ${{ matrix.target }}
@@ -411,7 +422,19 @@ jobs:
           trap 'rm -rf "$workdir"' EXIT
           mkdir -p "$workdir/signatures"
 
-          gh release download "$RELEASE_TAG" --repo "$REPOSITORY" --pattern '*.sig' --dir "$workdir/signatures"
+          release_json="$(gh api "repos/${REPOSITORY}/releases?per_page=100" | jq --arg tag "$RELEASE_TAG" '[.[] | select(.tag_name == $tag and .draft == true)][0]')"
+          release_id="$(jq -r '.id // empty' <<< "$release_json")"
+          release_notes="$(jq -r '.body // ""' <<< "$release_json")"
+          if [ -z "$release_id" ]; then
+            echo "Draft release not found for tag $RELEASE_TAG" >&2
+            exit 1
+          fi
+
+          assets_json="$(gh api "repos/${REPOSITORY}/releases/${release_id}/assets?per_page=100")"
+          while IFS=$'\t' read -r asset_id asset_name; do
+            [ -n "$asset_id" ] || continue
+            gh api -H 'Accept: application/octet-stream' "repos/${REPOSITORY}/releases/assets/${asset_id}" > "$workdir/signatures/$asset_name"
+          done < <(jq -r '.[] | select(.name | endswith(".sig")) | [.id, .name] | @tsv' <<< "$assets_json")
 
           version="${RELEASE_TAG#v}"
           platforms='{}'
@@ -427,8 +450,11 @@ jobs:
             esac
 
             signature="$(cat "$signature_file")"
-            encoded_asset="$(printf '%s' "$asset_name" | sed 's/ /%20/g')"
-            asset_url="https://github.com/${REPOSITORY}/releases/download/${RELEASE_TAG}/${encoded_asset}"
+            asset_url="$(jq -r --arg name "$asset_name" '.[] | select(.name == $name) | .browser_download_url' <<< "$assets_json")"
+            if [ -z "$asset_url" ]; then
+              echo "Updater asset not found for signature $signature_name" >&2
+              exit 1
+            fi
             platforms="$(jq --arg platform "$platform" --arg signature "$signature" --arg url "$asset_url" '. + {($platform): {signature: $signature, url: $url}}' <<< "$platforms")"
           done
 
@@ -437,7 +463,14 @@ jobs:
             exit 1
           fi
 
-          jq -n --arg version "$version" --argjson platforms "$platforms" \
-            '{version: $version, notes: "", pub_date: (now | todateiso8601), platforms: $platforms}' \
+          jq -n --arg version "$version" --arg notes "$release_notes" --argjson platforms "$platforms" \
+            '{version: $version, notes: $notes, pub_date: (now | todateiso8601), platforms: $platforms}' \
             > "$workdir/latest.json"
-          gh release upload "$RELEASE_TAG" "$workdir/latest.json" --repo "$REPOSITORY" --clobber
+
+          existing_manifest_id="$(jq -r '.[] | select(.name == "latest.json") | .id' <<< "$assets_json")"
+          if [ -n "$existing_manifest_id" ]; then
+            gh api --method DELETE "repos/${REPOSITORY}/releases/assets/${existing_manifest_id}"
+          fi
+          gh api --hostname uploads.github.com --method POST -H 'Content-Type: application/json' \
+            "repos/${REPOSITORY}/releases/${release_id}/assets?name=latest.json" \
+            --input "$workdir/latest.json"
