@@ -140,10 +140,11 @@ jobs:
           if ([string]::IsNullOrWhiteSpace($env:TAURI_SIGNING_PUBLIC_KEY)) {
             throw "TAURI_SIGNING_PUBLIC_KEY secret is required for updater builds"
           }
-          if ([string]::IsNullOrWhiteSpace($env:TAURI_UPDATER_ENDPOINT)) {
-            throw "TAURI_UPDATER_ENDPOINT secret is required for updater builds"
+          $endpoint = if ([string]::IsNullOrWhiteSpace($env:TAURI_UPDATER_ENDPOINT)) {
+            "https://github.com/$env:GITHUB_REPOSITORY/releases/latest/download/latest.json"
+          } else {
+            $env:TAURI_UPDATER_ENDPOINT
           }
-          $endpoint = $env:TAURI_UPDATER_ENDPOINT
           $customEndpoint = if ([string]::IsNullOrWhiteSpace($env:TAURI_UPDATER_ENDPOINT_CUSTOM)) { "" } else { $env:TAURI_UPDATER_ENDPOINT_CUSTOM }
           foreach ($file in @('src-tauri/tauri.windows.conf.json', 'src-tauri/tauri.macos.conf.json')) {
             $text = Get-Content -LiteralPath $file -Raw
