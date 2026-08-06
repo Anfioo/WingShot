@@ -1,0 +1,84 @@
+# .github/workflows/sync-to-mirrors.yml
+name: Sync Releases to Multiple Mirrors
+
+on:
+  workflow_dispatch:  # 手动触发
+    inputs:
+      tag_name:
+        description: 'Release Tag Name (留空则同步最新)'
+        required: false
+        default: ''
+      platforms:
+        description: '目标平台 (逗号分隔: gitee,gitcode,coding)'
+        required: false
+        default: 'gitee'
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        platform: ${{ fromJson(format('[{0}]', inputs.platforms)) }}
+      fail-fast: false  # 一个平台失败不影响其他
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 获取要同步的 Tag
+      - name: Get Target Tag
+        id: target_tag
+        run: |
+          if [ -z "${{ inputs.tag_name }}" ]; then
+            # 获取最新的 Release Tag
+            LATEST_TAG=$(curl -s \
+              -H "Accept: application/vnd.github.v3+json" \
+              "https://api.github.com/repos/${{ github.repository }}/releases/latest" | \
+              grep -o '"tag_name":"[^"]*"' | cut -d'"' -f4)
+            echo "TAG_NAME=$LATEST_TAG" >> $GITHUB_OUTPUT
+          else
+            echo "TAG_NAME=${{ inputs.tag_name }}" >> $GITHUB_OUTPUT
+          fi
+
+      # 下载产物
+      - name: Download Assets
+        uses: robinraju/release-downloader@v1.8
+        with:
+          repository: ${{ github.repository }}
+          tag: ${{ steps.target_tag.outputs.TAG_NAME }}
+          fileName: "*"
+          out-file-path: "assets"
+
+      # 同步到 Gitee
+      - name: Sync to Gitee
+        if: contains(inputs.platforms, 'gitee')
+        env:
+          PLATFORM_TOKEN: ${{ secrets.GITEE_TOKEN }}
+          PLATFORM_REPO: ${{ secrets.GITEE_REPO }}
+          API_BASE: "https://gitee.com/api/v5"
+          TAG_NAME: ${{ steps.target_tag.outputs.TAG_NAME }}
+        run: |
+          bash .github/scripts/sync-to-platform.sh
+
+      # 同步到 GitCode（如果配置了）
+      - name: Sync to GitCode
+        if: contains(inputs.platforms, 'gitcode')
+        env:
+          PLATFORM_TOKEN: ${{ secrets.GITCODE_TOKEN }}
+          PLATFORM_REPO: ${{ secrets.GITCODE_REPO }}
+          API_BASE: "https://gitcode.com/api/v5"
+          TAG_NAME: ${{ steps.target_tag.outputs.TAG_NAME }}
+        run: |
+          bash .github/scripts/sync-to-platform.sh
+
+      # 同步到 CODING（如果配置了）
+      - name: Sync to CODING
+        if: contains(inputs.platforms, 'coding')
+        env:
+          PLATFORM_TOKEN: ${{ secrets.CODING_TOKEN }}
+          PLATFORM_REPO: ${{ secrets.CODING_REPO }}
+          API_BASE: "https://coding.net/api"
+          TAG_NAME: ${{ steps.target_tag.outputs.TAG_NAME }}
+        run: |
+          bash .github/scripts/sync-to-platform.sh
