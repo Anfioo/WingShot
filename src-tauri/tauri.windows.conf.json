@@ -3,10 +3,8 @@
 	"identifier": "com.anfioo.wingshot",
 	"plugins": {
 		"updater": {
-			"pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDMxREY5QjM4RDU5QzBBMEEKUldRS0NwelZPSnZmTVNjeWxydlZFRytwM0tZK1pkVVIzQm1rSlE4bjV3clVucGxyTXIydWZ1cW8K",
-			"endpoints": [
-				"https://github.com/Anfioo/WingShot/releases/latest/download/latest.json"
-			],
+			"pubkey": "__TAURI_UPDATER_PUBKEY__",
+			"endpoints": ["__TAURI_UPDATER_ENDPOINT__"],
 			"windows": {
 				"installMode": "passive"
 			}
