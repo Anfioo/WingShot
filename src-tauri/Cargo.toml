@@ -18,7 +18,7 @@ members = [
 
 [package]
 name = "wing-shot"
-version = "0.9.7-beta.3"
+version = "0.9.8"
 description = "Simple and elegant screenshot tool"
 authors = ["anfioo"]
 repository = "https://github.com/Anfioo/WingShot"
