@@ -76,28 +76,33 @@ jobs:
           - platform: "macos-latest"
             target: "aarch64-apple-darwin"
             updaterConfig: "src-tauri/ci-updater.json"
+            uploadUpdaterSignatures: true
 
           # macOS Intel x64
           - platform: "macos-15-intel"
             target: "x86_64-apple-darwin"
             updaterConfig: "src-tauri/ci-updater.json"
+            uploadUpdaterSignatures: true
 
           # Windows standard
           - platform: "windows-latest"
             target: "x86_64-pc-windows-msvc"
             updaterConfig: "src-tauri/ci-updater.json"
+            uploadUpdaterSignatures: true
 
           # Windows with fixed runtime
           - platform: "windows-latest"
             target: "x86_64-pc-windows-msvc"
             fixedRuntime: true
             updaterConfig: "src-tauri/ci-updater.json"
+            uploadUpdaterSignatures: false
 
           # Windows offline version
           - platform: "windows-latest"
             target: "x86_64-pc-windows-msvc"
             offline: true
             updaterConfig: "src-tauri/ci-updater.json"
+            uploadUpdaterSignatures: false
 
     runs-on: ${{ matrix.platform }}
     steps:
@@ -377,4 +382,56 @@ jobs:
           releaseBody: ""
           releaseDraft: false
           prerelease: false
+          uploadUpdaterJson: false
+          uploadUpdaterSignatures: ${{ matrix.uploadUpdaterSignatures }}
           args: --target ${{ matrix.target }}
+
+  publish-updater-manifest:
+    needs: [create-release, build-app]
+    if: always() && needs.create-release.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Generate merged updater manifest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+          RELEASE_TAG: ${{ needs.create-release.outputs.app_version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"
+          trap 'rm -rf "$workdir"' EXIT
+          mkdir -p "$workdir/signatures"
+
+          gh release download "$RELEASE_TAG" --repo "$REPOSITORY" --pattern '*.sig' --dir "$workdir/signatures"
+
+          version="${RELEASE_TAG#v}"
+          platforms='{}'
+          shopt -s nullglob
+          for signature_file in "$workdir"/signatures/*.sig; do
+            signature_name="$(basename "$signature_file")"
+            asset_name="${signature_name%.sig}"
+            case "$asset_name" in
+              *windows-x64*) platform="windows-x86_64" ;;
+              *aarch64*|*arm64*) platform="darwin-aarch64" ;;
+              *x86_64*|*x64*) platform="darwin-x86_64" ;;
+              *) continue ;;
+            esac
+
+            signature="$(cat "$signature_file")"
+            encoded_asset="$(printf '%s' "$asset_name" | sed 's/ /%20/g')"
+            asset_url="https://github.com/${REPOSITORY}/releases/download/${RELEASE_TAG}/${encoded_asset}"
+            platforms="$(jq --arg platform "$platform" --arg signature "$signature" --arg url "$asset_url" '. + {($platform): {signature: $signature, url: $url}}' <<< "$platforms")"
+          done
+
+          if [ "$(jq 'length' <<< "$platforms")" -eq 0 ]; then
+            echo 'No updater signatures were uploaded' >&2
+            exit 1
+          fi
+
+          jq -n --arg version "$version" --argjson platforms "$platforms" \
+            '{version: $version, notes: "", pub_date: (now | todateiso8601), platforms: $platforms}' \
+            > "$workdir/latest.json"
+          gh release upload "$RELEASE_TAG" "$workdir/latest.json" --repo "$REPOSITORY" --clobber
