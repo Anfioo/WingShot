@@ -134,11 +134,19 @@ jobs:
         shell: pwsh
         env:
           TAURI_SIGNING_PUBLIC_KEY: ${{ secrets.TAURI_SIGNING_PUBLIC_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           TAURI_UPDATER_ENDPOINT: ${{ secrets.TAURI_UPDATER_ENDPOINT }}
           TAURI_UPDATER_ENDPOINT_CUSTOM: ${{ secrets.TAURI_UPDATER_ENDPOINT_CUSTOM }}
         run: |
           if ([string]::IsNullOrWhiteSpace($env:TAURI_SIGNING_PUBLIC_KEY)) {
             throw "TAURI_SIGNING_PUBLIC_KEY secret is required for updater builds"
+          }
+          if ([string]::IsNullOrWhiteSpace($env:TAURI_SIGNING_PRIVATE_KEY)) {
+            throw "TAURI_SIGNING_PRIVATE_KEY secret is required for updater builds"
+          }
+          if ([string]::IsNullOrWhiteSpace($env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD)) {
+            throw "TAURI_SIGNING_PRIVATE_KEY_PASSWORD secret is required for updater builds"
           }
           $endpoint = if ([string]::IsNullOrWhiteSpace($env:TAURI_UPDATER_ENDPOINT)) {
             "https://github.com/$env:GITHUB_REPOSITORY/releases/latest/download/latest.json"

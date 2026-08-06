@@ -354,11 +354,21 @@ jobs:
         shell: bash
         env:
           TAURI_SIGNING_PUBLIC_KEY: ${{ secrets.TAURI_SIGNING_PUBLIC_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           TAURI_UPDATER_ENDPOINT: ${{ secrets.TAURI_UPDATER_ENDPOINT }}
           TAURI_UPDATER_ENDPOINT_CUSTOM: ${{ secrets.TAURI_UPDATER_ENDPOINT_CUSTOM }}
         run: |
           if [ -z "$TAURI_SIGNING_PUBLIC_KEY" ]; then
             echo "TAURI_SIGNING_PUBLIC_KEY secret is required for updater builds" >&2
+            exit 1
+          fi
+          if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            echo "TAURI_SIGNING_PRIVATE_KEY secret is required for updater builds" >&2
+            exit 1
+          fi
+          if [ -z "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" ]; then
+            echo "TAURI_SIGNING_PRIVATE_KEY_PASSWORD secret is required for updater builds" >&2
             exit 1
           fi
           node -e 'const fs=require("fs"); const endpoint=process.env.TAURI_UPDATER_ENDPOINT||`https://github.com/${process.env.GITHUB_REPOSITORY}/releases/latest/download/latest.json`; const custom=process.env.TAURI_UPDATER_ENDPOINT_CUSTOM||""; for (const file of ["src-tauri/tauri.windows.conf.json","src-tauri/tauri.macos.conf.json"]) { let text=fs.readFileSync(file,"utf8").replaceAll("__TAURI_UPDATER_PUBKEY__",process.env.TAURI_SIGNING_PUBLIC_KEY).replaceAll("__TAURI_UPDATER_ENDPOINT__",endpoint).replaceAll("__TAURI_UPDATER_ENDPOINT_CUSTOM__",custom); const config=JSON.parse(text); config.plugins.updater.endpoints=config.plugins.updater.endpoints.filter(Boolean); fs.writeFileSync(file,JSON.stringify(config,null,2)+"\n"); }'
