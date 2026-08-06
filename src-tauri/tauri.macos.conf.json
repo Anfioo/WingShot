@@ -3,15 +3,18 @@
 	"identifier": "com.anfioo.wingshot",
 	"plugins": {
 		"updater": {
-			"pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEY4MjBDMjRFNkI0RURFQUIKUldTcjNrNXJUc0lnK05yTUtKQndxRXhNcUR2TmZjTnhDb1ZsQ3hDR1VjTDhkRnpia0JpM2hweGgK",
-			"endpoints": [],
+			"pubkey": "__TAURI_UPDATER_PUBKEY__",
+			"endpoints": [
+				"__TAURI_UPDATER_ENDPOINT__",
+				"__TAURI_UPDATER_ENDPOINT_CUSTOM__"
+			],
 			"windows": {
 				"installMode": "passive"
 			}
 		}
 	},
 	"bundle": {
-		"createUpdaterArtifacts": false,
+		"createUpdaterArtifacts": true,
 		"active": true,
 		"category": "Utility",
 		"shortDescription": "Wing Shot",

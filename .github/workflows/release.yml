@@ -75,10 +75,12 @@ jobs:
           # macOS Apple Silicon (M1/M2/M3)
           - platform: "macos-latest"
             target: "aarch64-apple-darwin"
+            updaterConfig: "src-tauri/ci-updater.json"
 
           # macOS Intel x64
           - platform: "macos-15-intel"
             target: "x86_64-apple-darwin"
+            updaterConfig: "src-tauri/ci-updater.json"
 
           # Windows standard
           - platform: "windows-latest"
@@ -342,20 +344,23 @@ jobs:
         shell: bash
 
       # 执行构建，以及推送 github release
-      - name: Prepare updater config
+      - name: Configure updater endpoints and signing key
         if: matrix.updaterConfig != ''
-        shell: pwsh
+        shell: bash
         env:
-          TAURI_UPDATER_PUBKEY: ${{ secrets.TAURI_UPDATER_PUBKEY }}
+          TAURI_SIGNING_PUBLIC_KEY: ${{ secrets.TAURI_SIGNING_PUBLIC_KEY }}
+          TAURI_UPDATER_ENDPOINT: ${{ secrets.TAURI_UPDATER_ENDPOINT }}
+          TAURI_UPDATER_ENDPOINT_CUSTOM: ${{ secrets.TAURI_UPDATER_ENDPOINT_CUSTOM }}
         run: |
-          if ([string]::IsNullOrWhiteSpace($env:TAURI_UPDATER_PUBKEY)) {
-            throw "TAURI_UPDATER_PUBKEY secret is required for Windows updater builds"
-          }
-          $config = @{
-            plugins = @{ updater = @{ pubkey = $env:TAURI_UPDATER_PUBKEY; endpoints = @('https://github.com/Anfioo/WingShot/releases/latest/download/latest.json') } }
-            bundle = @{ createUpdaterArtifacts = $true }
-          }
-          $config | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath 'src-tauri/ci-updater.json' -Encoding utf8
+          if [ -z "$TAURI_SIGNING_PUBLIC_KEY" ]; then
+            echo "TAURI_SIGNING_PUBLIC_KEY secret is required for updater builds" >&2
+            exit 1
+          fi
+          if [ -z "$TAURI_UPDATER_ENDPOINT" ]; then
+            echo "TAURI_UPDATER_ENDPOINT secret is required for updater builds" >&2
+            exit 1
+          fi
+          node -e 'const fs=require("fs"); const endpoint=process.env.TAURI_UPDATER_ENDPOINT; const custom=process.env.TAURI_UPDATER_ENDPOINT_CUSTOM||""; for (const file of ["src-tauri/tauri.windows.conf.json","src-tauri/tauri.macos.conf.json"]) { let text=fs.readFileSync(file,"utf8").replaceAll("__TAURI_UPDATER_PUBKEY__",process.env.TAURI_SIGNING_PUBLIC_KEY).replaceAll("__TAURI_UPDATER_ENDPOINT__",endpoint).replaceAll("__TAURI_UPDATER_ENDPOINT_CUSTOM__",custom); const config=JSON.parse(text); config.plugins.updater.endpoints=config.plugins.updater.endpoints.filter(Boolean); fs.writeFileSync(file,JSON.stringify(config,null,2)+"\n"); }'
 
       - name: Build the app
         uses: tauri-apps/tauri-action@v0
@@ -370,6 +375,6 @@ jobs:
           releaseName: Wing Shot ${{ needs.create-release.outputs.app_version }}
           assetNamePattern: ${{ steps.asset_pattern.outputs.pattern }}
           releaseBody: ""
-          releaseDraft: true
+          releaseDraft: false
           prerelease: false
-          args: --target ${{ matrix.target }} ${{ matrix.updaterConfig && format('--config {0}', matrix.updaterConfig) || '' }}
+          args: --target ${{ matrix.target }}

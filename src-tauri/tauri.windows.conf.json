@@ -4,7 +4,10 @@
 	"plugins": {
 		"updater": {
 			"pubkey": "__TAURI_UPDATER_PUBKEY__",
-			"endpoints": ["__TAURI_UPDATER_ENDPOINT__"],
+			"endpoints": [
+				"__TAURI_UPDATER_ENDPOINT__",
+				"__TAURI_UPDATER_ENDPOINT_CUSTOM__"
+			],
 			"windows": {
 				"installMode": "passive"
 			}
