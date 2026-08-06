@@ -83,7 +83,6 @@ jobs:
         env:
           PLATFORM: gitee
           PLATFORM_TOKEN: ${{ secrets.GITEE_TOKEN }}
-          PLATFORM_REPO: ${{ vars.GITEE_REPO }}
           TAG_NAME: ${{ steps.release.outputs.tag }}
           ASSETS_DIR: assets
         shell: bash
@@ -94,8 +93,6 @@ jobs:
         env:
           PLATFORM: gitea
           PLATFORM_TOKEN: ${{ secrets.GITEA_TOKEN }}
-          PLATFORM_URL: ${{ vars.GITEA_URL }}
-          PLATFORM_REPO: ${{ vars.GITEA_REPO }}
           TAG_NAME: ${{ steps.release.outputs.tag }}
           ASSETS_DIR: assets
         shell: bash

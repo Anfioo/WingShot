@@ -3,7 +3,6 @@ set -euo pipefail
 
 : "${PLATFORM:?PLATFORM is required (gitee or gitea)}"
 : "${PLATFORM_TOKEN:?PLATFORM_TOKEN is required}"
-: "${PLATFORM_REPO:?PLATFORM_REPO is required (owner/repository)}"
 : "${TAG_NAME:?TAG_NAME is required}"
 : "${ASSETS_DIR:?ASSETS_DIR is required}"
 
@@ -13,14 +12,15 @@ if [[ ! -f release.json ]]; then
 fi
 
 if [[ "$PLATFORM" == "gitea" ]]; then
-  : "${PLATFORM_URL:?PLATFORM_URL is required for Gitea}"
-  API_BASE="${PLATFORM_URL%/}/api/v1"
+  API_BASE="https://git.anfioo.com/api/v1"
+  PLATFORM_REPO="anfioo/WingShot"
   AUTH=(-H "Authorization: token $PLATFORM_TOKEN")
   AUTH_QUERY=""
   ASSET_LIST_PATH="assets"
   DOWNLOAD_BASE="https://git.anfioo.com/anfioo/WingShot"
 elif [[ "$PLATFORM" == "gitee" ]]; then
   API_BASE="https://gitee.com/api/v5"
+  PLATFORM_REPO="anfioo/WingShot"
   AUTH=(-H "Authorization: token $PLATFORM_TOKEN")
   # Gitee accepts access_token as a query parameter; keep the header too for
   # installations that support the GitHub-compatible authorization header.
