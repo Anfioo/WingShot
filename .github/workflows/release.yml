@@ -467,22 +467,18 @@ jobs:
             '{version: $version, notes: $notes, pub_date: (now | todateiso8601), platforms: $platforms}' \
             > "$workdir/latest.json"
 
-          # 上传 latest.json,带重试。uploads.github.com 偶发连接失败(GitHub 官方 runner 网络抖动),
-          # 重试时先重新查询并删除同名资产,保证幂等(避免上次超时但实际已上传导致的 already_exists)。
+          # 上传 latest.json,带重试。
+          # 注意:不能使用 `gh api --hostname uploads.github.com` —— gh 把 --hostname 当作 GitHub API
+          # 主机名,会请求不存在的 api.uploads.github.com(DNS NXDOMAIN),必然连接失败。
+          # 必须用 `gh release upload`,它内部使用 release 响应的 upload_url 超链接,
+          # 直接走正确的 https://uploads.github.com/... 端点。
           upload_manifest() {
             local attempt=1
             local max_attempts=5
             while [ "$attempt" -le "$max_attempts" ]; do
               echo "Uploading latest.json (attempt $attempt/$max_attempts)..." >&2
-              assets_now="$(gh api "repos/${REPOSITORY}/releases/${release_id}/assets?per_page=100" 2>/dev/null || true)"
-              existing_manifest_id="$(jq -r '.[] | select(.name == "latest.json") | .id' <<< "$assets_now" 2>/dev/null || true)"
-              if [ -n "$existing_manifest_id" ]; then
-                echo "Deleting existing latest.json asset ($existing_manifest_id)" >&2
-                gh api --method DELETE "repos/${REPOSITORY}/releases/assets/${existing_manifest_id}" >/dev/null 2>&1 || true
-              fi
-              if gh api --hostname uploads.github.com --method POST -H 'Content-Type: application/json' \
-                "repos/${REPOSITORY}/releases/${release_id}/assets?name=latest.json" \
-                --input "$workdir/latest.json"; then
+              # --clobber:同名资产已存在时先删除再上传,保证重试幂等
+              if gh release upload "$RELEASE_TAG" "$workdir/latest.json" --repo "$REPOSITORY" --clobber; then
                 echo "latest.json uploaded successfully" >&2
                 return 0
               fi
