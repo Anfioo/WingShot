@@ -53,19 +53,24 @@ request() {
     fi
   fi
   curl --fail-with-body --silent --show-error --location \
+    --connect-timeout 30 --max-time 1800 --retry 3 --retry-all-errors \
     --request "$method" "${AUTH[@]}" "$@" "$url"
 }
 
+echo "Resolving $PLATFORM release $TAG_NAME..."
 release_url="$API_BASE/$repo_path/releases/tags/$tag_path"
 if [[ -n "$AUTH_QUERY" ]]; then
   release_url="${release_url}?${AUTH_QUERY}"
 fi
 release_file="$(mktemp)"
-release_status="$(curl --silent --show-error --location --request GET "${AUTH[@]}" \
+release_status="$(curl --silent --show-error --location \
+  --connect-timeout 30 --max-time 120 --retry 3 --retry-all-errors \
+  --request GET "${AUTH[@]}" \
   --output "$release_file" --write-out '%{http_code}' "$release_url")"
 
 if [[ "$release_status" == "200" ]]; then
   release_id="$(jq -r '.id' "$release_file")"
+  echo "Updating existing $PLATFORM release (id: $release_id)..."
   update_url="$API_BASE/$repo_path/releases/$release_id"
   request PATCH "$update_url" \
     -H 'Content-Type: application/json' \
@@ -83,6 +88,7 @@ else
   fi
 
   create_url="$API_BASE/$repo_path/releases"
+  echo "Creating $PLATFORM release $TAG_NAME..."
   release_id="$(request POST "$create_url" \
     -H 'Content-Type: application/json' \
     --data "$(jq -n \
@@ -128,6 +134,7 @@ for file in "$ASSETS_DIR"/*; do
     '.[] | select(.name == $name) | .id' | head -n 1 || true)"
 
   if [[ -n "$existing_id" ]]; then
+    echo "Replacing existing $asset_name on $PLATFORM..."
     if [[ "$PLATFORM" == "gitea" ]]; then
       request DELETE "$API_BASE/$repo_path/releases/assets/$existing_id" > /dev/null
     else
@@ -135,6 +142,7 @@ for file in "$ASSETS_DIR"/*; do
     fi
   fi
 
+  echo "Uploading $asset_name to $PLATFORM..."
   if [[ "$PLATFORM" == "gitea" ]]; then
     request POST "$API_BASE/$repo_path/releases/$release_id/assets?name=$asset_name_path" \
       -F "attachment=@$upload_file;filename=$asset_name" > /dev/null
