@@ -61,7 +61,15 @@ if ($null -eq $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD) {
 try {
 	$endpoints = @($UpdaterEndpoint, $CustomUpdaterEndpoint) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
 	$overlay = @{ plugins = @{ updater = @{ pubkey = $publicKey; endpoints = $endpoints } }; bundle = @{ createUpdaterArtifacts = $true } }
-	$overlay | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $temporaryConfigPath -Encoding utf8
+	$json = $overlay | ConvertTo-Json -Depth 6
+
+	# ConvertTo-Json 会把「单元素数组」展开为标量（例如 endpoints 只有一个
+	# URL 时输出 "endpoints": "https://..."），而 Tauri updater 插件要求
+	# endpoints 是数组（sequence），反序列化失败会导致应用启动 panic。
+	# 这里把展开后的标量修复回数组形式；已是数组（多元素）时不受影响。
+	$json = [regex]::Replace($json, '"endpoints":\s*"(.*?)"', '"endpoints": ["$1"]')
+
+	$json | Set-Content -LiteralPath $temporaryConfigPath -Encoding utf8
 	& pnpm exec tauri build --config $temporaryConfigPath
 	if ($LASTEXITCODE -ne 0) { throw "Tauri build failed with exit code $LASTEXITCODE" }
 }

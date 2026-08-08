@@ -31,6 +31,17 @@ fn main() {
 
         let backtrace = Backtrace::force_capture();
         log::error!("Panic: {info}\n{backtrace}");
+
+        // 附加：将 panic 直接写入文件，避免日志插件尚未初始化时 panic 信息丢失
+        // （release 下 panic=abort，panic 会直接终止进程，此文件是唯一线索）
+        let msg = format!("Panic: {info}\n{backtrace}\n");
+        if let Ok(exe) = std::env::current_exe() {
+            if let Some(dir) = exe.parent() {
+                let _ = std::fs::write(dir.join("wingshot-panic.log"), &msg);
+            }
+        }
+        let _ = std::fs::write(std::path::Path::new("wingshot-panic.log"), &msg);
+
         default_panic(info);
     }));
 
