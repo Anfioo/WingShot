@@ -1,15 +1,18 @@
 import { SwapOutlined } from "@ant-design/icons";
 import { ProForm } from "@ant-design/pro-components";
-import { Button, Col, Row, Select, theme } from "antd";
-import { FormattedMessage } from "react-intl";
+import { Button, Col, Flex, Row, Segmented, Select, theme } from "antd";
+import { useEffect, useMemo, useState } from "react";
+import { FormattedMessage, useIntl } from "react-intl";
 import {
 	useLanguageOptions,
 	useTranslationDomainOptions,
 } from "@/components/translator";
 import { useTranslationRequest } from "@/core/translations";
+import { getTranslationServiceName } from "@/core/translations/services";
 
 export const TranslationConfig = () => {
 	const { token } = theme.useToken();
+	const intl = useIntl();
 
 	const {
 		sourceLanguage,
@@ -20,6 +23,7 @@ export const TranslationConfig = () => {
 		updateTranslationDomain,
 		autoTranslationLanguagePair,
 		updateAutoTranslationLanguagePair,
+		translationServices,
 	} = useTranslationRequest();
 	const {
 		sourceLanguageOptions,
@@ -27,6 +31,45 @@ export const TranslationConfig = () => {
 		concreteLanguageOptions,
 	} = useLanguageOptions();
 	const translationDomainOptions = useTranslationDomainOptions();
+
+	// 翻译源模式（自动/手动）与所选翻译源，与翻译面板共享 localStorage
+	const [translationSourceMode, setTranslationSourceMode] = useState<
+		"auto" | "manual"
+	>(() => {
+		const saved = localStorage.getItem("translation-source-mode");
+		return saved === "manual" ? "manual" : "auto";
+	});
+	const [selectedTranslationServiceId, setSelectedTranslationServiceId] =
+		useState<string | undefined>(() => {
+			const saved = localStorage.getItem("translation-selected-service-id");
+			return saved ?? undefined;
+		});
+	useEffect(() => {
+		localStorage.setItem("translation-source-mode", translationSourceMode);
+	}, [translationSourceMode]);
+	useEffect(() => {
+		if (selectedTranslationServiceId) {
+			localStorage.setItem(
+				"translation-selected-service-id",
+				selectedTranslationServiceId,
+			);
+		}
+	}, [selectedTranslationServiceId]);
+
+	const enabledTranslationServices = useMemo(
+		() => translationServices.filter((service) => service.enabled !== false),
+		[translationServices],
+	);
+	const translationServiceOptions = useMemo(
+		() =>
+			enabledTranslationServices.map((service) => ({
+				label: getTranslationServiceName(service, (id) =>
+					intl.formatMessage({ id }),
+				),
+				value: service.id,
+			})),
+		[enabledTranslationServices, intl],
+	);
 
 	return (
 		<Row gutter={token.marginLG}>
@@ -78,6 +121,47 @@ export const TranslationConfig = () => {
 						onChange={(value) => updateTranslationDomain(value)}
 						options={translationDomainOptions}
 					/>
+				</ProForm.Item>
+			</Col>
+			<Col span={12}>
+				<ProForm.Item
+					layout="vertical"
+					label={<FormattedMessage id="tools.translation.source" />}
+				>
+					<Flex gap={token.margin} align="center">
+						<Segmented
+							value={translationSourceMode}
+							onChange={(value) =>
+								setTranslationSourceMode(value as "auto" | "manual")
+							}
+							options={[
+								{
+									label: intl.formatMessage({
+										id: "tools.translation.sourceMode.auto",
+									}),
+									value: "auto",
+								},
+								{
+									label: intl.formatMessage({
+										id: "tools.translation.sourceMode.manual",
+									}),
+									value: "manual",
+								},
+							]}
+						/>
+						{translationSourceMode === "manual" && (
+							<Select
+								value={selectedTranslationServiceId}
+								onChange={setSelectedTranslationServiceId}
+								options={translationServiceOptions}
+								placeholder={intl.formatMessage({
+									id: "tools.translation.source.placeholder",
+								})}
+								disabled={translationServiceOptions.length === 0}
+								style={{ minWidth: 200 }}
+							/>
+						)}
+					</Flex>
 				</ProForm.Item>
 			</Col>
 			<Col span={24}>

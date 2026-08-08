@@ -1,5 +1,6 @@
 import {
 	type TranslationServiceConfig,
+	type TranslationServiceInstance,
 	TranslationServiceType,
 } from "@/types/appSettings";
 
@@ -276,6 +277,20 @@ export const translationServiceMetas: TranslationServiceMeta[] = [
 export const translationServiceMetaMap = Object.fromEntries(
 	translationServiceMetas.map((item) => [item.type, item]),
 ) as Record<TranslationServiceType, TranslationServiceMeta>;
+
+/**
+ * 获取翻译服务显示名称
+ *
+ * 优先使用自定义名称（service.name），否则回退到内置服务的国际化文案。
+ * `formatMessage` 由调用方注入（如 `(id) => intl.formatMessage({ id })`）。
+ */
+export const getTranslationServiceName = (
+	service: TranslationServiceInstance,
+	formatMessage: (messageId: string) => string,
+) => {
+	const meta = translationServiceMetaMap[service.type];
+	return service.name?.trim() ? service.name : formatMessage(meta.messageId);
+};
 
 export const createTranslationServiceInstanceId = (
 	type: TranslationServiceType,
