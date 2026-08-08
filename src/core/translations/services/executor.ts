@@ -14,6 +14,8 @@ export type TranslateWithServiceQueueParams = {
 export type TranslateWithServiceQueueResult = {
 	service: TranslationServiceInstance;
 	result: TranslationAdapterResult;
+	/** 源语言检测结果（内部语言码，服务支持时提供） */
+	detectedSourceLanguage?: string;
 };
 
 const hasUsefulResult = (result: TranslationAdapterResult) =>
@@ -50,7 +52,10 @@ export const translateWithServiceQueue = async ({
 			});
 
 			if (hasUsefulResult(result)) {
-				return { service, result };
+				const detectedSourceLanguage = result.find(
+					(item) => item.detectedSourceLanguage,
+				)?.detectedSourceLanguage;
+				return { service, result, detectedSourceLanguage };
 			}
 
 			errors.push(`${service.type}: empty result`);

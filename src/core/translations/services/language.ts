@@ -138,3 +138,35 @@ export const mapDeepLSourceLanguage = (language: string) => {
 
 export const mapDeepLTargetLanguage = (language: string) =>
 	mapTranslationLanguage(TranslationServiceType.DeepL, language);
+
+/**
+ * 翻译服务返回的检测语言码（如 Google 的 ISO 码、微软的 zh-Hans）
+ * 映射为项目内部语言码（如 zh-CHS）。无法映射时原样返回；
+ * auto / 空值返回 undefined（表示无检测结果）。
+ */
+const detectedLanguageMap: LanguageMap = {
+	"zh-CN": "zh-CHS",
+	"zh-Hans": "zh-CHS",
+	"zh-CHS": "zh-CHS",
+	"zh-TW": "zh-CHT",
+	"zh-Hant": "zh-CHT",
+	"zh-CHT": "zh-CHT",
+	en: "en",
+	ja: "ja",
+	ko: "ko",
+	fr: "fr",
+	de: "de",
+	es: "es",
+	it: "it",
+	pt: "pt",
+	ru: "ru",
+	tr: "tr",
+	ar: "ar",
+};
+
+export const mapDetectedLanguage = (lang?: string): string | undefined => {
+	if (!lang || lang === "auto") {
+		return undefined;
+	}
+	return detectedLanguageMap[lang] ?? lang;
+};

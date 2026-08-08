@@ -1141,6 +1141,15 @@ const AppSettingsContextProviderCore: React.FC<{
 							? newSettings.targetLanguage
 							: (prevSettings?.targetLanguage ??
 								defaultAppSettingsData[group].targetLanguage),
+					autoTranslationLanguagePair:
+						Array.isArray(newSettings?.autoTranslationLanguagePair) &&
+						newSettings.autoTranslationLanguagePair.length === 2
+							? [
+									`${newSettings.autoTranslationLanguagePair[0] ?? ""}`,
+									`${newSettings.autoTranslationLanguagePair[1] ?? ""}`,
+								]
+							: (prevSettings?.autoTranslationLanguagePair ??
+								defaultAppSettingsData[group].autoTranslationLanguagePair),
 					translationDomain:
 						typeof newSettings?.translationDomain === "string"
 							? newSettings.translationDomain

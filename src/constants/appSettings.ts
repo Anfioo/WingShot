@@ -222,6 +222,7 @@ export const defaultAppSettingsData: AppSettingsData = {
 		translationApiConfigList: [],
 		sourceLanguage: "auto",
 		targetLanguage: "zh-CHS",
+		autoTranslationLanguagePair: ["zh-CHS", "en"],
 		translationDomain: TranslationDomain.General,
 		translationType: TranslationType.Youdao,
 		translationServices: defaultTranslationServices,

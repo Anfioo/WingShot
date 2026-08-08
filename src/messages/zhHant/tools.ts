@@ -3,6 +3,10 @@ export const tools = {
 	"tools.translation.sourceLanguage": "來源語言",
 	"tools.translation.targetLanguage": "目標語言",
 	"tools.translation.language.auto": "自動辨識語言",
+	"tools.translation.language.autoTarget": "自動",
+	"tools.translation.autoPair": "自動互轉語言對",
+	"tools.translation.autoPair.tooltip":
+		"來源語言和目標語言皆為「自動」時，在這些兩種語言之間互相轉換（如簡體中文 ⇄ 英語）",
 	"tools.translation.language.english": "英語",
 	"tools.translation.language.simplifiedChinese": "簡體中文",
 	"tools.translation.language.traditionalChinese": "繁體中文",

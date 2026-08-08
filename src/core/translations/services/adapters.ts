@@ -15,6 +15,7 @@ import type { TranslationDomain } from "@/types/servies/translation";
 import {
 	mapDeepLSourceLanguage,
 	mapDeepLTargetLanguage,
+	mapDetectedLanguage,
 	mapTranslationLanguage,
 } from "./language";
 
@@ -26,7 +27,11 @@ export type TranslationAdapterParams = {
 	domain: TranslationDomain;
 };
 
-export type TranslationAdapterResult = { content: string }[];
+export type TranslationAdapterResult = {
+	content: string;
+	/** 源语言检测结果（服务支持时提供，内部语言码） */
+	detectedSourceLanguage?: string;
+}[];
 
 type TranslationAdapter = (
 	params: TranslationAdapterParams,
@@ -431,7 +436,10 @@ const translateGoogle: TranslationAdapter = async ({
 	if (!result?.translations?.length) {
 		throw new Error("Google returned empty result");
 	}
-	return result.translations.map((item) => ({ content: item.text }));
+	return result.translations.map((item) => ({
+		content: item.text,
+		detectedSourceLanguage: mapDetectedLanguage(item.detected_source_lang),
+	}));
 };
 
 const translateBing: TranslationAdapter = async ({
@@ -447,7 +455,10 @@ const translateBing: TranslationAdapter = async ({
 	if (!result?.translations?.length) {
 		throw new Error("Bing returned empty result");
 	}
-	return result.translations.map((item) => ({ content: item.text }));
+	return result.translations.map((item) => ({
+		content: item.text,
+		detectedSourceLanguage: mapDetectedLanguage(item.detected_source_lang),
+	}));
 };
 
 const translateLingva: TranslationAdapter = async ({

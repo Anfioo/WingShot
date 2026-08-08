@@ -195,6 +195,8 @@ export type FunctionTranslationSettings = {
 	translationApiConfigList: TranslationApiConfig[];
 	sourceLanguage: string;
 	targetLanguage: string;
+	/** 自动互转语言对：源/目标语言均为「自动」时在这两种语言之间互转，如 ["zh-CHS", "en"] */
+	autoTranslationLanguagePair: [string, string];
 	translationDomain: TranslationDomain;
 	/** 兼容旧版本字段，新流程使用 translationServices */
 	translationType: TranslationType | string;
