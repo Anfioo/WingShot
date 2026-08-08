@@ -145,7 +145,9 @@ export const useMonitorRect = (
 	}, [monitorRectInfo, contentScaleValues, calculatedBoundaryRect]);
 };
 
-const StatusBar: React.FC = () => {
+const StatusBar: React.FC<{
+	onOcrDetectCopyText?: () => void;
+}> = ({ onOcrDetectCopyText }) => {
 	const { token } = theme.useToken();
 
 	const [hotKeyTipOpacity, setHotKeyTipOpacity] = useState(100);
@@ -214,6 +216,7 @@ const StatusBar: React.FC = () => {
 			dragSelectRect: { hotKey: dragSelectRectHotKey },
 			previousCapture: { hotKey: previousCaptureHotKey },
 			nextCapture: { hotKey: nextCaptureHotKey },
+			ocrDetectCopyText: { hotKey: ocrDetectCopyTextHotKey },
 		} = getAppSettings()[AppSettingsGroup.DrawToolbarKeyEvent];
 
 		const findChildrenElements =
@@ -290,6 +293,25 @@ const StatusBar: React.FC = () => {
 							<KeyLabel hotKey={previousCaptureHotKey} />
 							<KeyLabel hotKey={nextCaptureHotKey} />
 						</Space>
+					),
+				},
+				{
+					key: "ocrDetectCopyText",
+					label: (
+						<div
+							className="descriptions-item-ocr-copy-text"
+							onClick={onOcrDetectCopyText}
+						>
+							<FormattedMessage id="draw.ocrDetectCopyText" />
+						</div>
+					),
+					children: (
+						<div
+							className="descriptions-item-ocr-copy-text"
+							onClick={onOcrDetectCopyText}
+						>
+							<KeyLabel hotKey={ocrDetectCopyTextHotKey} />
+						</div>
 					),
 				},
 				{
@@ -372,7 +394,13 @@ const StatusBar: React.FC = () => {
 		}
 
 		setDescriptionsItems(items);
-	}, [getAppSettings, getCaptureStep, getDrawState, getScreenshotType]);
+	}, [
+		getAppSettings,
+		getCaptureStep,
+		getDrawState,
+		getScreenshotType,
+		onOcrDetectCopyText,
+	]);
 	const updateDescriptionsItemsDebounce = useMemo(
 		() => debounce(updateDescriptionsItems, 0),
 		[updateDescriptionsItems],
@@ -516,6 +544,17 @@ const StatusBar: React.FC = () => {
                 :global(.status-bar .descriptions-item-btn-label) {
                     pointer-events: none !important;
                     user-select: none !important;
+                }
+
+                {/* 文本识别并复制提示项：可点击触发，需覆盖状态栏的 pointer-events: none */}
+                .descriptions-item-ocr-copy-text {
+                    pointer-events: auto;
+                    cursor: pointer;
+                    user-select: none;
+                }
+
+                .descriptions-item-ocr-copy-text:hover {
+                    opacity: 0.75;
                 }
 
 

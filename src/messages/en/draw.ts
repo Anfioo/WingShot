@@ -62,6 +62,7 @@ export const draw = {
 	"draw.fastSaveTool": "Fast Save",
 	"draw.close": "Close",
 	"draw.ocrDetectTool": "Text Recognition",
+	"draw.ocrDetectCopyText": "Text Recognition & Copy",
 	"draw.ocrTranslateTool": "Text Recognition Translation",
 	"draw.showOrHideOcrResult": "Show OCR Result",
 	"draw.fixedTool": "Pin to Screen",

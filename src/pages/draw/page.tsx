@@ -66,6 +66,7 @@ import {
 	ImageBufferType,
 	ImageEncoder,
 } from "@/types/commands/screenshot";
+import { DrawToolbarKeyEventKey } from "@/types/components/drawToolbar";
 import { DrawState } from "@/types/draw";
 import { getCorrectHdrColorAlgorithm } from "@/utils/appSettings";
 import {
@@ -123,6 +124,7 @@ import {
 	type DrawToolbarActionType,
 	DrawToolbarStatePublisher,
 } from "./components/drawToolbar";
+import { KeyEventWrap } from "./components/drawToolbar/components/keyEventWrap";
 import { EnableKeyEventPublisher } from "./components/drawToolbar/components/keyEventWrap/extra";
 import { isOcrTool } from "./components/drawToolbar/components/tools/ocrTool";
 import { ScanQrcodeTool } from "./components/drawToolbar/components/tools/scanQrcodeTool";
@@ -1225,6 +1227,13 @@ const DrawPageCore: React.FC<{
 		);
 	}, []);
 
+	// 截图选区 OCR 识别并复制文本（状态栏提示项 / 快捷键触发）：
+	// 先标记"识别后强制复制"，再走完整 OCR 链路（展示结果并复制）
+	const onOcrDetectCopyText = useCallback(() => {
+		ocrBlocksActionRef.current?.setOcrDetectCopyTextMode(true);
+		onOcrDetect();
+	}, [onOcrDetect]);
+
 	const onTranslateOcrToPage = useCallback(async () => {
 		if (
 			!captureBoundingBoxInfoRef.current ||
@@ -1780,6 +1789,13 @@ const DrawPageCore: React.FC<{
 						finishCapture={finishCapture}
 					/>
 
+					<KeyEventWrap
+						componentKey={DrawToolbarKeyEventKey.OcrDetectCopyText}
+						onKeyDown={onOcrDetectCopyText}
+					>
+						<div />
+					</KeyEventWrap>
+
 					<div className={styles.drawLayerWrap} ref={drawLayerWrapRef}>
 						<ImageLayer
 							actionRef={imageLayerActionRef}
@@ -1804,7 +1820,7 @@ const DrawPageCore: React.FC<{
 						onCopyColor={finishCapture}
 						actionRef={colorPickerActionRef}
 					/>
-					<StatusBar />
+					<StatusBar onOcrDetectCopyText={onOcrDetectCopyText} />
 
 					<div
 						ref={circleCursorRef}

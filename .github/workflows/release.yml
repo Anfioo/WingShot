@@ -467,10 +467,30 @@ jobs:
             '{version: $version, notes: $notes, pub_date: (now | todateiso8601), platforms: $platforms}' \
             > "$workdir/latest.json"
 
-          existing_manifest_id="$(jq -r '.[] | select(.name == "latest.json") | .id' <<< "$assets_json")"
-          if [ -n "$existing_manifest_id" ]; then
-            gh api --method DELETE "repos/${REPOSITORY}/releases/assets/${existing_manifest_id}"
-          fi
-          gh api --hostname uploads.github.com --method POST -H 'Content-Type: application/json' \
-            "repos/${REPOSITORY}/releases/${release_id}/assets?name=latest.json" \
-            --input "$workdir/latest.json"
+          # 上传 latest.json,带重试。uploads.github.com 偶发连接失败(GitHub 官方 runner 网络抖动),
+          # 重试时先重新查询并删除同名资产,保证幂等(避免上次超时但实际已上传导致的 already_exists)。
+          upload_manifest() {
+            local attempt=1
+            local max_attempts=5
+            while [ "$attempt" -le "$max_attempts" ]; do
+              echo "Uploading latest.json (attempt $attempt/$max_attempts)..." >&2
+              assets_now="$(gh api "repos/${REPOSITORY}/releases/${release_id}/assets?per_page=100" 2>/dev/null || true)"
+              existing_manifest_id="$(jq -r '.[] | select(.name == "latest.json") | .id' <<< "$assets_now" 2>/dev/null || true)"
+              if [ -n "$existing_manifest_id" ]; then
+                echo "Deleting existing latest.json asset ($existing_manifest_id)" >&2
+                gh api --method DELETE "repos/${REPOSITORY}/releases/assets/${existing_manifest_id}" >/dev/null 2>&1 || true
+              fi
+              if gh api --hostname uploads.github.com --method POST -H 'Content-Type: application/json' \
+                "repos/${REPOSITORY}/releases/${release_id}/assets?name=latest.json" \
+                --input "$workdir/latest.json"; then
+                echo "latest.json uploaded successfully" >&2
+                return 0
+              fi
+              echo "Upload attempt $attempt failed; retrying in $((attempt * 10))s..." >&2
+              sleep "$((attempt * 10))"
+              attempt=$((attempt + 1))
+            done
+            echo "Failed to upload latest.json after $max_attempts attempts" >&2
+            return 1
+          }
+          upload_manifest
