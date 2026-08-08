@@ -78,22 +78,30 @@ jobs:
             --pattern "*" \
             --clobber
 
-      - name: Sync To Gitee
-        if: inputs.gitee
-        env:
-          PLATFORM: gitee
-          PLATFORM_TOKEN: ${{ secrets.GITEE_TOKEN }}
-          TAG_NAME: ${{ steps.release.outputs.tag }}
-          ASSETS_DIR: assets
+      - name: Sync To Gitee & Gitea (parallel)
+        if: inputs.gitee || inputs.gitea
         shell: bash
-        run: bash .github/scripts/sync-release.sh
-
-      - name: Sync To Gitea
-        if: inputs.gitea
-        env:
-          PLATFORM: gitea
-          PLATFORM_TOKEN: ${{ secrets.GITEA_TOKEN }}
-          TAG_NAME: ${{ steps.release.outputs.tag }}
-          ASSETS_DIR: assets
-        shell: bash
-        run: bash .github/scripts/sync-release.sh
+        run: |
+          set -euo pipefail
+          pids=()
+          if [[ "${{ inputs.gitee }}" == "true" ]]; then
+            PLATFORM=gitee \
+            PLATFORM_TOKEN="${{ secrets.GITEE_TOKEN }}" \
+            TAG_NAME="${{ steps.release.outputs.tag }}" \
+            ASSETS_DIR=assets \
+            bash .github/scripts/sync-release.sh &
+            pids+=("$!")
+          fi
+          if [[ "${{ inputs.gitea }}" == "true" ]]; then
+            PLATFORM=gitea \
+            PLATFORM_TOKEN="${{ secrets.GITEA_TOKEN }}" \
+            TAG_NAME="${{ steps.release.outputs.tag }}" \
+            ASSETS_DIR=assets \
+            bash .github/scripts/sync-release.sh &
+            pids+=("$!")
+          fi
+          failed=0
+          for pid in "${pids[@]}"; do
+            wait "$pid" || failed=1
+          done
+          exit "$failed"
