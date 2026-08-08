@@ -159,6 +159,13 @@ const GlobalShortcutCore = ({ children }: { children: React.ReactNode }) => {
 					);
 				}
 
+				if (key === AppFunction.ScreenshotOcrTranslateToPage) {
+					return (
+						isReadyStatus?.(PLUGIN_ID_RAPID_OCR) &&
+						isReadyStatus?.(PLUGIN_ID_TRANSLATE)
+					);
+				}
+
 				return true;
 			})
 			.reduce(
@@ -249,6 +256,14 @@ const GlobalShortcutCore = ({ children }: { children: React.ReactNode }) => {
 							buttonOnClick = () => {
 								executeTranslate();
 							};
+							break;
+						case AppFunction.ScreenshotOcrTranslateToPage:
+							buttonTitle = (
+								<FormattedMessage id="home.screenshotOcrTranslateToPage" />
+							);
+							buttonIcon = <OcrDetectIcon style={{ fontSize: "1.1em" }} />;
+							buttonOnClick = () =>
+								executeScreenshot(ScreenshotType.OcrTranslateToPage);
 							break;
 						case AppFunction.ChatSelectText:
 							buttonTitle = <FormattedMessage id="home.chatSelectText" />;

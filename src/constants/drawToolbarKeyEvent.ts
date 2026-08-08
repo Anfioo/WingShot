@@ -77,6 +77,10 @@ export const defaultDrawToolbarKeyEventSettings: Record<
 		hotKey: getPlatformValue("Ctrl+D", "Meta+D"),
 		unique: true,
 	},
+	[DrawToolbarKeyEventKey.OcrDetectCopyText]: {
+		hotKey: getPlatformValue("Shift+C", "Shift+C"),
+		unique: true,
+	},
 	[DrawToolbarKeyEventKey.OcrTranslateTool]: {
 		hotKey: getPlatformValue("Ctrl+T", "Meta+T"),
 		unique: true,

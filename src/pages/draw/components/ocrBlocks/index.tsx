@@ -53,6 +53,8 @@ export type OcrBlocksActionType = {
 		allOcrResult: AllOcrResult | undefined,
 	) => Promise<void>;
 	setEnable: (enable: boolean | ((enable: boolean) => boolean)) => void;
+	/** 设置"OCR 识别并复制文本"模式：下一次 OCR 完成后强制复制文本到剪贴板 */
+	setOcrDetectCopyTextMode: (mode: boolean) => void;
 	getOcrResultAction: () => OcrResultActionType | undefined;
 	getSelectedText: () => OcrBlocksSelectedText | undefined;
 };
@@ -64,6 +66,8 @@ export const OcrBlocks: React.FC<{
 	const { selectLayerActionRef, imageLayerActionRef, drawLayerActionRef } =
 		useContext(DrawContext);
 	const ocrResultActionRef = useRef<OcrResultActionType>(undefined);
+	// "OCR 识别并复制文本"模式标记：由状态栏提示项/快捷键触发，OCR 完成后强制复制
+	const ocrDetectCopyTextModeRef = useRef(false);
 
 	const [getScreenshotType] = useStateSubscriber(
 		ScreenshotTypePublisher,
@@ -97,6 +101,9 @@ export const OcrBlocks: React.FC<{
 			setEnable: (enable: boolean | ((enable: boolean) => boolean)) => {
 				ocrResultActionRef.current?.setEnable(enable);
 			},
+			setOcrDetectCopyTextMode: (mode: boolean) => {
+				ocrDetectCopyTextModeRef.current = mode;
+			},
 			getOcrResultAction: () => {
 				return ocrResultActionRef.current;
 			},
@@ -109,6 +116,15 @@ export const OcrBlocks: React.FC<{
 
 	const onOcrDetect = useCallback(
 		(ocrResult: OcrDetectResult) => {
+			// "OCR 识别并复制文本"模式（状态栏提示项/快捷键触发）：
+			// 识别完成即复制并关闭截图页面，不依赖 ocrAfterAction 设置（类似 PixPin Shift+C）
+			if (ocrDetectCopyTextModeRef.current) {
+				writeTextToClipboard(covertOcrResultToText(ocrResult));
+				ocrDetectCopyTextModeRef.current = false;
+				finishCapture?.();
+				return;
+			}
+
 			// 判断是否是 OCR 工具
 			if (!isOcrTool(getDrawState())) {
 				return;
@@ -135,7 +151,12 @@ export const OcrBlocks: React.FC<{
 					finishCapture?.();
 				}
 			} else if (getDrawState() === DrawState.OcrTranslate) {
-				ocrResultActionRef.current?.startTranslate();
+				// 截图识别文字并转到翻译页：OCR 完成后跳转翻译页面并填入识别文本
+				if (getScreenshotType().type === ScreenshotType.OcrTranslateToPage) {
+					executeTranslateOcrText(covertOcrResultToText(ocrResult));
+				} else {
+					ocrResultActionRef.current?.startTranslate();
+				}
 			}
 		},
 		[finishCapture, getAppSettings, getDrawState, getScreenshotType],

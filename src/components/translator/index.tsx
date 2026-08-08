@@ -29,9 +29,8 @@ import React, {
 } from "react";
 import { FormattedMessage, useIntl } from "react-intl";
 import { useTranslationRequest } from "@/core/translations";
-import { translationServiceMetaMap } from "@/core/translations/services";
+import { getTranslationServiceName } from "@/core/translations/services";
 import { useStateRef } from "@/hooks/useStateRef";
-import type { TranslationServiceInstance } from "@/types/appSettings";
 import { TranslationDomain } from "@/types/servies/translation";
 import { writeTextToClipboard } from "@/utils/clipboard";
 
@@ -356,19 +355,28 @@ const TranslatorCore: React.FC<{
 		}, []),
 	);
 
-	const getTranslationServiceName = useCallback(
-		(service: TranslationServiceInstance) => {
-			const meta = translationServiceMetaMap[service.type];
-			return service.name?.trim()
-				? service.name
-				: intl.formatMessage({ id: meta.messageId });
-		},
-		[intl],
-	);
 	const [translationSourceMode, setTranslationSourceMode] =
-		useState<TranslationSourceMode>("auto");
+		useState<TranslationSourceMode>(() => {
+			// 翻译源模式（自动/手动）与设置页/文本识别设置共享，持久化到 localStorage
+			const saved = localStorage.getItem("translation-source-mode");
+			return saved === "manual" ? "manual" : "auto";
+		});
 	const [selectedTranslationServiceId, setSelectedTranslationServiceId] =
-		useState<string>();
+		useState<string | undefined>(() => {
+			const saved = localStorage.getItem("translation-selected-service-id");
+			return saved ?? undefined;
+		});
+	useEffect(() => {
+		localStorage.setItem("translation-source-mode", translationSourceMode);
+	}, [translationSourceMode]);
+	useEffect(() => {
+		if (selectedTranslationServiceId) {
+			localStorage.setItem(
+				"translation-selected-service-id",
+				selectedTranslationServiceId,
+			);
+		}
+	}, [selectedTranslationServiceId]);
 	const enabledTranslationServices = useMemo(
 		() => translationServices.filter((service) => service.enabled !== false),
 		[translationServices],
@@ -376,10 +384,12 @@ const TranslatorCore: React.FC<{
 	const translationServiceOptions = useMemo(
 		() =>
 			enabledTranslationServices.map((service) => ({
-				label: getTranslationServiceName(service),
+				label: getTranslationServiceName(service, (id) =>
+					intl.formatMessage({ id }),
+				),
 				value: service.id,
 			})),
-		[enabledTranslationServices, getTranslationServiceName],
+		[enabledTranslationServices, intl],
 	);
 
 	useEffect(() => {
@@ -474,8 +484,10 @@ const TranslatorCore: React.FC<{
 	// 手动模式下由用户自行选择翻译服务
 	const usedServiceName = useMemo(() => {
 		if (!usedTranslationService) return "";
-		return getTranslationServiceName(usedTranslationService);
-	}, [getTranslationServiceName, usedTranslationService]);
+		return getTranslationServiceName(usedTranslationService, (id) =>
+			intl.formatMessage({ id }),
+		);
+	}, [intl, usedTranslationService]);
 	const autoSourceLabel =
 		hasTranslatedContent && usedServiceName
 			? usedServiceName

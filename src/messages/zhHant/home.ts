@@ -26,6 +26,7 @@ export const home = {
 	"home.fullScreenDraw": "全螢幕畫布（啟用/取消畫布滑鼠穿透）",
 	"home.translationSelectText": "翻譯選取的文字",
 	"home.translation": "翻譯",
+	"home.screenshotOcrTranslateToPage": "截圖辨識文字並轉到翻譯頁",
 	"home.screenshot": "截圖",
 	"home.chat": "AI 對話",
 	"home.chatSelectText": "對話框填入選取的文字",

@@ -62,6 +62,7 @@ export const draw = {
 	"draw.fastSaveTool": "快速儲存",
 	"draw.close": "關閉",
 	"draw.ocrDetectTool": "文字辨識",
+	"draw.ocrDetectCopyText": "文字辨識並複製",
 	"draw.ocrTranslateTool": "文字辨識翻譯",
 	"draw.showOrHideOcrResult": "顯示文字辨識結果",
 	"draw.fixedTool": "截圖並貼圖",

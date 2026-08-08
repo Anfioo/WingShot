@@ -95,6 +95,10 @@ export const HotKeySettingsPage = () => {
 					return isReadyStatus?.(PLUGIN_ID_RAPID_OCR);
 				}
 
+				if (key === DrawToolbarKeyEventKey.OcrDetectCopyText) {
+					return isReadyStatus?.(PLUGIN_ID_RAPID_OCR);
+				}
+
 				if (key === DrawToolbarKeyEventKey.OcrTranslateTool) {
 					return (
 						isReadyStatus?.(PLUGIN_ID_RAPID_OCR) &&

@@ -54,6 +54,10 @@ export const defaultAppFunctionConfigs: Record<AppFunction, AppFunctionConfig> =
 			shortcutKey: "",
 			group: AppFunctionGroup.Translation,
 		},
+		[AppFunction.ScreenshotOcrTranslateToPage]: {
+			shortcutKey: "",
+			group: AppFunctionGroup.Translation,
+		},
 		[AppFunction.VideoRecord]: {
 			shortcutKey: "",
 			group: AppFunctionGroup.VideoRecord,

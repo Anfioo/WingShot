@@ -300,9 +300,7 @@ export const AboutPage = () => {
 						</Button>
 						<Button
 							icon={<MessageOutlined />}
-							onClick={() =>
-								openUrl("https://space.bilibili.com/3546897042114689")
-							}
+							onClick={() => openUrl("https://space.bilibili.com/1821689715")}
 							block
 						>
 							{intl.formatMessage({ id: "about.contact.bilibili" })}
