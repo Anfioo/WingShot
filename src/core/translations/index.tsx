@@ -32,10 +32,20 @@ export const useTranslationRequest = (options?: {
 		useStateRef<string>("zh-CHS");
 	const [translationServices, setTranslationServices, translationServicesRef] =
 		useStateRef<TranslationServiceInstance[]>([]);
+	const [
+		autoTranslationLanguagePair,
+		setAutoTranslationLanguagePair,
+		autoTranslationLanguagePairRef,
+	] = useStateRef<[string, string]>(["zh-CHS", "en"]);
 
 	useAppSettingsLoad(
 		useCallback(
 			(settings: AppSettingsData) => {
+				setAutoTranslationLanguagePair(
+					settings[AppSettingsGroup.FunctionTranslation]
+						.autoTranslationLanguagePair,
+				);
+
 				if (options?.enableCacheConfig) {
 					setTranslationDomain(
 						settings[AppSettingsGroup.FunctionTranslationCache]
@@ -70,6 +80,7 @@ export const useTranslationRequest = (options?: {
 				setTargetLanguage,
 				setTranslationDomain,
 				setTranslationServices,
+				setAutoTranslationLanguagePair,
 				options?.enableCacheConfig,
 			],
 		),
@@ -82,6 +93,9 @@ export const useTranslationRequest = (options?: {
 		useStateRef<string>("");
 	const [usedTranslationService, setUsedTranslationService] =
 		useState<TranslationServiceInstance>();
+	const [detectedSourceLanguage, setDetectedSourceLanguage] = useState<
+		string | undefined
+	>(undefined);
 	const requestSequenceRef = useRef(0);
 
 	const requestTranslate = useCallback(
@@ -97,18 +111,62 @@ export const useTranslationRequest = (options?: {
 			const translationDomain = translationDomainRef.current;
 			const sourceLanguage = sourceLanguageRef.current;
 			const targetLanguage = targetLanguageRef.current;
+			const autoPair = autoTranslationLanguagePairRef.current;
 
 			setStartTranslateLoading(true);
 			setUsedTranslationService(undefined);
 			setTranslatedContent("");
 			try {
-				const { result, service } = await translateWithServiceQueue({
-					services,
-					sourceContent,
-					sourceLanguage,
-					targetLanguage,
-					domain: translationDomain,
-				});
+				// 目标语言为 auto 时，按「自动互转语言对」推导目标语言：
+				// - 源语言已知且在语言对内 → 目标为另一侧
+				// - 源语言也未知 → 先以语言对第一侧为目标探测一次，利用
+				//   服务返回的源语言检测结果判断翻译方向
+				let effectiveSource = sourceLanguage;
+				let effectiveTarget = targetLanguage;
+				let probeResult:
+					| Awaited<ReturnType<typeof translateWithServiceQueue>>
+					| undefined;
+
+				if (targetLanguage === "auto") {
+					if (sourceLanguage === "auto") {
+						const probe = await translateWithServiceQueue({
+							services,
+							sourceContent,
+							sourceLanguage: "auto",
+							targetLanguage: autoPair[0],
+							domain: translationDomain,
+						});
+
+						if (probe.detectedSourceLanguage === autoPair[0]) {
+							// 源语言就是语言对第一侧（如简体中文）→ 目标应为第二侧（如英语）
+							effectiveSource = "auto";
+							effectiveTarget = autoPair[1];
+						} else {
+							// 源语言是第二侧或其它语言 → 目标为第一侧已正确，直接复用探测结果
+							probeResult = probe;
+							effectiveTarget = autoPair[0];
+						}
+					} else {
+						// 源语言已知：目标取语言对的另一侧；源不在语言对内时回退到第二侧
+						effectiveTarget =
+							sourceLanguage === autoPair[0]
+								? autoPair[1]
+								: sourceLanguage === autoPair[1]
+									? autoPair[0]
+									: autoPair[1];
+					}
+				}
+
+				const translateResult =
+					probeResult ??
+					(await translateWithServiceQueue({
+						services,
+						sourceContent,
+						sourceLanguage: effectiveSource,
+						targetLanguage: effectiveTarget,
+						domain: translationDomain,
+					}));
+				const { result, service } = translateResult;
 
 				if (currentRequestSequence !== requestSequenceRef.current) {
 					return;
@@ -117,6 +175,10 @@ export const useTranslationRequest = (options?: {
 				setUsedTranslationService(service);
 				options?.onComplete?.(result, requestId, service);
 				setTranslatedContent(result.map((item) => item.content).join("\n"));
+				// 记录检测出的源语言（自动识别/自动互转场景），供 UI 展示翻译源
+				if (translateResult.detectedSourceLanguage) {
+					setDetectedSourceLanguage(translateResult.detectedSourceLanguage);
+				}
 			} catch (error) {
 				if (currentRequestSequence !== requestSequenceRef.current) {
 					return;
@@ -136,6 +198,7 @@ export const useTranslationRequest = (options?: {
 			translationDomainRef,
 			sourceLanguageRef,
 			targetLanguageRef,
+			autoTranslationLanguagePairRef,
 			setTranslatedContent,
 			message,
 			options,
@@ -238,6 +301,21 @@ export const useTranslationRequest = (options?: {
 		[updateAppSettings],
 	);
 
+	const updateAutoTranslationLanguagePair = useCallback(
+		(autoTranslationLanguagePair: [string, string]) => {
+			updateAppSettings(
+				AppSettingsGroup.FunctionTranslation,
+				{ autoTranslationLanguagePair },
+				true,
+				true,
+				true,
+				true,
+				false,
+			);
+		},
+		[updateAppSettings],
+	);
+
 	const getTranslatedContent = useCallback(() => {
 		return translatedContentRef.current;
 	}, [translatedContentRef]);
@@ -247,6 +325,7 @@ export const useTranslationRequest = (options?: {
 		updateSourceLanguage,
 		updateTargetLanguage,
 		updateTranslationServices,
+		updateAutoTranslationLanguagePair,
 		requestTranslate,
 		startTranslateLoading,
 		deltaTranslateLoading,
@@ -255,7 +334,9 @@ export const useTranslationRequest = (options?: {
 		sourceLanguage,
 		targetLanguage,
 		translationServices,
+		autoTranslationLanguagePair,
 		usedTranslationService,
 		getTranslatedContent,
+		detectedSourceLanguage,
 	};
 };

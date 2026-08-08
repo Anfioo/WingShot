@@ -119,6 +119,18 @@ const selectFilterOption: SelectProps["filterOption"] = (input, option) => {
 	return regex.test(option.title.toString().toLowerCase());
 };
 
+/** 将单个语言项转换为平铺的 Select 选项（与分组内子项格式一致） */
+const toFlatLanguageOption = (
+	lang: LanguageItem,
+): NonNullable<SelectProps["options"]>[number] => {
+	const langCode = typeof lang.code === "string" ? lang.code : "";
+	return {
+		label: <SelectLabel label={lang.label} code={langCode.toUpperCase()} />,
+		title: `${lang.label}(${langCode.toLowerCase()})`,
+		value: langCode,
+	};
+};
+
 export type TranslatorActionType = {
 	setSourceContent: (content: string, ignoreDebounce?: boolean) => void;
 	getSourceContentRef: () => TextAreaRef | null;
@@ -128,8 +140,16 @@ export type TranslatorActionType = {
 export const useLanguageOptions = () => {
 	const intl = useIntl();
 
-	const targetLanguageOptions = useMemo(() => {
-		const languageList = [
+	// 完整语言列表（含「自动」），源语言与目标语言共用同一份列表与排序，
+	// 保证两个下拉的选项顺序、分组完全一致
+	const languageList = useMemo(() => {
+		const list: LanguageItem[] = [
+			{
+				code: "auto",
+				label: intl.formatMessage({
+					id: "tools.translation.language.autoTarget",
+				}),
+			},
 			{
 				code: "en",
 				label: intl.formatMessage({ id: "tools.translation.language.english" }),
@@ -186,7 +206,9 @@ export const useLanguageOptions = () => {
 				code: "tr",
 				label: intl.formatMessage({ id: "tools.translation.language.turkish" }),
 			},
-		].sort((a, b) => {
+		];
+
+		return [...list].sort((a, b) => {
 			if (a.code === "auto") {
 				return -1;
 			}
@@ -195,23 +217,63 @@ export const useLanguageOptions = () => {
 			}
 			return a.code.localeCompare(b.code);
 		});
-
-		return convertLanguageListToOptions(languageList);
 	}, [intl]);
 
+	const targetLanguageOptions = useMemo(() => {
+		// 「自动」作为独立项置顶，其余语言按首字母分组
+		const autoItem = languageList.find((item) => item.code === "auto");
+		const restOptions = convertLanguageListToOptions(
+			languageList.filter((item) => item.code !== "auto"),
+		);
+		return autoItem
+			? [toFlatLanguageOption(autoItem), ...(restOptions ?? [])]
+			: (restOptions ?? []);
+	}, [languageList]);
+
 	const sourceLanguageOptions = useMemo(() => {
-		return [
-			{
-				label: intl.formatMessage({ id: "tools.translation.language.auto" }),
-				value: "auto",
-			},
-			...(targetLanguageOptions ?? []),
-		];
-	}, [intl, targetLanguageOptions]);
+		// 与目标语言一致：「自动」独立置顶，仅文案不同（自动识别语言）
+		const sourceList = languageList.map((item) =>
+			item.code === "auto"
+				? {
+						...item,
+						label: intl.formatMessage({
+							id: "tools.translation.language.auto",
+						}),
+					}
+				: item,
+		);
+		const autoItem = sourceList.find((item) => item.code === "auto");
+		const restOptions = convertLanguageListToOptions(
+			sourceList.filter((item) => item.code !== "auto"),
+		);
+		return autoItem
+			? [toFlatLanguageOption(autoItem), ...(restOptions ?? [])]
+			: (restOptions ?? []);
+	}, [languageList, intl]);
+
+	// 具体语言选项（不含 auto），用于「自动互转语言对」等只允许选具体语言的场景
+	const concreteLanguageOptions = useMemo(() => {
+		return convertLanguageListToOptions(
+			languageList.filter((item) => item.code !== "auto"),
+		);
+	}, [languageList]);
+
+	// 语言码 → 语言名（用于展示检测出的源语言）
+	const getLanguageLabel = useCallback(
+		(code?: string): string | undefined => {
+			if (!code) {
+				return undefined;
+			}
+			return languageList.find((item) => item.code === code)?.label;
+		},
+		[languageList],
+	);
 
 	return {
 		sourceLanguageOptions,
 		targetLanguageOptions,
+		concreteLanguageOptions,
+		getLanguageLabel,
 	};
 };
 
@@ -408,29 +470,25 @@ const TranslatorCore: React.FC<{
 
 	const hasSourceContent = !!sourceContent;
 	const hasTranslatedContent = !!translatedContent;
+	// 翻译源（翻译服务）：自动模式下展示「自动」，翻译完成后显示实际使用的服务名；
+	// 手动模式下由用户自行选择翻译服务
 	const usedServiceName = useMemo(() => {
 		if (!usedTranslationService) return "";
 		return getTranslationServiceName(usedTranslationService);
 	}, [getTranslationServiceName, usedTranslationService]);
-	const showAutoUsedService =
-		translationSourceMode === "auto" &&
-		hasTranslatedContent &&
-		!!usedServiceName;
+	const autoSourceLabel =
+		hasTranslatedContent && usedServiceName
+			? usedServiceName
+			: intl.formatMessage({ id: "tools.translation.sourceMode.auto" });
 	const translationSourceOptions = useMemo(
 		() =>
-			translationSourceModes.map((mode) => {
-				const label = intl.formatMessage({
+			translationSourceModes.map((mode) => ({
+				label: intl.formatMessage({
 					id: `tools.translation.sourceMode.${mode}`,
-				});
-				return {
-					label:
-						mode === "auto" && showAutoUsedService
-							? `${label} · ${usedServiceName}`
-							: label,
-					value: mode,
-				};
-			}),
-		[intl, showAutoUsedService, usedServiceName],
+				}),
+				value: mode,
+			})),
+		[intl],
 	);
 
 	const sourceContentRef = useRef<TextAreaRef>(null);
@@ -478,7 +536,9 @@ const TranslatorCore: React.FC<{
 						<Button
 							type="link"
 							disabled={
-								sourceLanguage === "auto" || sourceLanguage === targetLanguage
+								sourceLanguage === "auto" ||
+								targetLanguage === "auto" ||
+								sourceLanguage === targetLanguage
 							}
 							icon={<SwapOutlined />}
 							style={{ marginTop: token.margin }}
@@ -553,7 +613,21 @@ const TranslatorCore: React.FC<{
 										disabled={translationServiceOptions.length === 0}
 										style={{ minWidth: 160 }}
 									/>
-								) : null}
+								) : (
+									// 自动模式：翻译源（翻译服务）只读展示，翻译完成后显示实际使用的服务名
+									<Select
+										value="auto"
+										options={[
+											{
+												value: "auto",
+												label: autoSourceLabel,
+											},
+										]}
+										variant="outlined"
+										disabled
+										style={{ minWidth: 120 }}
+									/>
+								)}
 								<Segmented
 									value={translationSourceMode}
 									onChange={(value) => {

@@ -3,6 +3,10 @@ export const tools = {
 	"tools.translation.sourceLanguage": "Source Language",
 	"tools.translation.targetLanguage": "Target Language",
 	"tools.translation.language.auto": "Auto Detect Language",
+	"tools.translation.language.autoTarget": "Auto",
+	"tools.translation.autoPair": "Auto-swap Language Pair",
+	"tools.translation.autoPair.tooltip":
+		"When both source and target languages are Auto, they swap between these two languages (e.g. Simplified Chinese ⇄ English)",
 	"tools.translation.language.english": "English",
 	"tools.translation.language.simplifiedChinese": "Simplified Chinese",
 	"tools.translation.language.traditionalChinese": "Traditional Chinese",

@@ -712,7 +712,8 @@ const DrawPageCore: React.FC<{
 			// 切换截图历史 / 录屏时，不进行截图，只进行显示
 			if (
 				!imageBuffer &&
-				excuteScreenshotType !== ScreenshotType.SwitchCaptureHistory
+				excuteScreenshotType !== ScreenshotType.SwitchCaptureHistory &&
+				excuteScreenshotType !== ScreenshotType.VideoRecord
 			) {
 				appInfo("[DIAG] excuteScreenshot: no imageBuffer, finishing capture");
 				sendErrorMessage(intl.formatMessage({ id: "draw.captureError" }));
@@ -743,6 +744,24 @@ const DrawPageCore: React.FC<{
 					appInfo("[DIAG] excuteScreenshot: VideoRecord layer init failed");
 					// ignore
 				}
+
+				// 录屏类型没有截图内容，但仍需发布 onCaptureReady / onCaptureLoad 事件，
+				// 让选择层启用工具栏并自动触发 VideoRecord 分支（等价于「框选后点击录制」）。
+				// 否则快捷键路径下事件停留在 onExecuteScreenshot，工具栏永不启用，
+				// executeVideoRecord 不会执行，录制窗口（含工具栏）不会创建。
+				setCaptureEvent({
+					event: CaptureEvent.onCaptureReady,
+					params: [undefined, undefined],
+				});
+				setCaptureEvent({
+					event: CaptureEvent.onCaptureLoad,
+					params: [
+						undefined,
+						undefined,
+						captureBoundingBoxInfoRef.current as CaptureBoundingBoxInfo,
+					],
+				});
+
 				capturingRef.current = false;
 				setCaptureStateAction(false);
 				appInfo("[DIAG] excuteScreenshot: VideoRecord exit");
