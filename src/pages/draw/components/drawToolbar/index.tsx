@@ -665,6 +665,10 @@ const DrawToolbarCore: React.FC<DrawToolbarProps> = ({
 					case ScreenshotType.OcrTranslate:
 						onToolClick(DrawState.OcrTranslate);
 						break;
+					case ScreenshotType.OcrTranslateToPage:
+						// 截图识别文字并转到翻译页：复用 OCR 流程，OCR 完成后跳转翻译页
+						onToolClick(DrawState.OcrTranslate);
+						break;
 					case ScreenshotType.Copy:
 						onCopyToClipboard();
 						break;

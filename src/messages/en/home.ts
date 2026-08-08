@@ -29,6 +29,7 @@ export const home = {
 		"Fullscreen Canvas (Enable/Disable Canvas Mouse Through)",
 	"home.translationSelectText": "Translate Selected Text",
 	"home.translation": "Translation",
+	"home.screenshotOcrTranslateToPage": "Screenshot OCR to Translation",
 	"home.screenshot": "Screenshot",
 	"home.chat": "AI Chat",
 	"home.chatSelectText": "Fill selected text into chat box",

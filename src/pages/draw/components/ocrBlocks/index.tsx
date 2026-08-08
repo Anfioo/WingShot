@@ -135,7 +135,12 @@ export const OcrBlocks: React.FC<{
 					finishCapture?.();
 				}
 			} else if (getDrawState() === DrawState.OcrTranslate) {
-				ocrResultActionRef.current?.startTranslate();
+				// 截图识别文字并转到翻译页：OCR 完成后跳转翻译页面并填入识别文本
+				if (getScreenshotType().type === ScreenshotType.OcrTranslateToPage) {
+					executeTranslateOcrText(covertOcrResultToText(ocrResult));
+				} else {
+					ocrResultActionRef.current?.startTranslate();
+				}
 			}
 		},
 		[finishCapture, getAppSettings, getDrawState, getScreenshotType],
