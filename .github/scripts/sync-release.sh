@@ -68,38 +68,55 @@ release_status="$(curl --silent --show-error --location \
   --request GET "${AUTH[@]}" \
   --output "$release_file" --write-out '%{http_code}' "$release_url")"
 
-if [[ "$release_status" == "200" ]]; then
-  release_id="$(jq -r '.id' "$release_file")"
+# Gitee's GET /releases/tags/{tag} returns HTTP 200 with a JSON `null`
+# body when the tag exists but has no release yet (GitHub/Gitea return 404
+# instead), so decide by whether an id could be parsed, not by the status
+# code alone. Tolerate both object and array shapes defensively.
+release_id="$(jq -r '
+  if type == "object" and .id != null then .id
+  elif type == "array" and length > 0 then .[0].id
+  else empty
+  end
+' "$release_file")"
+
+if [[ -n "$release_id" ]]; then
   echo "Updating existing $PLATFORM release (id: $release_id)..."
   update_url="$API_BASE/$repo_path/releases/$release_id"
+  update_data="$(jq -n \
+    --arg name "$source_name" \
+    --arg body "$source_body" \
+    --argjson draft "$source_draft" \
+    --argjson prerelease "$source_prerelease" \
+    '{name: $name, body: $body, draft: $draft, prerelease: $prerelease}')"
+  if [[ "$PLATFORM" != "gitea" ]]; then
+    # Gitee releases have no draft flag; drop it to avoid a 400.
+    update_data="$(printf '%s' "$update_data" | jq 'del(.draft)')"
+  fi
   request PATCH "$update_url" \
     -H 'Content-Type: application/json' \
-    --data "$(jq -n \
-      --arg name "$source_name" \
-      --arg body "$source_body" \
-      --argjson draft "$source_draft" \
-      --argjson prerelease "$source_prerelease" \
-      '{name: $name, body: $body, draft: $draft, prerelease: $prerelease}')" \
-    > /dev/null
+    --data "$update_data" > /dev/null
 else
-  if [[ "$release_status" != "404" ]]; then
+  if [[ "$release_status" != "404" && "$release_status" != "200" ]]; then
     cat "$release_file" >&2
     exit 1
   fi
 
   create_url="$API_BASE/$repo_path/releases"
   echo "Creating $PLATFORM release $TAG_NAME..."
+  create_data="$(jq -n \
+    --arg tag "$TAG_NAME" \
+    --arg name "$source_name" \
+    --arg body "$source_body" \
+    --arg target "$source_target" \
+    --argjson draft "$source_draft" \
+    --argjson prerelease "$source_prerelease" \
+    '{tag_name: $tag, name: $name, body: $body, target_commitish: $target, draft: $draft, prerelease: $prerelease}')"
+  if [[ "$PLATFORM" != "gitea" ]]; then
+    create_data="$(printf '%s' "$create_data" | jq 'del(.draft)')"
+  fi
   release_id="$(request POST "$create_url" \
     -H 'Content-Type: application/json' \
-    --data "$(jq -n \
-      --arg tag "$TAG_NAME" \
-      --arg name "$source_name" \
-      --arg body "$source_body" \
-      --arg target "$source_target" \
-      --argjson draft "$source_draft" \
-      --argjson prerelease "$source_prerelease" \
-      '{tag_name: $tag, name: $name, body: $body, target_commitish: $target, draft: $draft, prerelease: $prerelease}' )" \
-    | jq -r '.id')"
+    --data "$create_data" | jq -r '.id')"
 fi
 
 if [[ -z "$release_id" || "$release_id" == "null" ]]; then

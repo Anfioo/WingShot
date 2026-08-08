@@ -51,3 +51,4 @@ tsconfig.tsbuildinfo
 .env*
 /.key/
 /.agents
+/.reasonix
