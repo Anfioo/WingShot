@@ -1,12 +1,16 @@
 use ffmpeg_sidecar::{child::FfmpegChild, command::FfmpegCommand, event::FfmpegEvent};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
+#[cfg(target_os = "windows")]
+use crate::system_audio_capture::SystemAudioCapture;
 #[cfg(target_os = "macos")]
 use snow_shot_app_utils::monitor_info::MonitorList;
 use std::{
     io::Result,
     path::{Path, PathBuf},
 };
+#[cfg(target_os = "windows")]
+use std::time::Instant;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Copy)]
 pub enum VideoRecordState {
@@ -110,7 +114,8 @@ struct RecordingParams {
     format: VideoFormat,
     frame_rate: u32,
     enable_microphone: bool,
-    #[allow(unused)]
+    // macOS 上系统音频暂由 avfoundation 处理（enable_system_audio 仅 Windows 使用）
+    #[cfg_attr(target_os = "macos", allow(unused))]
     enable_system_audio: bool,
     microphone_device_name: String,
     hwaccel: bool,
@@ -129,6 +134,17 @@ pub struct VideoRecordService {
     recording_params: Option<RecordingParams>, // 录制参数，用于恢复录制
     record_video_size: Option<(i32, i32)>,     // 录制视频大小
     ffmpeg_path: Option<PathBuf>,
+    // 系统音频采集（Windows WASAPI loopback），当前片段结束后合成进视频
+    #[cfg(target_os = "windows")]
+    system_audio_capture: Option<SystemAudioCapture>,
+    #[cfg(target_os = "windows")]
+    current_segment_audio_file: Option<PathBuf>,
+    // 当前片段视频录制起点（ffmpeg spawn 时刻），用于系统音频时间戳对齐
+    #[cfg(target_os = "windows")]
+    current_segment_video_start: Option<Instant>,
+    // 当前片段是否包含麦克风音轨（录制期记录，用于混音分支判断）
+    #[cfg(target_os = "windows")]
+    current_segment_has_audio: Option<bool>,
 }
 
 #[cfg(target_os = "macos")]
@@ -156,6 +172,14 @@ impl VideoRecordService {
             recording_params: None,
             record_video_size: None,
             ffmpeg_path: None,
+            #[cfg(target_os = "windows")]
+            system_audio_capture: None,
+            #[cfg(target_os = "windows")]
+            current_segment_audio_file: None,
+            #[cfg(target_os = "windows")]
+            current_segment_video_start: None,
+            #[cfg(target_os = "windows")]
+            current_segment_has_audio: None,
         }
     }
 
@@ -366,29 +390,30 @@ impl VideoRecordService {
         // 根据平台添加音频输入
         #[cfg(target_os = "windows")]
         {
-            // 添加系统音频输入
-            if params.enable_system_audio {
-                // command
-                //     .arg("-f")
-                //     .arg("dshow")
-                //     .arg("-i")
-                //     .arg("audio=virtual-audio-capturer");
-                // audio_inputs.push("1:a".to_string());
-            }
+            // 系统音频（扬声器输出）由 Rust 侧通过 WASAPI loopback 采集
+            // （ffmpeg 的 dshow 无法直接捕获系统音频），采集完成后在片段
+            // 结束时与视频片段合成，见 finalize_system_audio。
 
             // 添加麦克风音频输入
             if params.enable_microphone {
                 let device_names = self.get_microphone_device_names();
 
                 if device_names.len() > 0 {
-                    command.arg("-f").arg("dshow").arg("-i").arg(format!(
-                        "audio={}",
-                        if device_names.contains(&params.microphone_device_name) {
-                            params.microphone_device_name.clone()
-                        } else {
-                            device_names[0].clone()
-                        }
-                    ));
+                    // 统一采样率为 48000Hz，便于与系统音频（WASAPI loopback，48kHz）混音
+                    command
+                        .arg("-f")
+                        .arg("dshow")
+                        .arg("-ar")
+                        .arg("48000")
+                        .arg("-i")
+                        .arg(format!(
+                            "audio={}",
+                            if device_names.contains(&params.microphone_device_name) {
+                                params.microphone_device_name.clone()
+                            } else {
+                                device_names[0].clone()
+                            }
+                        ));
                     audio_input = format!("{}:a", 1);
                 }
             }
@@ -450,6 +475,13 @@ impl VideoRecordService {
                 command.arg("-i").arg(format!("{}", target_monitor_index));
             }
         }
+
+        // 记录本片段是否包含麦克风音轨（audio_input 非空即已添加音轨）。
+        // 用于合并系统音频时判断是否需要混音：ffmpeg -i 的流探测不可靠
+        // （ffmpeg-sidecar 会过滤掉不带日志级别前缀的 Stream 行），因此
+        // 直接用录制期信息驱动混音分支。
+        #[cfg(target_os = "windows")]
+        let segment_has_audio = !audio_input.is_empty();
 
         // 生成当前片段的文件名
         let segment_filename = format!(
@@ -625,6 +657,29 @@ impl VideoRecordService {
 
         println!("FFmpeg segment command args: {:?}", command);
 
+        // 提前启动系统音频采集（WASAPI loopback）：
+        // 必须在 ffmpeg spawn 之前启动，否则视频开头一段会没有音频（音画不同步）。
+        #[cfg(target_os = "windows")]
+        let system_audio = if params.enable_system_audio {
+            let wav_path = format!("{}_sys_audio.wav", segment_filename);
+            match SystemAudioCapture::start(PathBuf::from(&wav_path)) {
+                Ok(capture) => Some((capture, wav_path)),
+                Err(e) => {
+                    log::error!(
+                        "[video_record_service] Failed to start system audio capture: {}",
+                        e
+                    );
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
+        // 记录视频录制起点（ffmpeg spawn 时刻），用于音频时间戳对齐
+        #[cfg(target_os = "windows")]
+        let video_start = Instant::now();
+
         // 启动ffmpeg进程
         match command.spawn() {
             Ok(mut child) => {
@@ -634,13 +689,35 @@ impl VideoRecordService {
                             FfmpegEvent::Progress(_) => {
                                 self.child = Some(child);
                                 self.state = VideoRecordState::Recording;
-                                self.segments.push(segment_filename);
+                                self.segments.push(segment_filename.clone());
                                 self.segment_counter += 1;
+
+                                // 保存系统音频采集状态（采集已在 spawn 前启动）
+                                #[cfg(target_os = "windows")]
+                                if let Some((capture, wav_path)) = system_audio {
+                                    self.system_audio_capture = Some(capture);
+                                    self.current_segment_audio_file =
+                                        Some(PathBuf::from(&wav_path));
+                                    self.current_segment_video_start = Some(video_start);
+                                    self.current_segment_has_audio = Some(segment_has_audio);
+                                    println!(
+                                        "[video_record_service] System audio capture running for segment: {} (segment_has_audio={})",
+                                        wav_path, segment_has_audio
+                                    );
+                                }
+
                                 return Ok(());
                             }
                             _ => {}
                         }
                     }
+                }
+
+                // 启动失败（未等到 Progress 事件）：清理系统音频采集
+                #[cfg(target_os = "windows")]
+                if let Some((mut capture, wav_path)) = system_audio {
+                    capture.stop();
+                    let _ = std::fs::remove_file(&wav_path);
                 }
 
                 Err(std::io::Error::new(
@@ -649,6 +726,13 @@ impl VideoRecordService {
                 ))
             }
             Err(e) => {
+                // ffmpeg 启动失败：清理系统音频采集
+                #[cfg(target_os = "windows")]
+                if let Some((mut capture, wav_path)) = system_audio {
+                    capture.stop();
+                    let _ = std::fs::remove_file(&wav_path);
+                }
+
                 self.state = VideoRecordState::Idle;
                 println!("FFmpeg start error: {}", e);
                 Err(std::io::Error::new(
@@ -869,6 +953,18 @@ impl VideoRecordService {
             let _ = child.kill();
         }
 
+        // 停止系统音频采集并删除未完成的音频文件（视频已被强制终止，不进行合成）
+        #[cfg(target_os = "windows")]
+        {
+            if let Some(mut capture) = self.system_audio_capture.take() {
+                capture.stop();
+            }
+
+            if let Some(wav_path) = self.current_segment_audio_file.take() {
+                let _ = std::fs::remove_file(&wav_path);
+            }
+        }
+
         self.cleanup();
         Ok(())
     }
@@ -876,6 +972,172 @@ impl VideoRecordService {
     fn get_final_filename(&self) -> String {
         let params = self.recording_params.as_ref().unwrap();
         format!("{}.{}", params.output_file, params.format.extension())
+    }
+
+    /// 结束当前片段的系统音频采集，并将采集到的音频合成进当前视频片段
+    ///
+    /// 系统音频在 ffmpeg spawn 之前就提前启动采集，这里根据音频采集流
+    /// 实际开始时刻与视频录制起点的差值，用 `-itsoffset` 补偿音频时间戳，
+    /// 保证音画同步。
+    #[cfg(target_os = "windows")]
+    fn finalize_system_audio(&mut self) -> Result<()> {
+        let audio_offset_secs = if let Some(mut capture) = self.system_audio_capture.take() {
+            capture.stop();
+
+            // 音频相对视频起点的提前量（秒）：音频提前采集了多少，就给音频时间戳加多少
+            let offset = if let Some(video_start) = self.current_segment_video_start.take() {
+                video_start
+                    .saturating_duration_since(capture.started_at())
+                    .as_secs_f64()
+            } else {
+                0.0
+            };
+
+            Some(offset)
+        } else {
+            None
+        };
+
+        if let Some(wav_path) = self.current_segment_audio_file.take() {
+            if wav_path.exists() && has_wav_audio_data(&wav_path) {
+                if let Some(segment) = self.segments.last().cloned() {
+                    // 该片段是否含麦克风音轨：优先用录制期记录（可靠），
+                    // 无记录时回退为 false（仅系统音频）
+                    let has_audio = self.current_segment_has_audio.take().unwrap_or(false);
+
+                    if let Err(e) = self.merge_system_audio_into_segment(
+                        &segment,
+                        &wav_path,
+                        audio_offset_secs.unwrap_or(0.0),
+                        has_audio,
+                    ) {
+                        log::error!(
+                            "[video_record_service] Failed to merge system audio into segment: {}",
+                            e
+                        );
+                    }
+                }
+            }
+
+            let _ = std::fs::remove_file(&wav_path);
+        }
+
+        Ok(())
+    }
+
+    /// 将系统音频（WAV）合成进指定视频片段
+    ///
+    /// - `has_audio_stream`：片段内是否已有麦克风音轨（录制期记录）。
+    ///   有音轨时与系统音频混音（amix），无音轨时直接添加系统音频流。
+    /// - `audio_offset_secs`：音频相对视频起点的提前量（秒）。无音轨时用
+    ///   `-itsoffset` 丢弃提前部分；有音轨时在 filter 内用 `atrim` 丢弃。
+    #[cfg(target_os = "windows")]
+    fn merge_system_audio_into_segment(
+        &mut self,
+        segment_filename: &str,
+        wav_path: &Path,
+        audio_offset_secs: f64,
+        has_audio_stream: bool,
+    ) -> Result<()> {
+        let tmp_filename = format!("{}_tmp.mp4", segment_filename);
+
+        let mut command = self.get_ffmpeg_command();
+        command
+            .arg("-y")
+            .arg("-i")
+            .arg(segment_filename);
+
+        // 无麦克风音轨（直接 map WAV）时，用 -itsoffset 丢弃提前采集的部分并对齐到视频起点
+        if !has_audio_stream && audio_offset_secs > 0.0 {
+            command
+                .arg("-itsoffset")
+                .arg(format!("-{:.6}", audio_offset_secs));
+        }
+
+        command.arg("-i").arg(wav_path);
+
+        if has_audio_stream {
+            // 片段内已有麦克风音轨，与系统音频混音（normalize=0 保持原始音量）。
+            // 两路输入都统一为 48kHz / s16 / 立体声，避免采样率或声道数不一致
+            // 导致 amix 失败（只混出一路甚至整体失败）。
+            // 系统音频提前采集的部分在混音前用 atrim 丢弃，保证与画面起点对齐。
+            let filter_complex = if audio_offset_secs > 0.0 {
+                format!(
+                    "[1:a]aformat=sample_fmts=s16:channel_layouts=stereo,aresample=48000,atrim=start={:.6},asetpts=PTS-STARTPTS[a1];[0:a]aformat=sample_fmts=s16:channel_layouts=stereo,aresample=48000[a0];[a0][a1]amix=inputs=2:normalize=0:dropout_transition=0[aout]",
+                    audio_offset_secs
+                )
+            } else {
+                "[0:a]aformat=sample_fmts=s16:channel_layouts=stereo,aresample=48000[a0];[1:a]aformat=sample_fmts=s16:channel_layouts=stereo,aresample=48000[a1];[a0][a1]amix=inputs=2:normalize=0:dropout_transition=0[aout]"
+                    .to_string()
+            };
+
+            command
+                .arg("-filter_complex")
+                .arg(filter_complex)
+                .arg("-map")
+                .arg("0:v")
+                .arg("-map")
+                .arg("[aout]");
+        } else {
+            command
+                .arg("-map")
+                .arg("0:v")
+                .arg("-map")
+                .arg("1:a");
+        }
+
+        command
+            .arg("-c:v")
+            .arg("copy")
+            .arg("-c:a")
+            .arg("aac")
+            .arg("-b:a")
+            .arg("128k")
+            .arg("-ar")
+            .arg("48000")
+            .arg("-movflags")
+            .arg("+faststart")
+            .arg(&tmp_filename);
+
+        println!(
+            "[video_record_service] Merging system audio into segment (has_audio_stream={}): {:?}",
+            has_audio_stream, command
+        );
+
+        match command.spawn() {
+            Ok(mut child) => {
+                // 读取 ffmpeg 输出日志，混音失败时错误信息可见
+                if let Ok(iter) = child.iter() {
+                    for event in iter {
+                        if let FfmpegEvent::Log(_, line) = event {
+                            println!("[video_record_service][merge] {}", line);
+                        }
+                    }
+                }
+
+                if std::path::Path::new(&tmp_filename).exists() {
+                    std::fs::remove_file(segment_filename)?;
+                    std::fs::rename(&tmp_filename, segment_filename)?;
+                    println!(
+                        "[video_record_service] Merged system audio into {}",
+                        segment_filename
+                    );
+                    Ok(())
+                } else {
+                    Err(std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        format!(
+                            "Failed to merge system audio into segment: {} output not found",
+                            segment_filename
+                        ),
+                    ))
+                }
+            }
+            Err(e) => Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("Failed to merge system audio into segment: {}", e),
+            )),
+        }
     }
 
     pub fn stop(
@@ -897,6 +1159,10 @@ impl VideoRecordService {
             let _ = child.quit();
             let _ = child.wait();
         }
+
+        // 结束系统音频采集并合成进当前片段
+        #[cfg(target_os = "windows")]
+        self.finalize_system_audio()?;
 
         // 如果只有一个片段，直接重命名
         let mut final_filename = self.get_final_filename();
@@ -1158,6 +1424,13 @@ impl VideoRecordService {
         self.segments.clear();
         self.segment_counter = 0;
         self.recording_params = None;
+        #[cfg(target_os = "windows")]
+        {
+            self.system_audio_capture = None;
+            self.current_segment_audio_file = None;
+            self.current_segment_video_start = None;
+            self.current_segment_has_audio = None;
+        }
     }
 
     pub fn pause(&mut self) -> Result<()> {
@@ -1176,6 +1449,10 @@ impl VideoRecordService {
             let _ = child.wait();
         }
 
+        // 结束系统音频采集并合成进当前片段
+        #[cfg(target_os = "windows")]
+        self.finalize_system_audio()?;
+
         self.state = VideoRecordState::Paused;
         Ok(())
     }
@@ -1193,4 +1470,26 @@ impl VideoRecordService {
         // 开始新片段的录制
         self.start_segment()
     }
+}
+
+/// 检查 WAV 文件是否包含有效音频数据（data chunk 长度 > 0）
+#[cfg(target_os = "windows")]
+fn has_wav_audio_data(path: &Path) -> bool {
+    use std::io::{Read, Seek as _};
+
+    let Ok(mut file) = std::fs::File::open(path) else {
+        return false;
+    };
+
+    // 跳到 data chunk 长度字段（偏移 40），读取并判断
+    if file.seek(std::io::SeekFrom::Start(40)).is_err() {
+        return false;
+    }
+
+    let mut buf = [0u8; 4];
+    if file.read_exact(&mut buf).is_err() {
+        return false;
+    }
+
+    u32::from_le_bytes(buf) > 0
 }

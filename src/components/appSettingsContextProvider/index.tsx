@@ -552,6 +552,11 @@ const AppSettingsContextProviderCore: React.FC<{
 						typeof newSettings?.enableMicrophone === "boolean"
 							? newSettings.enableMicrophone
 							: (prevSettings?.enableMicrophone ?? false),
+					enableSystemAudio:
+						typeof newSettings?.enableSystemAudio === "boolean"
+							? newSettings.enableSystemAudio
+							: (prevSettings?.enableSystemAudio ??
+								defaultAppSettingsData[group].enableSystemAudio),
 					enableLockDrawTool:
 						typeof newSettings?.enableLockDrawTool === "boolean"
 							? newSettings.enableLockDrawTool

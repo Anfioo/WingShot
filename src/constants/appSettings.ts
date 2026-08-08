@@ -143,6 +143,7 @@ export const defaultAppSettingsData: AppSettingsData = {
 		colorPickerColorFormatIndex: 0,
 		prevImageFormat: ImageFormat.PNG,
 		enableMicrophone: false,
+		enableSystemAudio: true,
 		enableLockDrawTool: false,
 		disableArrowPicker: true,
 		selectRectRadius: 0,
