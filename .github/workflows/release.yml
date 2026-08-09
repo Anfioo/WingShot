@@ -77,25 +77,29 @@ jobs:
             target: "aarch64-apple-darwin"
             updaterConfig: "src-tauri/ci-updater.json"
             uploadUpdaterSignatures: true
+            uploadUpdaterJson: true
 
           # macOS Intel x64
           - platform: "macos-15-intel"
             target: "x86_64-apple-darwin"
             updaterConfig: "src-tauri/ci-updater.json"
             uploadUpdaterSignatures: true
+            uploadUpdaterJson: true
 
           # Windows standard
           - platform: "windows-latest"
             target: "x86_64-pc-windows-msvc"
             updaterConfig: "src-tauri/ci-updater.json"
             uploadUpdaterSignatures: true
+            uploadUpdaterJson: true
 
-          # Windows with fixed runtime
+          # Windows with fixed runtime (webview)
           - platform: "windows-latest"
             target: "x86_64-pc-windows-msvc"
             fixedRuntime: true
             updaterConfig: "src-tauri/ci-updater.json"
             uploadUpdaterSignatures: false
+            uploadUpdaterJson: false
 
           # Windows offline version
           - platform: "windows-latest"
@@ -103,6 +107,7 @@ jobs:
             offline: true
             updaterConfig: "src-tauri/ci-updater.json"
             uploadUpdaterSignatures: false
+            uploadUpdaterJson: false
 
     runs-on: ${{ matrix.platform }}
     steps:
@@ -399,10 +404,10 @@ jobs:
         with:
           releaseId: ${{ steps.draft_release.outputs.id }}
           assetNamePattern: ${{ steps.asset_pattern.outputs.pattern }}
-          # uploadUpdaterJson: tauri-action 自动生成/合并/上传 latest.json(读现有文件合并各平台签名,
-          # 自带冲突重试)。这是官方推荐做法,无需额外的 publish-updater-manifest job。
-          # 没有签名文件(offline/fixedRuntime)的构建会跳过更新,不影响其它平台。
-          uploadUpdaterJson: true
+          # uploadUpdaterJson: tauri-action 自动生成/合并/上传 latest.json(读现有文件合并各平台签名,自带冲突重试)。
+          # 只有标准构建(macos / windows standard)参与更新;offline / fixedRuntime(webview)必须为 false,
+          # 否则它们会把 windows-x86_64 主条目写成自己的 exe,覆盖标准 setup.exe 导致签名与 url 不匹配。
+          uploadUpdaterJson: ${{ matrix.uploadUpdaterJson }}
           uploadUpdaterSignatures: ${{ matrix.uploadUpdaterSignatures }}
           args: --target ${{ matrix.target }}
 
