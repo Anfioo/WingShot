@@ -186,13 +186,17 @@ impl MonitorInfo {
 
         #[cfg(target_os = "macos")]
         {
-            let rect = monitor.bounds().unwrap();
+            // xcap 0.9.8 官方版已移除 bounds()，改用 x/y/width/height
+            let monitor_x = monitor.x().unwrap_or(0) as f64;
+            let monitor_y = monitor.y().unwrap_or(0) as f64;
+            let monitor_width = monitor.width().unwrap_or(0) as f64;
+            let monitor_height = monitor.height().unwrap_or(0) as f64;
             let monitor_scale_factor = monitor.scale_factor().unwrap_or(1.0) as f64;
             monitor_rect = ElementRect {
-                min_x: (rect.origin.x * monitor_scale_factor) as i32,
-                min_y: (rect.origin.y * monitor_scale_factor) as i32,
-                max_x: ((rect.origin.x + rect.size.width) * monitor_scale_factor) as i32,
-                max_y: ((rect.origin.y + rect.size.height) * monitor_scale_factor) as i32,
+                min_x: (monitor_x * monitor_scale_factor) as i32,
+                min_y: (monitor_y * monitor_scale_factor) as i32,
+                max_x: ((monitor_x + monitor_width) * monitor_scale_factor) as i32,
+                max_y: ((monitor_y + monitor_height) * monitor_scale_factor) as i32,
             };
             scale_factor = 0.0;
 
@@ -734,6 +738,7 @@ impl MonitorList {
                 // 诊断日志：按用户设置的采集方式与 HDR 状态推算本次实际使用的引擎
                 // 注意：不能只用 hdr_enabled / sdr_white_level 判断——HDR 面板的
                 // sdr_white_level 恒 > 0，会导致标签永远显示 WGC(HDR)，误导排查。
+                #[cfg(target_os = "windows")]
                 let capture_source = match capture_option.capture_method {
                     CaptureMethod::Wgc => "WGC",
                     CaptureMethod::Xcap => "xcap",
@@ -745,11 +750,17 @@ impl MonitorList {
                         }
                     }
                 };
+                #[cfg(not(target_os = "windows"))]
+                let capture_source = "macOS-capture";
+                #[cfg(target_os = "windows")]
+                let hdr_enabled = monitor.monitor_hdr_info.hdr_enabled;
+                #[cfg(not(target_os = "windows"))]
+                let hdr_enabled = false;
                 log::info!(
                     "[MonitorInfoList::capture] capturing monitor: name={:?}, rect={:?}, hdr_enabled={}, capture_method={:?}, source={}",
                     monitor.monitor.name(),
                     monitor.rect,
-                    monitor.monitor_hdr_info.hdr_enabled,
+                    hdr_enabled,
                     capture_option.capture_method,
                     capture_source
                 );
