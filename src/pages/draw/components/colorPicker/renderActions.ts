@@ -1,11 +1,36 @@
 import type { RefType } from "@/components/imageLayer/baseLayerRenderActions";
 import type { ImageSharedBufferData } from "../../tools";
-import { getPixels, terminateWebWorker } from "./workers/getPixels";
+import { terminateWebWorker } from "./workers/getPixels";
 
 export const COLOR_PICKER_PREVIEW_SCALE = 12;
 export const COLOR_PICKER_PREVIEW_PICKER_SIZE = 10 + 1;
 export const COLOR_PICKER_PREVIEW_CANVAS_SIZE =
 	COLOR_PICKER_PREVIEW_PICKER_SIZE * COLOR_PICKER_PREVIEW_SCALE;
+
+/**
+ * 用浏览器原生 createImageBitmap + OffscreenCanvas 解码图像 buffer 为 ImageData。
+ * 直接在当前上下文（worker 或主线程）执行，不通过子 worker。
+ */
+async function decodeBufferToImageData(
+	imageBuffer: ArrayBuffer,
+): Promise<ImageData> {
+	const blob = new Blob([imageBuffer], { type: "image/png" });
+	const bitmap = await createImageBitmap(blob);
+	const width = bitmap.width;
+	const height = bitmap.height;
+
+	const offscreen = new OffscreenCanvas(width, height);
+	const ctx = offscreen.getContext("2d", { willReadFrequently: true });
+	if (!ctx) {
+		bitmap.close();
+		throw new Error("decodeBufferToImageData: failed to get 2d context");
+	}
+
+	ctx.drawImage(bitmap, 0, 0);
+	bitmap.close();
+
+	return ctx.getImageData(0, 0, width, height);
+}
 
 export const renderInitPreviewCanvasAction = (
 	previewCanvasRef: RefType<HTMLCanvasElement | OffscreenCanvas | null>,
@@ -13,8 +38,6 @@ export const renderInitPreviewCanvasAction = (
 	previewCanvasCtxRef: RefType<
 		OffscreenCanvasRenderingContext2D | RenderingContext | null
 	>,
-	decoderWasmModuleArrayBufferRef: RefType<ArrayBuffer | null>,
-	decoderWasmModuleArrayBuffer: ArrayBuffer | null,
 ) => {
 	previewCanvasRef.current = previewCanvas;
 
@@ -26,14 +49,11 @@ export const renderInitPreviewCanvasAction = (
 	previewCanvasCtxRef.current = ctx;
 	previewCanvas.width = COLOR_PICKER_PREVIEW_PICKER_SIZE;
 	previewCanvas.height = COLOR_PICKER_PREVIEW_PICKER_SIZE;
-
-	decoderWasmModuleArrayBufferRef.current = decoderWasmModuleArrayBuffer;
 };
 
 export function renderInitImageDataAction(
 	_previewCanvasRef: RefType<OffscreenCanvas | HTMLCanvasElement | null>,
 	previewImageDataRef: RefType<ImageData | null>,
-	decoderWasmModuleArrayBufferRef: RefType<ArrayBuffer | null>,
 	imageSrc: ArrayBuffer | ImageSharedBufferData,
 ): Promise<void> {
 	return new Promise((resolve) => {
@@ -48,22 +68,17 @@ export function renderInitImageDataAction(
 			return;
 		}
 
-		if (!decoderWasmModuleArrayBufferRef.current) {
-			console.error(
-				"renderInitImageDataAction: decoderWasmModuleArrayBufferRef.current is not set",
-			);
-			resolve(undefined);
-			return;
-		}
+		decodeBufferToImageData(imageSrc as ArrayBuffer)
+			.then((imageData) => {
+				previewImageDataRef.current = imageData;
 
-		getPixels(
-			decoderWasmModuleArrayBufferRef.current,
-			imageSrc as ArrayBuffer,
-		).then((pixels) => {
-			previewImageDataRef.current = pixels.data;
-
-			resolve(undefined);
-		});
+				resolve(undefined);
+			})
+			.catch((error) => {
+				previewImageDataRef.current = null;
+				console.warn("renderInitImageDataAction decode failed", { error });
+				resolve(undefined);
+			});
 	});
 }
 
@@ -164,28 +179,32 @@ export function renderGetPreviewImageDataAction(
 }
 
 export async function renderSwitchCaptureHistoryAction(
-	decoderWasmModuleArrayBufferRef: RefType<ArrayBuffer | null>,
 	captureHistoryImageDataRef: RefType<ImageData | undefined>,
 	imageSrc: string | undefined,
+	imageBuffer: ArrayBuffer | undefined,
 ): Promise<void> {
-	if (!imageSrc) {
+	if (!imageSrc && !imageBuffer) {
 		captureHistoryImageDataRef.current = undefined;
 		return;
 	}
 
-	if (!decoderWasmModuleArrayBufferRef.current) {
-		console.error(
-			"renderSwitchCaptureHistoryAction: decoderWasmModuleArrayBufferRef.current is not set",
-		);
-		return;
-	}
+	try {
+		// 优先使用主线程已 fetch 好的 buffer（worker 中 fetch asset URL 会挂起），
+		// 仅在无 buffer（非 worker 分支）时才自行 fetch
+		const fileBuffer: ArrayBuffer =
+			imageBuffer ?? (await fetch(imageSrc!).then((res) => res.arrayBuffer()));
 
-	const fileBuffer = await fetch(imageSrc).then((res) => res.arrayBuffer());
-	const pixels = await getPixels(
-		decoderWasmModuleArrayBufferRef.current,
-		fileBuffer,
-	);
-	captureHistoryImageDataRef.current = pixels.data;
+		// 直接在当前 worker（或主线程）内用 createImageBitmap 解码，
+		// 不再通过 getPixels 子 worker（子 worker 在某些环境加载即崩溃）
+		const imageData = await decodeBufferToImageData(fileBuffer);
+		captureHistoryImageDataRef.current = imageData;
+	} catch (error) {
+		// 解码失败时保留上一张有效数据
+		console.warn("renderSwitchCaptureHistoryAction decode failed", {
+			imageSrc,
+			error,
+		});
+	}
 }
 
 export function renderPixelsWorkerTerminateAction() {

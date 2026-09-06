@@ -13,7 +13,6 @@ export type ColorPickerRenderInitPreviewCanvasData = {
 	type: ColorPickerRenderMessageType.InitPreviewCanvas;
 	payload: {
 		previewCanvas: OffscreenCanvas;
-		decoderWasmModuleArrayBuffer: ArrayBuffer;
 	};
 };
 
@@ -52,6 +51,7 @@ export type ColorPickerRenderSwitchCaptureHistoryData = {
 	type: ColorPickerRenderMessageType.SwitchCaptureHistory;
 	payload: {
 		imageSrc: string | undefined;
+		imageBuffer: ArrayBuffer | undefined;
 	};
 };
 

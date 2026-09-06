@@ -34,6 +34,7 @@ import {
 	renderUpdateHighlightAction,
 	renderUpdateHighlightElementPropsAction,
 	renderUpdateWatermarkSpriteAction,
+	setForwardLog,
 	type WatermarkProps,
 } from "../baseLayerRenderActions";
 import {
@@ -103,6 +104,13 @@ const blurSpriteMapRef: RefWrap<Map<string, BlurSprite>> = {
 const blurSpriteFilterMapRef: RefWrap<Map<string, Filter>> = {
 	current: new Map(),
 };
+// 模糊精灵共享的扩展纹理缓存（用于避免边缘模糊采样到透明像素）
+const paddedTextureRef: RefWrap<Texture | undefined> = {
+	current: undefined,
+};
+const paddedTextureSourceRef: RefWrap<Texture | undefined> = {
+	current: undefined,
+};
 const highlightElementMapRef: RefWrap<Map<string, HighlightElement>> = {
 	current: new Map(),
 };
@@ -140,6 +148,8 @@ const handleClearCanvas = () => {
 		canvasContainerChildCountRef,
 		currentImageTextureRef,
 		baseImageTextureRef,
+		sharedBufferImageTextureRef,
+		imageSharedBufferRef,
 	);
 };
 
@@ -169,6 +179,7 @@ const handleAddImageToContainer = async (
 		data.payload.containerKey,
 		data.payload.imageSrc,
 		data.payload.hideImageSprite,
+		blurSpriteMapRef,
 	);
 };
 
@@ -185,6 +196,8 @@ const handleCreateBlurSprite = (data: BaseLayerRenderCreateBlurSpriteData) => {
 		data.payload.blurContainerKey,
 		data.payload.blurElementId,
 		data.payload.highlightContainerKey,
+		paddedTextureSourceRef,
+		paddedTextureRef,
 	);
 };
 
@@ -226,6 +239,8 @@ const handleUpdateHighlight = (data: BaseLayerRenderUpdateHighlightData) => {
 		currentImageTextureRef,
 		data.payload.highlightContainerKey,
 		data.payload.highlightProps,
+		paddedTextureSourceRef,
+		paddedTextureRef,
 	);
 };
 
@@ -248,6 +263,8 @@ const handleClearContext = () => {
 		blurSpriteFilterMapRef,
 		highlightElementMapRef,
 		lastWatermarkPropsRef,
+		paddedTextureSourceRef,
+		paddedTextureRef,
 	);
 };
 
@@ -298,13 +315,31 @@ const handleApplyProcessImageConfigToCanvas = (
 		data.payload.processImageConfig,
 		data.payload.canvasWidth,
 		data.payload.canvasHeight,
+		paddedTextureSourceRef,
+		paddedTextureRef,
 	);
 };
+
+// 将渲染层日志转发到主线程落盘（worker 的 console 不通过 tauri-log 写文件）
+setForwardLog((level, message) => {
+	self.postMessage({
+		type: BaseLayerRenderMessageType.ForwardLog,
+		payload: { level, message },
+	});
+});
 
 self.onmessage = async ({ data }: MessageEvent<BaseLayerRenderData>) => {
 	let message: RenderResult;
 
 	switch (data.type) {
+		case BaseLayerRenderMessageType.ForwardLog: {
+			// 主线程不需要给 worker 发日志，这里仅保证类型完整性
+			message = {
+				type: BaseLayerRenderMessageType.ForwardLog,
+				payload: undefined,
+			};
+			break;
+		}
 		case BaseLayerRenderMessageType.Init:
 			await handleInit(data);
 			message = {

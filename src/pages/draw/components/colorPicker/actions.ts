@@ -35,8 +35,6 @@ export const initPreviewCanvasAction = async (
 	previewCanvasCtxRef: RefType<
 		OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D | null
 	>,
-	decoderWasmModuleArrayBufferRef: RefType<ArrayBuffer | null>,
-	decoderWasmModuleArrayBuffer: ArrayBuffer,
 	transfer: Transferable[] | undefined,
 ) => {
 	return new Promise((resolve) => {
@@ -45,13 +43,13 @@ export const initPreviewCanvasAction = async (
 				appWarn(
 					"[initPreviewCanvasAction] previewOffscreenCanvasRef.current is null",
 				);
+				resolve(undefined);
 				return;
 			}
 			const InitPreviewCanvasData: ColorPickerRenderInitPreviewCanvasData = {
 				type: ColorPickerRenderMessageType.InitPreviewCanvas,
 				payload: {
 					previewCanvas: previewOffscreenCanvasRef.current,
-					decoderWasmModuleArrayBuffer: decoderWasmModuleArrayBuffer,
 				},
 			};
 
@@ -77,8 +75,6 @@ export const initPreviewCanvasAction = async (
 				previewCanvasRef,
 				previewCanvas,
 				previewCanvasCtxRef,
-				decoderWasmModuleArrayBufferRef,
-				decoderWasmModuleArrayBuffer,
 			);
 			resolve(undefined);
 		}
@@ -89,7 +85,6 @@ export const initImageDataAction = async (
 	renderWorker: Worker | undefined,
 	previewCanvasRef: RefType<OffscreenCanvas | HTMLCanvasElement | null>,
 	previewImageDataRef: RefType<ImageData | null>,
-	decoderWasmModuleArrayBufferRef: RefType<ArrayBuffer | null>,
 	imageBuffer: ImageBuffer | ImageSharedBufferData,
 ) => {
 	return new Promise((resolve) => {
@@ -125,7 +120,6 @@ export const initImageDataAction = async (
 			renderInitImageDataAction(
 				previewCanvasRef,
 				previewImageDataRef,
-				decoderWasmModuleArrayBufferRef,
 				"sharedBuffer" in imageBuffer ? imageBuffer : imageBuffer.buffer,
 			).then(() => {
 				resolve(undefined);
@@ -227,41 +221,73 @@ export const getPreviewImageDataAction = async (
 
 export const switchCaptureHistoryAction = async (
 	renderWorker: Worker | undefined,
-	decoderWasmModuleArrayBufferRef: RefType<ArrayBuffer | null>,
 	captureHistoryImageDataRef: RefType<ImageData | undefined>,
 	imageSrc: string | undefined,
 ): Promise<void> => {
+	// 主线程先 fetch 历史截图（worker 中 fetch asset URL 会挂起），
+	// 再把 ArrayBuffer transfer 给 worker 解码
+	let imageBuffer: ArrayBuffer | undefined;
+	if (imageSrc) {
+		try {
+			imageBuffer = await fetch(imageSrc).then((res) => res.arrayBuffer());
+		} catch (error) {
+			console.warn("switchCaptureHistoryAction: fetch imageSrc failed", {
+				imageSrc,
+				error,
+			});
+		}
+	}
+
 	return new Promise((resolve) => {
+		// 兜底：worker 彻底无响应时避免 Promise 永久 pending
+		const timer = setTimeout(() => {
+			renderWorker?.removeEventListener("message", handleMessage);
+			resolve(undefined);
+		}, 1000);
+
+		const handleMessage = (
+			event: MessageEvent<ColorPickerRenderSwitchCaptureHistoryResult>,
+		) => {
+			const { type, payload } = event.data;
+			if (type === ColorPickerRenderMessageType.SwitchCaptureHistory) {
+				clearTimeout(timer);
+				resolve(payload);
+				renderWorker?.removeEventListener("message", handleMessage);
+			}
+		};
+
 		if (renderWorker) {
 			const SwitchCaptureHistoryData: ColorPickerRenderSwitchCaptureHistoryData =
 				{
 					type: ColorPickerRenderMessageType.SwitchCaptureHistory,
 					payload: {
 						imageSrc,
+						imageBuffer,
 					},
 				};
 
-			const handleMessage = (
-				event: MessageEvent<ColorPickerRenderSwitchCaptureHistoryResult>,
-			) => {
-				const { type, payload } = event.data;
-				if (type === ColorPickerRenderMessageType.SwitchCaptureHistory) {
-					resolve(payload);
-					renderWorker.removeEventListener("message", handleMessage);
-				}
-			};
-
 			renderWorker.addEventListener("message", handleMessage);
 
-			renderWorker.postMessage(SwitchCaptureHistoryData);
+			// transfer ArrayBuffer 所有权，避免拷贝大图
+			if (imageBuffer) {
+				renderWorker.postMessage(SwitchCaptureHistoryData, [imageBuffer]);
+			} else {
+				renderWorker.postMessage(SwitchCaptureHistoryData);
+			}
 		} else {
 			renderSwitchCaptureHistoryAction(
-				decoderWasmModuleArrayBufferRef,
 				captureHistoryImageDataRef,
 				imageSrc,
-			).then(() => {
-				resolve(undefined);
-			});
+				imageBuffer,
+			)
+				.then(() => {
+					clearTimeout(timer);
+					resolve(undefined);
+				})
+				.catch(() => {
+					clearTimeout(timer);
+					resolve(undefined);
+				});
 		}
 	});
 };

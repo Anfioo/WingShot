@@ -399,94 +399,10 @@ jobs:
         with:
           releaseId: ${{ steps.draft_release.outputs.id }}
           assetNamePattern: ${{ steps.asset_pattern.outputs.pattern }}
-          uploadUpdaterJson: false
+          # uploadUpdaterJson: tauri-action 自动生成/合并/上传 latest.json(读现有文件合并各平台签名,
+          # 自带冲突重试)。这是官方推荐做法,无需额外的 publish-updater-manifest job。
+          # 没有签名文件(offline/fixedRuntime)的构建会跳过更新,不影响其它平台。
+          uploadUpdaterJson: true
           uploadUpdaterSignatures: ${{ matrix.uploadUpdaterSignatures }}
           args: --target ${{ matrix.target }}
 
-  publish-updater-manifest:
-    needs: [create-release, build-app]
-    if: always() && needs.create-release.result == 'success'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - name: Generate merged updater manifest
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPOSITORY: ${{ github.repository }}
-          RELEASE_TAG: ${{ needs.create-release.outputs.app_version }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          workdir="$(mktemp -d)"
-          trap 'rm -rf "$workdir"' EXIT
-          mkdir -p "$workdir/signatures"
-
-          release_json="$(gh api "repos/${REPOSITORY}/releases?per_page=100" | jq --arg tag "$RELEASE_TAG" '[.[] | select(.tag_name == $tag and .draft == true)][0]')"
-          release_id="$(jq -r '.id // empty' <<< "$release_json")"
-          release_notes="$(jq -r '.body // ""' <<< "$release_json")"
-          if [ -z "$release_id" ]; then
-            echo "Draft release not found for tag $RELEASE_TAG" >&2
-            exit 1
-          fi
-
-          assets_json="$(gh api "repos/${REPOSITORY}/releases/${release_id}/assets?per_page=100")"
-          while IFS=$'\t' read -r asset_id asset_name; do
-            [ -n "$asset_id" ] || continue
-            gh api -H 'Accept: application/octet-stream' "repos/${REPOSITORY}/releases/assets/${asset_id}" > "$workdir/signatures/$asset_name"
-          done < <(jq -r '.[] | select(.name | endswith(".sig")) | [.id, .name] | @tsv' <<< "$assets_json")
-
-          version="${RELEASE_TAG#v}"
-          platforms='{}'
-          shopt -s nullglob
-          for signature_file in "$workdir"/signatures/*.sig; do
-            signature_name="$(basename "$signature_file")"
-            asset_name="${signature_name%.sig}"
-            case "$asset_name" in
-              *windows-x64*) platform="windows-x86_64" ;;
-              *aarch64*|*arm64*) platform="darwin-aarch64" ;;
-              *x86_64*|*x64*) platform="darwin-x86_64" ;;
-              *) continue ;;
-            esac
-
-            signature="$(cat "$signature_file")"
-            asset_url="$(jq -r --arg name "$asset_name" '.[] | select(.name == $name) | .browser_download_url' <<< "$assets_json")"
-            if [ -z "$asset_url" ]; then
-              echo "Updater asset not found for signature $signature_name" >&2
-              exit 1
-            fi
-            platforms="$(jq --arg platform "$platform" --arg signature "$signature" --arg url "$asset_url" '. + {($platform): {signature: $signature, url: $url}}' <<< "$platforms")"
-          done
-
-          if [ "$(jq 'length' <<< "$platforms")" -eq 0 ]; then
-            echo 'No updater signatures were uploaded' >&2
-            exit 1
-          fi
-
-          jq -n --arg version "$version" --arg notes "$release_notes" --argjson platforms "$platforms" \
-            '{version: $version, notes: $notes, pub_date: (now | todateiso8601), platforms: $platforms}' \
-            > "$workdir/latest.json"
-
-          # 上传 latest.json,带重试。
-          # 注意:不能使用 `gh api --hostname uploads.github.com` —— gh 把 --hostname 当作 GitHub API
-          # 主机名,会请求不存在的 api.uploads.github.com(DNS NXDOMAIN),必然连接失败。
-          # 必须用 `gh release upload`,它内部使用 release 响应的 upload_url 超链接,
-          # 直接走正确的 https://uploads.github.com/... 端点。
-          upload_manifest() {
-            local attempt=1
-            local max_attempts=5
-            while [ "$attempt" -le "$max_attempts" ]; do
-              echo "Uploading latest.json (attempt $attempt/$max_attempts)..." >&2
-              # --clobber:同名资产已存在时先删除再上传,保证重试幂等
-              if gh release upload "$RELEASE_TAG" "$workdir/latest.json" --repo "$REPOSITORY" --clobber; then
-                echo "latest.json uploaded successfully" >&2
-                return 0
-              fi
-              echo "Upload attempt $attempt failed; retrying in $((attempt * 10))s..." >&2
-              sleep "$((attempt * 10))"
-              attempt=$((attempt + 1))
-            done
-            echo "Failed to upload latest.json after $max_attempts attempts" >&2
-            return 1
-          }
-          upload_manifest

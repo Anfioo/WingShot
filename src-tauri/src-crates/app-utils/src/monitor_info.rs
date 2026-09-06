@@ -1,7 +1,5 @@
 use image::{DynamicImage, GenericImageView};
-use rayon::iter::{
-    IndexedParallelIterator, IntoParallelIterator, IntoParallelRefIterator, ParallelIterator,
-};
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 use snow_shot_app_shared::ElementRect;
 use xcap::Monitor;
@@ -9,9 +7,14 @@ use xcap::Monitor;
 #[cfg(target_os = "windows")]
 use crate::monitor_hdr_info::{self, MonitorHdrInfo};
 #[cfg(target_os = "windows")]
-use windows::Win32::Graphics::Gdi::HMONITOR;
+use windows::Win32::Foundation::LPARAM;
+#[cfg(target_os = "windows")]
+use windows::Win32::Graphics::Gdi::{
+    DEVMODEW, ENUM_CURRENT_SETTINGS, EnumDisplayMonitors, EnumDisplaySettingsW, HMONITOR,
+    MONITORINFOEXW,
+};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct MonitorInfo {
     pub monitor: Monitor,
     pub rect: ElementRect,
@@ -22,10 +25,108 @@ pub struct MonitorInfo {
     pub monitor_hdr_info: MonitorHdrInfo,
 }
 
+// `Monitor` 含 `HMONITOR` 裸指针，默认非 Send/Sync；HMONITOR 为只读句柄，可安全共享。
+unsafe impl Send for MonitorInfo {}
+unsafe impl Sync for MonitorInfo {}
+
 #[derive(Debug, Clone, Copy)]
 pub enum ColorFormat {
     Rgba8,
     Rgb8,
+}
+
+/// 采样统计图像状态，输出诊断日志：尺寸、alpha 分布、亮度分布。
+/// 用于黑屏排查——区分「RGB 全黑」与「alpha=0 透明黑屏」两种根因。
+pub(crate) fn log_image_state(tag: &str, image: &image::DynamicImage) {
+    let (width, height) = image.dimensions();
+    if width == 0 || height == 0 {
+        log::warn!("[image_state] {} empty image {}x{}", tag, width, height);
+        return;
+    }
+
+    let step = ((width * height) as usize / 4000).max(1) as u32;
+    let mut sampled = 0u32;
+    let mut alpha_zero = 0u32;
+    let mut alpha_below_10 = 0u32;
+    let mut black_rgb = 0u32;
+    let mut dark_rgb = 0u32;
+    let has_alpha = image.color().has_alpha();
+
+    for y in (0..height).step_by(step as usize) {
+        for x in (0..width).step_by(step as usize) {
+            let pixel = image.get_pixel(x, y);
+            sampled += 1;
+            if has_alpha && pixel.0.len() > 3 {
+                if pixel[3] == 0 {
+                    alpha_zero += 1;
+                } else if pixel[3] < 10 {
+                    alpha_below_10 += 1;
+                }
+            }
+            let lum = (pixel[0] as u32 + pixel[1] as u32 + pixel[2] as u32) / 3;
+            if lum < 8 {
+                black_rgb += 1;
+            } else if lum < 40 {
+                dark_rgb += 1;
+            }
+        }
+    }
+
+    let alpha_zero_ratio = if has_alpha {
+        alpha_zero as f32 / sampled as f32
+    } else {
+        -1.0
+    };
+    let alpha_below_10_ratio = if has_alpha {
+        alpha_below_10 as f32 / sampled as f32
+    } else {
+        -1.0
+    };
+    log::info!(
+        "[image_state] {} size={}x{} has_alpha={} alpha_zero_ratio={:.3} alpha_below10_ratio={:.3} black_rgb_ratio={:.3} dark_rgb_ratio={:.3}",
+        tag,
+        width,
+        height,
+        has_alpha,
+        alpha_zero_ratio,
+        alpha_below_10_ratio,
+        black_rgb as f32 / sampled as f32,
+        dark_rgb as f32 / sampled as f32,
+    );
+}
+
+/// 判断图像是否「全黑 / 近全黑」。采样像素统计近黑比例，超过阈值即视为黑屏。
+/// 与 windows_capture_image::is_black_image 逻辑一致，用于多屏合成层对单屏结果二次校验。
+/// 注意：不仅统计 RGB 亮度，也统计 Alpha。若整幅图像 Alpha 均为 0（透明黑屏），
+/// 即使 RGB 有内容，前端渲染也会显示为全黑（透明背景），同样应判为黑屏触发回退。
+fn is_black_image(image: &image::DynamicImage, black_ratio_threshold: f32) -> bool {
+    let (width, height) = image.dimensions();
+    if width == 0 || height == 0 {
+        return true;
+    }
+
+    let step = ((width * height) as usize / 4000).max(1) as u32;
+    let mut sampled = 0u32;
+    let mut black = 0u32;
+
+    for y in (0..height).step_by(step as usize) {
+        for x in (0..width).step_by(step as usize) {
+            let pixel = image.get_pixel(x, y);
+            sampled += 1;
+            let lum = (pixel[0] as u32 + pixel[1] as u32 + pixel[2] as u32) / 3;
+            // 有 Alpha 通道且接近透明（< 10），或 RGB 接近全黑，均视为"黑"像素
+            let is_transparent = pixel.0.len() > 3 && pixel[3] < 10;
+            if lum < 8 || is_transparent {
+                black += 1;
+            }
+        }
+    }
+
+    if sampled == 0 {
+        return true;
+    }
+
+    (black as f32 / sampled as f32) >= black_ratio_threshold
 }
 
 #[derive(Serialize, Clone)]
@@ -39,6 +140,7 @@ pub struct CaptureOption {
     pub color_format: ColorFormat,
     pub correct_hdr_color_algorithm: CorrectHdrColorAlgorithm,
     pub correct_color_filter: bool,
+    pub capture_method: CaptureMethod,
 }
 
 impl MonitorInfo {
@@ -51,14 +153,26 @@ impl MonitorInfo {
 
         #[cfg(target_os = "windows")]
         {
-            let rect = monitor.get_dev_mode_w().unwrap();
+            // 0.9.8 的 Monitor::id() 为内部编号而非 HMONITOR，故改用 name 经
+            // EnumDisplayMonitors/GetMonitorInfoW/EnumDisplaySettingsW 反查构建矩形。
+            let name = monitor.name().unwrap_or_default();
+            let hmonitor = Self::get_monitor_handle_by_name(&name);
+            let device_name = Self::get_device_name_by_handle(hmonitor).unwrap_or(name);
+            let rect = Self::get_dev_mode(&device_name).unwrap_or_default();
+            // DEVMODEW 含匿名 union 字段，读取需 unsafe（Rust 2024）。
+            let (pos_x, pos_y, pels_w, pels_h) = unsafe {
+                (
+                    rect.Anonymous1.Anonymous2.dmPosition.x,
+                    rect.Anonymous1.Anonymous2.dmPosition.y,
+                    rect.dmPelsWidth as i32,
+                    rect.dmPelsHeight as i32,
+                )
+            };
             monitor_rect = ElementRect {
-                min_x: unsafe { rect.Anonymous1.Anonymous2.dmPosition.x },
-                min_y: unsafe { rect.Anonymous1.Anonymous2.dmPosition.y },
-                max_x: unsafe { rect.Anonymous1.Anonymous2.dmPosition.x + rect.dmPelsWidth as i32 },
-                max_y: unsafe {
-                    rect.Anonymous1.Anonymous2.dmPosition.y + rect.dmPelsHeight as i32
-                },
+                min_x: pos_x,
+                min_y: pos_y,
+                max_x: pos_x + pels_w,
+                max_y: pos_y + pels_h,
             };
             scale_factor = monitor.scale_factor().unwrap_or(0.0);
 
@@ -72,13 +186,17 @@ impl MonitorInfo {
 
         #[cfg(target_os = "macos")]
         {
-            let rect = monitor.bounds().unwrap();
+            // xcap 0.9.8 官方版已移除 bounds()，改用 x/y/width/height
+            let monitor_x = monitor.x().unwrap_or(0) as f64;
+            let monitor_y = monitor.y().unwrap_or(0) as f64;
+            let monitor_width = monitor.width().unwrap_or(0) as f64;
+            let monitor_height = monitor.height().unwrap_or(0) as f64;
             let monitor_scale_factor = monitor.scale_factor().unwrap_or(1.0) as f64;
             monitor_rect = ElementRect {
-                min_x: (rect.origin.x * monitor_scale_factor) as i32,
-                min_y: (rect.origin.y * monitor_scale_factor) as i32,
-                max_x: ((rect.origin.x + rect.size.width) * monitor_scale_factor) as i32,
-                max_y: ((rect.origin.y + rect.size.height) * monitor_scale_factor) as i32,
+                min_x: (monitor_x * monitor_scale_factor) as i32,
+                min_y: (monitor_y * monitor_scale_factor) as i32,
+                max_x: ((monitor_x + monitor_width) * monitor_scale_factor) as i32,
+                max_y: ((monitor_y + monitor_height) * monitor_scale_factor) as i32,
             };
             scale_factor = 0.0;
 
@@ -107,11 +225,122 @@ impl MonitorInfo {
         }
     }
 
+    /// 通过显示器设备名（xcap 的 `Monitor::name()`）反查真实 `HMONITOR`。
+    ///
+    /// 原版 xcap 的 `Monitor::id()` 返回 u32 内部编号，不再是 `HMONITOR` 句柄，
+    /// 因此这里用 `EnumDisplayMonitors` 枚举系统显示器，按 `GetMonitorInfoW`
+    /// 返回的 `szDevice`（设备名）与给定名称匹配。找不到时返回空句柄。
     #[cfg(target_os = "windows")]
     pub fn get_monitor_handle(monitor: &Monitor) -> HMONITOR {
+        Self::get_monitor_handle_by_name(&monitor.name().unwrap_or_default())
+    }
+
+    /// 枚举系统显示器，按设备名匹配返回 `HMONITOR`。
+    #[cfg(target_os = "windows")]
+    fn get_monitor_handle_by_name(name: &str) -> HMONITOR {
         use std::ffi::c_void;
 
-        HMONITOR(monitor.id().unwrap() as *mut c_void)
+        struct Ctx<'a> {
+            name: &'a str,
+            found: HMONITOR,
+        }
+
+        unsafe extern "system" fn callback(
+            hmonitor: HMONITOR,
+            _hdc: windows::Win32::Graphics::Gdi::HDC,
+            _rect: *mut windows::Win32::Foundation::RECT,
+            lparam: LPARAM,
+        ) -> windows_core::BOOL {
+            // Rust 2024：unsafe fn 体内解引用裸指针需显式 unsafe 块。
+            let ctx = unsafe { &mut *(lparam.0 as *mut Ctx) };
+            let device = MonitorInfo::get_device_name_by_handle(hmonitor).unwrap_or_default();
+            if device == ctx.name {
+                ctx.found = hmonitor;
+                // 停止枚举
+                windows_core::BOOL::from(false)
+            } else {
+                windows_core::BOOL::from(true)
+            }
+        }
+
+        let mut ctx = Ctx {
+            name,
+            found: HMONITOR(std::ptr::null_mut::<c_void>()),
+        };
+        unsafe {
+            let _ = EnumDisplayMonitors(
+                None,
+                None,
+                Some(callback),
+                LPARAM(&mut ctx as *mut _ as isize),
+            );
+        }
+        ctx.found
+    }
+
+    /// 通过 `HMONITOR` 取得显示器设备名（`\\.\DISPLAYx`）。
+    #[cfg(target_os = "windows")]
+    fn get_device_name_by_handle(hmonitor: HMONITOR) -> Option<String> {
+        use widestring::U16CString;
+        use windows::Win32::{
+            Foundation::RECT,
+            Graphics::Gdi::{GetMonitorInfoW, MONITORINFO},
+        };
+
+        if hmonitor.0.is_null() {
+            return None;
+        }
+
+        let mut monitor_info = MONITORINFOEXW {
+            monitorInfo: MONITORINFO {
+                cbSize: u32::try_from(std::mem::size_of::<MONITORINFOEXW>()).unwrap(),
+                rcMonitor: RECT::default(),
+                rcWork: RECT::default(),
+                dwFlags: 0,
+            },
+            szDevice: [0; 32],
+        };
+
+        let result = unsafe {
+            GetMonitorInfoW(
+                hmonitor,
+                std::ptr::addr_of_mut!(monitor_info).cast(),
+            )
+        };
+
+        if !result.as_bool() {
+            return None;
+        }
+
+        U16CString::from_vec_truncate(monitor_info.szDevice)
+            .to_string()
+            .ok()
+    }
+
+    /// 通过显示器设备名读取当前设置的 `DEVMODEW`（含位置与分辨率）。
+    #[cfg(target_os = "windows")]
+    fn get_dev_mode(device_name: &str) -> Option<DEVMODEW> {
+        let name_u16: Vec<u16> = device_name
+            .encode_utf16()
+            .chain(std::iter::once(0))
+            .collect();
+
+        let mut dev_mode: DEVMODEW = unsafe { std::mem::zeroed() };
+        dev_mode.dmSize = u16::try_from(std::mem::size_of::<DEVMODEW>()).unwrap();
+
+        let result = unsafe {
+            EnumDisplaySettingsW(
+                windows::core::PCWSTR(name_u16.as_ptr()),
+                ENUM_CURRENT_SETTINGS,
+                &mut dev_mode,
+            )
+        };
+
+        if result.as_bool() {
+            Some(dev_mode)
+        } else {
+            None
+        }
     }
 
     /// 获取显示器设备名称
@@ -181,35 +410,108 @@ impl MonitorInfo {
             use crate::windows_capture_image;
 
             let mut capture_hdr_image: Option<image::DynamicImage> = None;
-            if self.monitor_hdr_info.hdr_enabled
-                && capture_option.correct_hdr_color_algorithm != CorrectHdrColorAlgorithm::None
-            {
-                capture_hdr_image = match windows_capture_image::capture_monitor_image(
-                    &self,
-                    None,
-                    crop_area,
-                    capture_option.color_format,
-                ) {
-                    Ok(image) => Some(image),
-                    Err(e) => {
-                        log::error!(
-                            "[MonitorInfo::capture] Failed to capture HDR monitor image: {:?}",
-                            e
-                        );
-                        None
+            // 实际使用的采集方式：
+            //   Auto -> 仅当系统 HDR 真正开启（hdr_enabled）时走 WGC
+            //   Wgc  -> 始终 windows-capture
+            //   Xcap -> 始终 xcap
+            let effective_method = match capture_option.capture_method {
+                CaptureMethod::Auto => {
+                    if self.monitor_hdr_info.hdr_enabled {
+                        CaptureMethod::Wgc
+                    } else {
+                        CaptureMethod::Xcap
                     }
+                }
+                other => other,
+            };
+
+            match effective_method {
+                CaptureMethod::Wgc => {
+                    match windows_capture_image::capture_monitor_image(
+                        &self,
+                        None,
+                        crop_area,
+                        capture_option.color_format,
+                        capture_option.correct_hdr_color_algorithm,
+                    ) {
+                        Ok(image) => {
+                            // WGC 截到黑帧（如 Rgba16F 线性转换异常、首帧空帧重试耗尽）时，
+                            // 回退 xcap 兜底，避免把黑屏直接交给用户。
+                            if is_black_image(&image, 0.99) {
+                                log::warn!(
+                                    "[MonitorInfo::capture] WGC returned black frame, falling back to xcap, monitor: {:?}",
+                                    self.monitor.name()
+                                );
+                                capture_hdr_image = super::capture_target_monitor(
+                                    &self.monitor,
+                                    crop_area,
+                                    exclude_window,
+                                    capture_option.color_format,
+                                );
+                            } else {
+                                capture_hdr_image = Some(image);
+                            }
+                        }
+                        Err(e) => {
+                            log::error!(
+                                "[MonitorInfo::capture] Failed to capture WGC monitor image: {:?}",
+                                e
+                            );
+                            // WGC 启动失败，回退 xcap（保持原有兜底语义）
+                            capture_hdr_image = super::capture_target_monitor(
+                                &self.monitor,
+                                crop_area,
+                                exclude_window,
+                                capture_option.color_format,
+                            );
+                        }
+                    }
+                }
+                CaptureMethod::Xcap => {
+                    // xcap 路径：xcap 在 HDR/宽色域显示器上可能截到黑帧（DXGI 桌面复制的已知限制），
+                    // 检测到黑帧时回退 WGC 重截。
+                    capture_hdr_image = super::capture_target_monitor(
+                        &self.monitor,
+                        crop_area,
+                        exclude_window,
+                        capture_option.color_format,
+                    );
+                    if let Some(ref image) = capture_hdr_image {
+                        if is_black_image(image, 0.99) {
+                            log::warn!(
+                                "[MonitorInfo::capture] xcap returned black frame, falling back to WGC, monitor: {:?}",
+                                self.monitor.name()
+                            );
+                            capture_hdr_image =
+                                windows_capture_image::capture_monitor_image(
+                                    &self,
+                                    None,
+                                    crop_area,
+                                    capture_option.color_format,
+                                    capture_option.correct_hdr_color_algorithm,
+                                )
+                                .ok();
+                        }
+                    }
+                }
+                CaptureMethod::Auto => {
+                    // effective_method 已把 Auto 解析为 Wgc / Xcap，这里不会走到
                 }
             }
 
-            return match capture_hdr_image {
-                Some(image) => Some(image),
-                None => super::capture_target_monitor(
-                    &self.monitor,
-                    crop_area,
-                    exclude_window,
-                    capture_option.color_format,
-                ),
-            };
+            if let Some(ref image) = capture_hdr_image {
+                log_image_state(
+                    &format!("MonitorInfo::capture end (method={:?})", effective_method),
+                    image,
+                );
+            } else {
+                log::warn!(
+                    "[MonitorInfo::capture] capture_hdr_image is None, monitor: {:?}",
+                    self.monitor.name()
+                );
+            }
+
+            capture_hdr_image
         }
     }
 }
@@ -223,7 +525,25 @@ pub enum CorrectHdrColorAlgorithm {
     Linear,
 }
 
+/// 截图采集方式（后端选择）
+#[derive(Serialize, Deserialize, Clone, Debug, Copy, PartialEq)]
+pub enum CaptureMethod {
+    /// 自动：根据显示器 HDR 能力选择。
+    /// HDR/宽色域显示器走 WGC（xcap 会截到黑帧），普通 SDR 显示器走 xcap。
+    #[serde(rename = "Auto")]
+    Auto,
+    /// Windows Graphics Capture（现代捕获 API）
+    #[serde(rename = "WGC")]
+    Wgc,
+    /// xcap（传统采集 API）
+    #[serde(rename = "Xcap")]
+    Xcap,
+}
+
 impl MonitorList {
+    // ignore_sdr_info 仅作保留参数（历史语义为"是否跳过 HDR 信息读取"），
+    // 现在 HDR 显示器识别始终进行，是否做亮度校正改由 CaptureOption 中的 algorithm 控制，
+    // 以避免 xcap 在 HDR/宽色域显示器上截到黑帧。
     fn get_monitors(
         region: Option<ElementRect>,
         #[allow(unused_variables)] ignore_sdr_info: bool,
@@ -241,18 +561,14 @@ impl MonitorList {
         };
 
         #[cfg(target_os = "windows")]
-        let monitor_hdr_info_map = if ignore_sdr_info {
-            None
-        } else {
-            match monitor_hdr_info::get_all_monitors_sdr_info() {
-                Ok(monitor_hdr_info_map) => Some(monitor_hdr_info_map),
-                Err(e) => {
-                    log::error!(
-                        "[MonitorList::get_monitors] Failed to get monitor HDR info: {:?}",
-                        e
-                    );
-                    None
-                }
+        let monitor_hdr_info_map = match monitor_hdr_info::get_all_monitors_sdr_info() {
+            Ok(monitor_hdr_info_map) => Some(monitor_hdr_info_map),
+            Err(e) => {
+                log::error!(
+                    "[MonitorList::get_monitors] Failed to get monitor HDR info: {:?}",
+                    e
+                );
+                None
             }
         };
 
@@ -391,25 +707,110 @@ impl MonitorList {
         }
 
         // 将每个显示器截取的图像，绘制到该图像上
+        // 注意：多显示器必须串行捕获，不能并行。
+        // 每个 monitor.capture() 内部会通过 windows-capture 启动一个 Graphics Capture (WGC) session，
+        // 而 WGC 的 D3D11 设备/帧缓冲在进程内共享，同时启动多个 session 会互相冲突导致黑屏。
+        // 单显示器因为只有 1 个 session 所以正常，多显示器并行就会黑屏。
+        // 这里同时把原始 monitor 引用一起携带，避免后续用过滤后 Vec 的 index 反查原始列表导致 offset 错位。
+        // 诊断日志：输出参与捕获的显示器数量、裁剪区域、目标色彩格式
+        log::info!(
+            "[MonitorInfoList::capture] multi-monitor capture start: monitors={}, color_format={:?}, crop_region={:?}",
+            monitors.len(),
+            capture_option.color_format,
+            crop_region
+        );
+
         let monitor_image_list = monitors
-            .par_iter()
+            .iter()
             .filter(|monitor| monitor.rect.overlaps(&crop_region.unwrap_or(ElementRect {
                 min_x: i32::MIN,
                 min_y: i32::MIN,
                 max_x: i32::MAX,
                 max_y: i32::MAX,
             })))
-            .map(|monitor| {
+            .filter_map(|monitor| {
                 let monitor_crop_region = if let Some(crop_region) = crop_region {
                     Some(monitor.get_monitor_crop_region(crop_region))
                 } else {
                     None
                 };
 
-                let capture_image = monitor.capture(monitor_crop_region, exclude_window, capture_option);
+                // 诊断日志：按用户设置的采集方式与 HDR 状态推算本次实际使用的引擎
+                // 注意：不能只用 hdr_enabled / sdr_white_level 判断——HDR 面板的
+                // sdr_white_level 恒 > 0，会导致标签永远显示 WGC(HDR)，误导排查。
+                #[cfg(target_os = "windows")]
+                let capture_source = match capture_option.capture_method {
+                    CaptureMethod::Wgc => "WGC",
+                    CaptureMethod::Xcap => "xcap",
+                    CaptureMethod::Auto => {
+                        if monitor.monitor_hdr_info.hdr_enabled {
+                            "Auto->WGC"
+                        } else {
+                            "Auto->xcap"
+                        }
+                    }
+                };
+                #[cfg(not(target_os = "windows"))]
+                let capture_source = "macOS-capture";
+                #[cfg(target_os = "windows")]
+                let hdr_enabled = monitor.monitor_hdr_info.hdr_enabled;
+                #[cfg(not(target_os = "windows"))]
+                let hdr_enabled = false;
+                log::info!(
+                    "[MonitorInfoList::capture] capturing monitor: name={:?}, rect={:?}, hdr_enabled={}, capture_method={:?}, source={}",
+                    monitor.monitor.name(),
+                    monitor.rect,
+                    hdr_enabled,
+                    capture_option.capture_method,
+                    capture_source
+                );
+
+                // 单屏捕获后做黑屏检测，命中则重试最多 3 次（重截该显示器）。
+                // 多屏场景下某块显示器可能单独截到黑帧（WGC 会话冲突/冷启动），
+                // 只重截该块，避免整批重来。
+                const BLACK_RETRY_TIMES: u32 = 3;
+                let mut capture_image =
+                    monitor.capture(monitor_crop_region, exclude_window, capture_option);
+                let mut black_retried = false;
+                if let Some(ref img) = capture_image {
+                    if is_black_image(img, 0.99) {
+                        for attempt in 1..=BLACK_RETRY_TIMES {
+                            log::warn!(
+                                "[MonitorInfoList::capture] detected black frame on monitor {:?}, retrying capture (attempt {})",
+                                monitor.monitor.name(),
+                                attempt
+                            );
+                            capture_image =
+                                monitor.capture(monitor_crop_region, exclude_window, capture_option);
+                            black_retried = true;
+                            if let Some(ref img2) = capture_image {
+                                if !is_black_image(img2, 0.99) {
+                                    break;
+                                }
+                            } else {
+                                break;
+                            }
+                        }
+                    }
+                }
 
                 match capture_image {
-                    Some(image) => Some((image, monitor_crop_region)),
+                    Some(image) => {
+                        if black_retried {
+                            log::info!(
+                                "[MonitorInfoList::capture] monitor recovered after black-frame retry: name={:?}",
+                                monitor.monitor.name()
+                            );
+                        }
+                        log::info!(
+                            "[MonitorInfoList::capture] captured monitor OK: name={:?}, image_size={}x{}, color={:?}",
+                            monitor.monitor.name(),
+                            image.width(),
+                            image.height(),
+                            image.color()
+                        );
+                        Some((monitor, image, monitor_crop_region))
+                    }
                     None => {
                         log::warn!(
                             "[MonitorInfoList::capture] Failed to capture monitor image, monitor rect: {:?}",
@@ -420,11 +821,7 @@ impl MonitorList {
                     }
                 }
             })
-            .filter_map(|result| match result {
-                Some((image, monitor_crop_region)) => Some((image, monitor_crop_region)),
-                None => None,
-            })
-            .collect::<Vec<(image::DynamicImage, Option<ElementRect>)>>();
+            .collect::<Vec<(&MonitorInfo, image::DynamicImage, Option<ElementRect>)>>();
 
         if monitor_image_list.is_empty() {
             return Err(format!(
@@ -459,10 +856,10 @@ impl MonitorList {
 
         let capture_image_pixels_ptr = capture_image_pixels.as_mut_ptr() as usize;
 
-        monitor_image_list.par_iter().enumerate().for_each(
-            |(index, (monitor_image, monitor_crop_region))| {
-                let monitor = &monitors[index];
-
+        // 多显示器必须串行处理（见上方注释：WGC session 并行会冲突黑屏），
+        // 且 &MonitorInfo 含 xcap::Monitor（非 Sync），不能用 par_iter。
+        monitor_image_list.iter().for_each(
+            |(monitor, monitor_image, monitor_crop_region)| {
                 // 计算显示器在合并图像中的位置
                 let offset_x: i32;
                 let offset_y: i32;
@@ -478,6 +875,16 @@ impl MonitorList {
                     offset_x = monitor.rect.min_x - monitors_bounding_box.min_x;
                     offset_y = monitor.rect.min_y - monitors_bounding_box.min_y;
                 }
+
+                // 诊断日志：当前显示器在合并图中的偏移与尺寸
+                log::info!(
+                    "[MonitorInfoList::capture] overlay monitor: name={:?}, offset=({},{}) image_size={}x{}",
+                    monitor.monitor.name(),
+                    offset_x,
+                    offset_y,
+                    monitor_image.width(),
+                    monitor_image.height()
+                );
 
                 if offset_x < 0 || offset_y < 0 {
                     log::error!(
@@ -508,15 +915,35 @@ impl MonitorList {
                 )
                 .unwrap(),
             ),
-            ColorFormat::Rgba8 => image::DynamicImage::ImageRgba8(
-                image::RgbaImage::from_raw(
-                    capture_image_width as u32,
-                    capture_image_height as u32,
-                    capture_image_pixels,
+            ColorFormat::Rgba8 => {
+                // 合成缓冲初始化为全 0（alpha 为 0）。若单屏图（尤其 xcap 路径）alpha 为 0，
+                // 合成图会整幅透明，前端渲染显示为黑屏。因此合成后统一强制 alpha=255，
+                // 确保最终交付给前端的图一定不透明（截图场景不需要透明通道）。
+                for y in 0..capture_image_height {
+                    for x in 0..capture_image_width {
+                        let index = (y * capture_image_width + x) * 4 + 3;
+                        capture_image_pixels[index] = 255;
+                    }
+                }
+                image::DynamicImage::ImageRgba8(
+                    image::RgbaImage::from_raw(
+                        capture_image_width as u32,
+                        capture_image_height as u32,
+                        capture_image_pixels,
+                    )
+                    .unwrap(),
                 )
-                .unwrap(),
-            ),
+            }
         };
+
+        // 诊断日志：合成完成，输出最终尺寸
+        log::info!(
+            "[MonitorInfoList::capture] multi-monitor composite done: final_size={}x{}, monitors_composited={}",
+            capture_image.width(),
+            capture_image.height(),
+            monitor_image_list.len()
+        );
+        log_image_state("MonitorInfoList::capture composite final", &capture_image);
 
         Ok(capture_image)
     }
@@ -795,11 +1222,19 @@ impl MonitorList {
         let enable_exclude_window = {
             #[cfg(target_os = "windows")]
             {
-                capture_option.correct_hdr_color_algorithm != CorrectHdrColorAlgorithm::None
-                    && self
+                // 排除窗口（WDA_EXCLUDEFROMCAPTURE）仅在 WGC 下有效（xcap 不支持）。
+                //   Wgc  -> 始终排除截图自身窗口
+                //   Auto -> 仅当存在系统 HDR 已开启的显示器（Auto 下这些屏会走 WGC）时排除
+                //   Xcap -> 不排除
+                // 排除可避免截太快把截图控件也截进去。
+                match capture_option.capture_method {
+                    CaptureMethod::Wgc => true,
+                    CaptureMethod::Auto => self
                         .0
                         .iter()
-                        .any(|monitor| monitor.monitor_hdr_info.hdr_enabled)
+                        .any(|monitor| monitor.monitor_hdr_info.hdr_enabled),
+                    CaptureMethod::Xcap => false,
+                }
             }
 
             #[cfg(target_os = "macos")]
@@ -808,21 +1243,21 @@ impl MonitorList {
             }
         };
 
-        // 如果启用了 HDR，并且显示器开启了 HDR 信息
-        let mut need_reset_exclude_window = false;
+        // 设置截图窗口不参与捕获（WGC 下才需要）。
+        // 注意：这里设置后【不复位】为 WDA_NONE。截图窗口在存活期间
+        // 应始终保持排除状态，避免快速连续截图时「复位 false」与「下一次
+        // 设置 true」产生竞态，导致某一帧把截图控件也截进去。
+        // 窗口被 close_window_after_delay 销毁时，系统会自动清除该标记。
         if enable_exclude_window {
             if let Some(exclude_window) = exclude_window {
-                match crate::set_exclude_from_capture(exclude_window, true).await {
-                    Ok(_) => {
-                        need_reset_exclude_window = true;
-                    }
-                    Err(e) => {
-                        return Err(format!(
+                crate::set_exclude_from_capture(exclude_window, true)
+                    .await
+                    .map_err(|e| {
+                        format!(
                             "[MonitorInfoList::capture_core] failed to set exclude from capture: {:?}",
                             e
-                        ));
-                    }
-                }
+                        )
+                    })?;
             }
         }
 
@@ -830,20 +1265,6 @@ impl MonitorList {
             self.capture_future(crop_region, exclude_window, capture_option,),
             Self::get_mag_color_effect_inverse(capture_option.correct_color_filter)
         );
-
-        if need_reset_exclude_window {
-            if let Some(exclude_window) = exclude_window {
-                match crate::set_exclude_from_capture(exclude_window, false).await {
-                    Ok(_) => (),
-                    Err(e) => {
-                        return Err(format!(
-                            "[MonitorInfoList::capture_core] failed to reset exclude from capture: {:?}",
-                            e
-                        ));
-                    }
-                }
-            }
-        }
 
         match result {
             Ok((mut image, color_effect)) => {
@@ -971,6 +1392,7 @@ mod tests {
                     color_format: ColorFormat::Rgb8,
                     correct_hdr_color_algorithm: CorrectHdrColorAlgorithm::None,
                     correct_color_filter: false,
+                    capture_method: CaptureMethod::Wgc,
                 },
             )
             .await
@@ -1070,6 +1492,7 @@ mod tests {
                     color_format: ColorFormat::Rgb8,
                     correct_hdr_color_algorithm: CorrectHdrColorAlgorithm::None,
                     correct_color_filter: false,
+                    capture_method: CaptureMethod::Wgc,
                 },
             )
             .await
