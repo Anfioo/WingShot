@@ -1,8 +1,8 @@
 if(VCPKG_TARGET_IS_WINDOWS)
     vcpkg_check_linkage(ONLY_STATIC_LIBRARY)
-    # Snow Shot links the static Qt kit and therefore uses the static CRT even
-    # in its debug preset. minizip is linked into that executable directly.
-    set(VCPKG_CRT_LINKAGE static)
+    # The static Qt kit build uses the static CRT (the x64-windows-static
+    # triplet already requests it). Keep the triplet's own linkage so the
+    # dynamic official-Qt presets that link minizip directly stay /MD.
 endif()
 
 vcpkg_from_github(
@@ -18,6 +18,16 @@ vcpkg_check_features(
     FEATURES zlib MZ_ZLIB
 )
 
+if(VCPKG_DETECTED_MSVC)
+    if(VCPKG_CRT_LINKAGE STREQUAL "static")
+        set(SNOW_MINIZIP_MSVC_RUNTIME_RELEASE "-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded")
+        set(SNOW_MINIZIP_MSVC_RUNTIME_DEBUG "-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDebug")
+    else()
+        set(SNOW_MINIZIP_MSVC_RUNTIME_RELEASE "-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL")
+        set(SNOW_MINIZIP_MSVC_RUNTIME_DEBUG "-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDebugDLL")
+    endif()
+endif()
+
 vcpkg_cmake_configure(
     SOURCE_PATH "${SOURCE_PATH}"
     OPTIONS
@@ -27,9 +37,9 @@ vcpkg_cmake_configure(
         -DMZ_ICONV=OFF
         -DMZ_COMPAT=OFF
     OPTIONS_RELEASE
-        -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
+        ${SNOW_MINIZIP_MSVC_RUNTIME_RELEASE}
     OPTIONS_DEBUG
-        -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDebug
+        ${SNOW_MINIZIP_MSVC_RUNTIME_DEBUG}
 )
 vcpkg_cmake_install()
 vcpkg_fixup_pkgconfig()

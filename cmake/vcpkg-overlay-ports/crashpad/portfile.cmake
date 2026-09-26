@@ -2,9 +2,12 @@
 # without escaping SDK include paths. Keep its source/patch set and escape only
 # the variables entering those literals (the workspace chainload adds SDK paths).
 set(_snow_upstream "${VCPKG_ROOT_DIR}/ports/crashpad")
-# Snow's Windows executables and OCR runtime use the static CRT.
-if(VCPKG_TARGET_IS_WINDOWS)
-    set(VCPKG_CRT_LINKAGE static)
+# Snow's static Windows release uses the static CRT. Keep the triplet's own
+# linkage otherwise, so the dynamic presets (windows-msvc-debug/performance,
+# which link the /MD Qt kit and Rust payload) stay linkable.
+set(_snow_force_static_crt FALSE)
+if(VCPKG_TARGET_IS_WINDOWS AND VCPKG_CRT_LINKAGE STREQUAL "static")
+    set(_snow_force_static_crt TRUE)
 endif()
 file(READ "${_snow_upstream}/portfile.cmake" _snow_port)
 string(REPLACE "z;zlib;zlibd" "z;zlib;zlibd;zlibstatic;zlibstaticd" _snow_port "${_snow_port}")
@@ -26,13 +29,17 @@ if(VCPKG_TARGET_IS_OSX)
     return()
 endif()
 
-set(_snow_escape [=[
+string(CONCAT _snow_escape
+    "set(_snow_static_crt \"${_snow_force_static_crt}\")\n"
+    [=[
     foreach(_snow_flags VCPKG_COMBINED_C_FLAGS_DEBUG VCPKG_COMBINED_CXX_FLAGS_DEBUG
             VCPKG_COMBINED_C_FLAGS_RELEASE VCPKG_COMBINED_CXX_FLAGS_RELEASE
             VCPKG_COMBINED_SHARED_LINKER_FLAGS_DEBUG VCPKG_COMBINED_SHARED_LINKER_FLAGS_RELEASE
             VCPKG_COMBINED_STATIC_LINKER_FLAGS_DEBUG VCPKG_COMBINED_STATIC_LINKER_FLAGS_RELEASE)
-        string(REPLACE "-MD" "-MT" ${_snow_flags} "${${_snow_flags}}")
-        string(REPLACE "/MD" "/MT" ${_snow_flags} "${${_snow_flags}}")
+        if(_snow_static_crt)
+            string(REPLACE "-MD" "-MT" ${_snow_flags} "${${_snow_flags}}")
+            string(REPLACE "/MD" "/MT" ${_snow_flags} "${${_snow_flags}}")
+        endif()
         string(REGEX REPLACE "[-/]GL([ ;]|$)" "/GL-\\1" ${_snow_flags} "${${_snow_flags}}")
         string(REPLACE "\\" "\\\\" ${_snow_flags} "${${_snow_flags}}")
         string(REPLACE "\"" "\\\"" ${_snow_flags} "${${_snow_flags}}")
