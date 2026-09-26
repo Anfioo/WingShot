@@ -52,13 +52,15 @@ class FakePermissions final : public AppPermissionBackend {
     bool canOpen = true;
     bool openNativeSettings = false;
     P lastOpen = P::ScreenRecording;
+    P lastRequest = P::ScreenRecording;
     std::function<void()> completion;
     AppPermissionSnapshot query() override {
         ++queries;
         return value;
     }
-    void request(P, std::function<void()> done) override {
+    void request(P permission, std::function<void()> done) override {
         ++requests;
+        lastRequest = permission;
         completion = std::move(done);
     }
     bool openSettings(P permission) override {
@@ -119,13 +121,21 @@ void snapshotsAndLifecycle() {
     QObject::connect(&service, &AppPermissionService::refreshed, [&] { ++refreshes; });
     require(native->queries == 0 && !service.polling(),
             "construction must not prompt, query, or poll");
+    service.refresh();
+    service.refreshNow();
+    require(native->queries == 1 && changes == 1 && refreshes == 1 &&
+                service.snapshot().granted(P::ScreenRecording),
+            "synchronous gate refresh must resolve checking before dispatch");
+    flush();
+    require(native->queries == 1 && refreshes == 1,
+            "synchronous refresh must consume a queued refresh");
     for (int i = 0; i < 100; ++i)
         service.refresh();
     flush();
-    require(native->queries == 1 && changes == 1 && refreshes == 1, "refreshes must coalesce");
+    require(native->queries == 2 && changes == 1 && refreshes == 2, "refreshes must coalesce");
     service.refresh();
     flush();
-    require(changes == 1 && refreshes == 2, "unchanged snapshots must not repaint");
+    require(changes == 1 && refreshes == 3, "unchanged snapshots must not repaint");
     native->value.statuses[3] = S::NotDetermined;
     service.refresh();
     flush();
@@ -206,6 +216,59 @@ void snapshotsAndLifecycle() {
     late();
     flush(); // Must not call through a destroyed service or backend.
 }
+void freshAdmissionAndRequests() {
+    auto fake = std::make_unique<FakePermissions>();
+    auto* native = fake.get();
+    AppPermissionService service(std::move(fake));
+    require(service.allow({}, {}) && native->queries == 0,
+            "permission-free actions do not query the operating system");
+    service.refresh();
+    require(service.allow({P::ScreenRecording}, {}),
+            "first action resolves checking without waiting for the event loop");
+    flush();
+    require(native->queries == 1, "admission consumes the queued UI refresh");
+    native->value.statuses[0] = S::Missing;
+    int blocked = 0;
+    require(!service.allow({P::ScreenRecording, P::ScreenRecording},
+                           [&](const AppPermissions& missing) {
+                               require(missing == AppPermissions{P::ScreenRecording},
+                                       "admission reports current missing permissions once");
+                               ++blocked;
+                           }) &&
+                blocked == 1,
+            "revocation blocks an action even while the cached snapshot was granted");
+    native->value.statuses[0] = S::Granted;
+    require(service.allow({P::ScreenRecording}, {}),
+            "grant permits a new action without a UI refresh or polling");
+    native->value.statuses[3] = S::NotDetermined;
+    service.request(P::Microphone);
+    require(native->requests == 1, "request refreshes stale granted state before prompting");
+    native->completion();
+    flush();
+    native->value.statuses[3] = S::Granted;
+    service.request(P::Microphone);
+    require(native->requests == 1 && service.snapshot().granted(P::Microphone),
+            "external grant prevents a redundant permission prompt");
+}
+void freshSettingsActions() {
+    auto fake = std::make_unique<FakePermissions>();
+    auto* native = fake.get();
+    AppPermissionService service(std::move(fake));
+    service.refreshNow();
+    GlobalShortcutManager shortcuts;
+    settings::BuiltInSettingsBackend backend(shortcuts, nullptr, nullptr, &service);
+    native->value.statuses[2] = S::Missing;
+    backend.requestGlobalMousePermission();
+    require(native->requests == 1 && native->lastRequest == P::InputMonitoring,
+            "settings request selects a newly missing permission");
+    native->completion();
+    flush();
+    native->value.statuses[2] = S::Granted;
+    native->value.statuses[1] = S::Missing;
+    backend.openGlobalMousePermissionSettings();
+    require(native->opens == 1 && native->lastOpen == P::Accessibility,
+            "settings navigation selects current missing access rather than a stale permission");
+}
 void routingPolicy() {
     using A = GlobalShortcutAction;
     for (auto action : {A::Screenshot, A::ScreenshotDelay, A::ScreenshotFixed, A::ScreenshotOcr,
@@ -267,8 +330,8 @@ void routingPolicy() {
             static_cast<void>(featureRouter.dispatch(snow_shot::app::FeatureFamily::Screenshot,
                                                      [&] { ++dispatched; }));
     }
-    require(blocked == 100 && dispatched == 0 && unavailable == 0 && native->queries == 1,
-            "routing reads only cached state and blocks feature dispatch");
+    require(blocked == 100 && dispatched == 0 && unavailable == 0 && native->queries == 101,
+            "each action checks current permissions before feature dispatch");
     native->value.statuses[0] = S::Granted;
     service.refresh();
     flush();
@@ -294,6 +357,7 @@ void pageAndAlerts() {
     static_cast<void>(
         storage.initialize({temporary.filePath(QStringLiteral("bin")), temporary.path()}));
     require(storage.isInitialized(), "isolated storage must initialize");
+    freshSettingsActions();
     styles::ThemeManager::instance().initialize(*qApp);
     {
         auto fake = std::make_unique<FakePermissions>();
@@ -563,6 +627,7 @@ int main(int argc, char** argv) {
     QCoreApplication::setApplicationName(QStringLiteral("app-permissions-tests"));
     permissionDiagnostics();
     snapshotsAndLifecycle();
+    freshAdmissionAndRequests();
     routingPolicy();
     pageAndAlerts();
     std::cout << "App permission tests passed\n";

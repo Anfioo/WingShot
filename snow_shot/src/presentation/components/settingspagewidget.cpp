@@ -83,6 +83,7 @@ permissionForRenderer(settings::SettingsCustomRenderer renderer) {
     case Renderer::PermissionMicrophone:
         return Permission::Microphone;
     case Renderer::CustomAiModels:
+    case Renderer::McpStatus:
     case Renderer::StorageStatus:
     case Renderer::DrawingToolbarEditor:
     case Renderer::ScreenshotToolbarEditor:

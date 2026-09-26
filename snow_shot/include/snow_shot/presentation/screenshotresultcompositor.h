@@ -19,7 +19,7 @@ struct ScreenshotResultStyle {
     int shadowWidth = 0;
     QColor shadowColor = QColor(0x33, 0x33, 0x33);
     // Immutable geometry snapshot, relative to the content origin, in canvas units.
-    std::optional<ScreenshotRegionGeometry> region;
+    std::optional<ScreenshotRegionGeometry> region = std::nullopt;
     qreal regionScale = 1.0;
 };
 

@@ -797,10 +797,13 @@ void failedCommitPreservesPublishedHistory() {
     const QString index = indexPath(temporary.path());
     const QString saved = index + QStringLiteral(".saved");
     require(QFile::rename(index, saved) && QDir().mkdir(index), "failed to block index commit");
+    const auto revision = repository->recordsSnapshot().revision;
     const auto failed = repository->publish(draftAt(QDateTime::currentDateTimeUtc())).get();
     require(!failed.storage.success && repository->records() == QVector{first.record} &&
                 repository->load(first.record).has_value(),
             "failed commit evicted acknowledged history");
+    require(repository->recordsSnapshot().revision == revision,
+            "failed index commit must not advance the history revision");
     require(QDir().rmdir(index) && QFile::rename(saved, index), "failed to restore index");
     repository.reset();
     auto reopened = storage::makeCaptureHistoryRepository(temporary.path());
@@ -1022,8 +1025,66 @@ void compoundSelectionSurvivesRepositoryRestart() {
             "reopened screenshot history must retain holes");
 }
 
+void revisionCheckedMutations() {
+    QTemporaryDir directory;
+    auto repository = storage::makeCaptureHistoryRepository(directory.path());
+    const auto initial = repository->recordsSnapshot();
+    auto first = draftAt(QDateTime::currentDateTimeUtc());
+    require(repository->publish(first).get().storage.success, "revision fixture publication");
+    const auto published = repository->recordsSnapshot();
+    require(published.revision > initial.revision && published.records.size() == 1,
+            "history snapshot atomically reports records and revision");
+    require(repository->removeIfRevision({QStringLiteral("missing")}, published.revision)
+                    .get()
+                    .success &&
+                repository->recordsSnapshot().revision == published.revision,
+            "no-op conditional removal preserves the revision");
+    require(!repository->removeIfRevision({first.id}, initial.revision).get().success &&
+                repository->records().size() == 1,
+            "stale deletion must not remove a newer history record");
+    auto second = draftAt(QDateTime::currentDateTimeUtc().addSecs(1));
+    require(repository->publish(second).get().storage.success,
+            "second revision fixture publication");
+    require(!repository->removeIfRevision({}, published.revision, true).get().success &&
+                repository->records().size() == 2,
+            "stale clear must not remove new captures");
+    require(repository->removeIfRevision({first.id}, repository->recordsSnapshot().revision)
+                    .get()
+                    .success &&
+                repository->records().size() == 1 && repository->records().first().id == second.id,
+            "revision-checked deletion affects only the selected record");
+    const auto removed = repository->recordsSnapshot();
+    require(removed.revision == published.revision + 2,
+            "publication and deletion advance once each; payload cleanup does not");
+    auto policy = repository->policy();
+    policy.maxEntries = 1;
+    require(repository->updatePolicy(policy).get().success &&
+                repository->recordsSnapshot().revision == removed.revision,
+            "policy-only changes preserve the record revision");
+    const auto replacement = draftAt(QDateTime::currentDateTimeUtc().addSecs(2));
+    require(repository->publish(replacement).get().storage.success &&
+                repository->recordsSnapshot().revision == removed.revision + 1 &&
+                repository->records().size() == 1 &&
+                repository->records().first().id == replacement.id,
+            "capacity replacement changes revision even when record count is unchanged");
+    const auto replacedRevision = repository->recordsSnapshot().revision;
+    require(repository->removeIfRevision({}, replacedRevision, true).get().success &&
+                repository->recordsSnapshot().revision == replacedRevision + 1,
+            "conditional clear advances the revision once");
+    require(repository->requestClear().get().success &&
+                repository->recordsSnapshot().revision == replacedRevision + 1,
+            "clearing empty history preserves the revision");
+}
+
 int main(int argc, char** argv) {
     QCoreApplication application(argc, argv);
+    revisionCheckedMutations();
+    if (application.arguments().contains(QStringLiteral("--revision-only"))) {
+        failedCommitPreservesPublishedHistory();
+        policyBoundariesAndDisabledPreservation();
+        startupExpiresAgeButDoesNotEnforceCapacity();
+        return 0;
+    }
     compoundSelectionSurvivesRepositoryRestart();
     pointGeometryRoundTripsAndLegacyIndexRemainsReadable();
     sourceCanvasOriginsRoundTripAndRejectInvalidCoordinates();

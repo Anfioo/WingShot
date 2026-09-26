@@ -29,6 +29,7 @@
 
 #include <QApplication>
 #include <QDir>
+#include <QFileInfo>
 #include <QTemporaryDir>
 #include <QElapsedTimer>
 #include <QThread>
@@ -38,6 +39,7 @@
 #include <QScreen>
 #include <QPointer>
 #include <QTimer>
+#include <QJsonArray>
 #include <QMessageBox>
 #include "widgets/color_picker.h"
 #include <future>
@@ -1668,6 +1670,132 @@ int main(int argc, char** argv) {
     QApplication::setFont(testFont);
     QFontDatabase::setApplicationFallbackFontFamilies(QChar::Script_Han,
                                                       {QStringLiteral("Snow Recording Test Han")});
+    if (app.arguments().contains(QStringLiteral("--automation-only"))) {
+        {
+            ScreenRecordingController manual(testEffectsSource);
+            const QRect region(10, 10, 320, 240);
+            manual.open(region);
+            const auto checkOption = [&](const QString& key, const QJsonValue& value,
+                                         const std::function<void(const QJsonValue&)>& change) {
+                const auto before = manual.automationState();
+                const auto original = before.value(QStringLiteral("options")).toObject().value(key);
+                require(original != value, "option fixture must change the value");
+                change(value);
+                const auto changed = manual.automationState();
+                require(changed.value(QStringLiteral("revision")).toInteger() >
+                                before.value(QStringLiteral("revision")).toInteger() &&
+                            changed.value(QStringLiteral("options")).toObject().value(key) == value,
+                        "manual options must be observable immediately without a timer tick");
+                change(value);
+                require(manual.automationState().value(QStringLiteral("revision")) ==
+                            changed.value(QStringLiteral("revision")),
+                        "repeated option values must not invalidate a revision");
+                change(original);
+                const auto restored = manual.automationState();
+                require(restored.value(QStringLiteral("revision")).toInteger() >
+                                changed.value(QStringLiteral("revision")).toInteger() &&
+                            restored.value(QStringLiteral("options")).toObject().value(key) ==
+                                original,
+                        "change then restore must invalidate stale commands between timer ticks");
+                require(manual.automationState() == restored,
+                        "reading automation state must not mutate its revision");
+            };
+            const auto options =
+                manual.automationState().value(QStringLiteral("options")).toObject();
+            checkOption(QStringLiteral("microphone"),
+                        !options.value(QStringLiteral("microphone")).toBool(),
+                        [](const QJsonValue& value) {
+                            palette()->recordingMicrophoneToggled(value.toBool());
+                        });
+            checkOption(QStringLiteral("system_audio"),
+                        !options.value(QStringLiteral("system_audio")).toBool(),
+                        [](const QJsonValue& value) {
+                            palette()->recordingSystemAudioToggled(value.toBool());
+                        });
+            checkOption(QStringLiteral("start_delay_seconds"), 7, [](const QJsonValue& value) {
+                palette()->recordingStartDelaySecondsChanged(value.toInt());
+            });
+            checkOption(QStringLiteral("keyboard_size"), 96, [](const QJsonValue& value) {
+                palette()->recordingKeyboardSizeChanged(value.toInt());
+            });
+            checkOption(QStringLiteral("mouse_trail"), QStringLiteral("#ff123456"),
+                        [](const QJsonValue& value) {
+                            palette()->recordingMouseTrailColorChanged(QColor(value.toString()));
+                        });
+            const auto beforeRegion =
+                manual.automationState().value(QStringLiteral("revision")).toInteger();
+            manual.open(region.translated(20, 20));
+            manual.open(region);
+            require(manual.automationState().value(QStringLiteral("revision")).toInteger() >
+                            beforeRegion &&
+                        manual.automationState()
+                                .value(QStringLiteral("options"))
+                                .toObject()
+                                .value(QStringLiteral("region")) == QJsonArray{10, 10, 320, 240},
+                    "reopening an existing UI tracks region changes and restoration");
+        }
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        const auto saved = ApplicationStorage::instance().configuration().snapshot();
+        ScreenRecordingController controller(testEffectsSource);
+        QString error;
+        require(!controller.startAutomation(QRect(10, 10, 320, 240),
+                                            {{QStringLiteral("frame_rate"), 37}}, &error) &&
+                    error == QStringLiteral("invalid_parameters") && !controller.isOpen(),
+                "invalid automation options must reject before opening recording UI");
+        require(controller.startAutomation(QRect(10, 10, 320, 240),
+                                           {{QStringLiteral("format"), QStringLiteral("gif")},
+                                            {QStringLiteral("start_delay_seconds"), 10},
+                                            {QStringLiteral("animated_frame_rate"), 15}},
+                                           &error),
+                "automation must support isolated recording options");
+        require(controller.automationState().value(QStringLiteral("operation")).toString() ==
+                    QStringLiteral("counting_down"),
+                "automation state must expose countdown");
+        const int previousStarts = starts.load();
+        controller.detachAutomation();
+        QCoreApplication::processEvents();
+        require(!controller.isOpen() && starts == previousStarts,
+                "disconnect must cancel countdown without starting capture");
+        require(ApplicationStorage::instance().configuration().snapshot() == saved,
+                "automation options must not change persistent preferences");
+        QTemporaryDir outputDirectory;
+        require(outputDirectory.isValid(), "recording output directory must be isolated");
+        const QString outputPath = outputDirectory.filePath(QStringLiteral("recording.mp4"));
+        require(controller.startAutomation(QRect(10, 10, 320, 240),
+                                           {{QStringLiteral("format"), QStringLiteral("mp4")},
+                                            {QStringLiteral("path"), outputPath},
+                                            {QStringLiteral("start_delay_seconds"), 0},
+                                            {QStringLiteral("frame_rate"), 24}},
+                                           &error),
+                "automation start must succeed");
+        waitForRecording(controller);
+        require(!QFileInfo::exists(outputPath),
+                "the controller must leave output publication to the recording exporter");
+        require(lastDirectConfig.capture_fps == 24,
+                "automation frame rate must reach the native capture configuration");
+        const auto runningRevision =
+            controller.automationState().value(QStringLiteral("revision")).toInteger();
+        require(controller.controlAutomation(QStringLiteral("pause"), {}, &error),
+                "automation pause must succeed");
+        require(controller.automationState().value(QStringLiteral("state")).toString() ==
+                    QStringLiteral("paused"),
+                "automation must expose paused state");
+        require(controller.controlAutomation(QStringLiteral("resume"), {}, &error),
+                "automation resume must succeed");
+        require(controller.automationState().value(QStringLiteral("revision")).toInteger() >
+                    runningRevision,
+                "pause then resume must invalidate a stale revision despite restoring state");
+        const int previousExports = exports.load();
+        controller.detachAutomation();
+        waitForIdle(controller);
+        require(exports == previousExports + 1 &&
+                    controller.automationState().value(QStringLiteral("finalized")).toBool(),
+                "disconnect must finalize exactly once and retain the output artifact");
+        require(ApplicationStorage::instance().configuration().snapshot() == saved,
+                "recording lifecycle must preserve persistent preferences");
+        ApplicationStorage::instance().shutdown();
+        return 0;
+    }
     if (app.arguments().contains(QStringLiteral("--effects-preview-only"))) {
         class KeyTranslator : public QTranslator {
           public:

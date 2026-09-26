@@ -60,6 +60,7 @@ class AppPermissionService final : public QObject {
     const AppPermissionSnapshot& snapshot() const {
         return m_snapshot;
     }
+    // Cached state for UI rendering; action admission must use allow().
     AppPermissions missing(const AppPermissions& requirements) const;
     AppPermissions startupMissing() const;
     AppPermissions takeStartupMissing();
@@ -71,9 +72,11 @@ class AppPermissionService final : public QObject {
     bool requestPending() const {
         return !m_pending.isEmpty();
     }
+    // Queries current permissions before admitting an action; never prompts.
     bool allow(const AppPermissions& requirements,
-               const std::function<void(const AppPermissions&)>& blocked) const;
+               const std::function<void(const AppPermissions&)>& blocked = {});
     void refresh();
+    void refreshNow();
     void request(AppPermission permission);
     bool openSettings(AppPermission permission);
     void observe(QObject* owner, bool visible);
