@@ -1114,7 +1114,7 @@ QVector<Scenario> createScenarios() {
     const auto watermarkConfig = [](int variant) {
         SnowCanvasWatermarkConfig config;
         config.color = QColor(20 + variant * 10, 40, 80, 210);
-        config.text = QStringLiteral("Snow Shot benchmark %1").arg(variant);
+        config.text = QStringLiteral("WingShot benchmark %1").arg(variant);
         config.fontSize = 14.0 + variant;
         config.fontFamily = variant % 2 == 0 ? QStringLiteral("Segoe UI") : QStringLiteral("Arial");
         config.angle = -30.0 + variant * 5.0;

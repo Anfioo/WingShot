@@ -79,7 +79,7 @@ std::optional<bool> updateTransactionPending(const QString& helperPath, const QS
 } // namespace
 
 int main(int argc, char* argv[]) {
-    QCoreApplication::setOrganizationName(QStringLiteral("SnowShot"));
+    QCoreApplication::setOrganizationName(QStringLiteral("WingShot"));
     QString applicationName = QStringLiteral("snow_shot");
     QString e2eInstanceId;
     bool e2eCaptureEnabled = false;
@@ -360,7 +360,7 @@ int main(int argc, char* argv[]) {
             .filePath(QStringLiteral("logs")));
     diagnosticsOptions.directories.append(
         QDir(QDir(QStandardPaths::writableLocation(QStandardPaths::TempLocation)).canonicalPath())
-            .filePath(QStringLiteral("SnowShot/%1/logs").arg(applicationName)));
+            .filePath(QStringLiteral("WingShot/%1/logs").arg(applicationName)));
 #ifdef Q_OS_MACOS
     diagnosticsOptions.handlerPath =
         QDir(selectedStorage.executableDirectory).filePath(QStringLiteral("crashpad_handler"));
@@ -387,7 +387,7 @@ int main(int argc, char* argv[]) {
     // The internal application name also owns settings and single-instance keys.
     // Keep it stable while giving Qt windows and the macOS menu the product name.
     QGuiApplication::setApplicationDisplayName(
-        QCoreApplication::translate("AboutPageWidget", "Snow Shot"));
+        QCoreApplication::translate("AboutPageWidget", "WingShot"));
     QApplication app(argc, argv);
     adqt::widgets::initializePlatformCompatibility(app);
     snow_shot::diagnostics::logEvent(QStringLiteral("snow_shot.app"),

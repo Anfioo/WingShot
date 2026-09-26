@@ -166,7 +166,7 @@ void customTitleBarUsesPlatformWindowControls() {
         wordmarkRequest.logicalSize = QSize(qRound(logoHeight * 95.0 / 17.0), logoHeight);
         wordmarkRequest.devicePixelRatio = scale;
         const auto wordmark = adqt::icons::renderIconPixmap(
-            snow_shot::presentation::icons::custom::brand::SnowShotLogo(
+            snow_shot::presentation::icons::custom::brand::WingshotLogo(
                 adqt::icons::IconColors::primary(ink)),
             wordmarkRequest);
         QImage expected(wordmark.size(), QImage::Format_ARGB32_Premultiplied);

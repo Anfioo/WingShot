@@ -102,8 +102,8 @@
             <translation>Text recognition failed</translation>
         </message>
         <message>
-            <source>The bundled text recognition runtime is damaged or incompatible. Reinstall Snow Shot for Apple Silicon.</source>
-            <translation>The bundled text recognition runtime is damaged or incompatible. Reinstall Snow Shot for Apple Silicon.</translation>
+            <source>The bundled text recognition runtime is damaged or incompatible. Reinstall WingShot for Apple Silicon.</source>
+            <translation>The bundled text recognition runtime is damaged or incompatible. Reinstall WingShot for Apple Silicon.</translation>
         </message>
         <message>
             <source>Unable to open the recognized link</source>

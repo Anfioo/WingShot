@@ -46,7 +46,7 @@ int main(int argc, char** argv) {
         return 2;
     }
     CaptureFixture fixture;
-    fixture.setWindowTitle(QStringLiteral("Snow Shot direct capture smoke"));
+    fixture.setWindowTitle(QStringLiteral("WingShot direct capture smoke"));
     fixture.resize(360, 240);
     fixture.show();
     fixture.repaint();

@@ -569,7 +569,7 @@ void CustomAiModelsSettingsWidget::translateModal() {
         m_modelSelect->setPopupFooterWidget(
             m_modelFetchStatus->property("fetchFailed").toBool() ? m_modelFetchStatus : nullptr);
         m_vision->setAccessibleName(tr("Vision Support"));
-        m_fields[0]->setTooltipText(tr("The model name displayed in Snow Shot."));
+        m_fields[0]->setTooltipText(tr("The model name displayed in WingShot."));
         m_fields[1]->setTooltipText(tr(
             "OpenAI-compatible Chat Completions. /chat/completions is appended to this base URL."));
         m_fields[2]->setTooltipText(tr("Optional for servers that do not require authentication."));

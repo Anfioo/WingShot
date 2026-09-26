@@ -1177,7 +1177,7 @@ class ScreenshotOcrRecognitionService::Impl final {
                 ? QCoreApplication::translate(
                       "ScreenshotOcrController",
                       "The bundled text recognition runtime is damaged or incompatible. Reinstall "
-                      "Snow Shot for Apple Silicon.")
+                      "WingShot for Apple Silicon.")
                 : QCoreApplication::translate("ScreenshotOcrController",
                                               "Text recognition components could not be prepared");
         const auto failed = m_pending;

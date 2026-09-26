@@ -106,7 +106,7 @@ inline int runReceiver() {
     cls.lpszClassName = L"SnowCloseReleaseReceiver";
     require(RegisterClassW(&cls) != 0, "register native receiver");
     const HWND window =
-        CreateWindowExW(0, cls.lpszClassName, L"Snow Shot input release test", WS_OVERLAPPEDWINDOW,
+        CreateWindowExW(0, cls.lpszClassName, L"WingShot input release test", WS_OVERLAPPEDWINDOW,
                         50, 50, 900, 700, nullptr, nullptr, cls.hInstance, nullptr);
     require(window != nullptr, "create receiver window");
     ShowWindow(window, SW_SHOW);

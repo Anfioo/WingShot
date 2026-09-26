@@ -1012,7 +1012,7 @@ void nativeWindowInteraction() {
     Server server;
     SnowShotApiClient client(server.url());
     QWidget owner;
-    owner.setWindowTitle(QStringLiteral("Snow Shot Translation interaction test"));
+    owner.setWindowTitle(QStringLiteral("WingShot Translation interaction test"));
     owner.resize(800, 650);
     auto* page = new TranslationPageWidget(&owner, &client, 0);
     page->setGeometry(owner.rect());

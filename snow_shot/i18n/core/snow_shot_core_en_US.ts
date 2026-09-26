@@ -12,8 +12,8 @@
             <translation>, excellent work.</translation>
         </message>
         <message>
-            <source>About Snow Shot</source>
-            <translation>About Snow Shot</translation>
+            <source>About WingShot</source>
+            <translation>About WingShot</translation>
         </message>
         <message>
             <source>Automatic updates are unavailable for this copy.</source>
@@ -28,18 +28,16 @@
             <translation>Cancel download</translation>
         </message>
         <message>
-            <source>Capture, annotate, recognize text, and record your screen,
-so every moment on screen can be expressed clearly and shared easily.</source>
-            <translation>Capture, annotate, recognize text, and record your screen,
-so every moment on screen can be expressed clearly and shared easily.</translation>
+            <source>Capture, annotate, recognize text, and record your screen.</source>
+            <translation>Capture, annotate, recognize text, and record your screen.</translation>
         </message>
         <message>
             <source>Changelog</source>
             <translation>Changelog</translation>
         </message>
         <message>
-            <source>Check for a newer version of Snow Shot.</source>
-            <translation>Check for a newer version of Snow Shot.</translation>
+            <source>Check for a newer version of WingShot.</source>
+            <translation>Check for a newer version of WingShot.</translation>
         </message>
         <message>
             <source>Check for updates</source>
@@ -110,8 +108,12 @@ so every moment on screen can be expressed clearly and shared easily.</translati
             <translation>Feedback and suggestions</translation>
         </message>
         <message>
-            <source>Free and open-source software. Distributed without any warranty.</source>
-            <translation>Free and open-source software. Distributed without any warranty.</translation>
+            <source>Fork of %1 by mg-chao · %2</source>
+            <translation>Fork of %1 by mg-chao · %2</translation>
+        </message>
+        <message>
+            <source>Free software, without warranty.</source>
+            <translation>Free software, without warranty.</translation>
         </message>
         <message>
             <source>Free · Open source</source>
@@ -174,18 +176,6 @@ so every moment on screen can be expressed clearly and shared easily.</translati
             <translation>Screenshot selection, annotation tools, and recognized text</translation>
         </message>
         <message>
-            <source>Snow Shot</source>
-            <translation>Snow Shot</translation>
-        </message>
-        <message>
-            <source>Snow Shot logo</source>
-            <translation>Snow Shot logo</translation>
-        </message>
-        <message>
-            <source>Snow Shot · Make expression clearer</source>
-            <translation>Snow Shot · Make expression clearer</translation>
-        </message>
-        <message>
             <source>Text recognition</source>
             <translation>Text recognition</translation>
         </message>
@@ -216,6 +206,22 @@ so every moment on screen can be expressed clearly and shared easily.</translati
         <message>
             <source>View the source and improve it together</source>
             <translation>View the source and improve it together</translation>
+        </message>
+        <message>
+            <source>WingShot</source>
+            <translation>WingShot</translation>
+        </message>
+        <message>
+            <source>WingShot is a fork of Snow Shot (https://github.com/mg-chao/snow-apps) by mg-chao. The earlier Tauri version is at https://github.com/xiaofeiTM233/snow-shot. In https://github.com/Anfioo/WingShot the main branch keeps the original project and the new branch carries the WingShot changes.</source>
+            <translation>WingShot is a fork of Snow Shot (https://github.com/mg-chao/snow-apps) by mg-chao. The earlier Tauri version is at https://github.com/xiaofeiTM233/snow-shot. In https://github.com/Anfioo/WingShot the main branch keeps the original project and the new branch carries the WingShot changes.</translation>
+        </message>
+        <message>
+            <source>WingShot logo</source>
+            <translation>WingShot logo</translation>
+        </message>
+        <message>
+            <source>WingShot · Make expression clearer</source>
+            <translation>WingShot · Make expression clearer</translation>
         </message>
         <message>
             <source>You are up to date.</source>
@@ -610,8 +616,8 @@ so every moment on screen can be expressed clearly and shared easily.</translati
     <context>
         <name>snow_shot::app::ApplicationController</name>
         <message>
-            <source>An update is ready. Open About to restart and update Snow Shot.</source>
-            <translation>An update is ready. Open About to restart and update Snow Shot.</translation>
+            <source>An update is ready. Open About to restart and update WingShot.</source>
+            <translation>An update is ready. Open About to restart and update WingShot.</translation>
         </message>
         <message>
             <source>Could not pin selected files</source>
@@ -634,12 +640,12 @@ so every moment on screen can be expressed clearly and shared easily.</translati
             <translation>Restart failed</translation>
         </message>
         <message>
-            <source>Snow Shot %1 is available. Open About for update options.</source>
-            <translation>Snow Shot %1 is available. Open About for update options.</translation>
+            <source>WingShot %1 is available. Open About for update options.</source>
+            <translation>WingShot %1 is available. Open About for update options.</translation>
         </message>
         <message>
-            <source>Snow Shot will close and restart to install the update. Continue?</source>
-            <translation>Snow Shot will close and restart to install the update. Continue?</translation>
+            <source>WingShot will close and restart to install the update. Continue?</source>
+            <translation>WingShot will close and restart to install the update. Continue?</translation>
         </message>
         <message>
             <source>Your settings could not be saved. Please retry before updating.</source>

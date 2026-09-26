@@ -286,7 +286,7 @@ class RevealProbeFixture final {
         require(RegisterClassExW(&windowClass) != 0,
                 "could not register the reveal probe fixture class");
         m_window = CreateWindowExW(WS_EX_TOPMOST | WS_EX_TOOLWINDOW, windowClass.lpszClassName,
-                                   L"Snow Shot reveal probe", WS_POPUP, x, y, kWidth, kHeight,
+                                   L"WingShot reveal probe", WS_POPUP, x, y, kWidth, kHeight,
                                    nullptr, nullptr, windowClass.hInstance, nullptr);
         require(m_window != nullptr, "could not create the reveal probe fixture window");
         ShowWindow(m_window, SW_SHOWNOACTIVATE);
@@ -820,7 +820,7 @@ int run(const QCommandLineParser& parser) {
     QFile html(QDir(output).filePath(QStringLiteral("report.html")));
     require(html.open(QIODevice::WriteOnly | QIODevice::Truncate), "could not write report.html");
     html.write(
-        ("<!doctype html><meta charset=utf-8><title>Snow Shot capture startup "
+        ("<!doctype html><meta charset=utf-8><title>WingShot capture startup "
          "performance</title><h1>Capture startup performance (first/second capture)</h1><pre>" +
          htmlEscape(QString::fromUtf8(QJsonDocument(report).toJson(QJsonDocument::Indented))) +
          "</pre>")

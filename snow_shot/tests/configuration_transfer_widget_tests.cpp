@@ -227,7 +227,7 @@ void configurationItemsRenderAsButtons() {
     require(exportButton->accessibleName() == QStringLiteral("Export configuration"),
             "export configuration must expose the item title as the accessible name");
     require(adqt::icons::describeIcon(exportButton->iconRef()).key.pack ==
-                    QStringLiteral("snow-shot") &&
+                    QStringLiteral("wingshot") &&
                 adqt::icons::describeIcon(exportButton->iconRef()).key.name ==
                     QStringLiteral("export-configuration"),
             "export configuration must use the package icon");
@@ -242,7 +242,7 @@ void configurationItemsRenderAsButtons() {
     require(importButton->accessibleName() == QStringLiteral("Import configuration"),
             "import configuration must expose the item title as the accessible name");
     require(adqt::icons::describeIcon(importButton->iconRef()).key.pack ==
-                    QStringLiteral("snow-shot") &&
+                    QStringLiteral("wingshot") &&
                 adqt::icons::describeIcon(importButton->iconRef()).key.name ==
                     QStringLiteral("import-configuration"),
             "import configuration must use the import-config icon");

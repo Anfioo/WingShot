@@ -814,7 +814,7 @@ SettingsItemDefinition screenshotImageQualityItem() {
         settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Image quality")),
         settingsText(QT_TRANSLATE_NOOP(
             "SettingsCatalog",
-            "Set image quality for screenshot files saved outside the Snow Shot dialog")),
+            "Set image quality for screenshot files saved outside the WingShot dialog")),
         {},
         QStringLiteral("screenshot/image_quality"),
         SettingsSliderDefinition{SettingsSliderBinding::ScreenshotImageQuality,
@@ -843,7 +843,7 @@ SettingsItemDefinition screenshotSaveAsFileDialogItem() {
         SettingsSelectBinding::ScreenshotSaveAsFileDialog,
         {{QStringLiteral("system"), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "System"))},
          {QStringLiteral("snow_shot"),
-          settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Snow Shot"))}});
+          settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "WingShot"))}});
 }
 
 QVector<SettingsItemDefinition> screenshotOutputItems() {
@@ -1401,7 +1401,7 @@ SettingsItemDefinition launchAsAdministratorItem() {
         QStringLiteral("system.launch-as-administrator"),
         QT_TRANSLATE_NOOP("SettingsCatalog", "Launch as administrator"),
         QT_TRANSLATE_NOOP("SettingsCatalog",
-                          "Start Snow Shot with administrator privileges when you sign in"),
+                          "Start WingShot with administrator privileges when you sign in"),
         QStringLiteral("system/launch_as_administrator"),
         SettingsSwitchBinding::LaunchAsAdministrator);
 }
@@ -1413,7 +1413,7 @@ SettingsItemDefinition restartAsAdministratorItem() {
     return {QStringLiteral("system.restart-as-administrator"),
             settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Restart as administrator")),
             settingsText(QT_TRANSLATE_NOOP("SettingsCatalog",
-                                           "Restart Snow Shot with administrator privileges")),
+                                           "Restart WingShot with administrator privileges")),
             {},
             {},
             payload};
@@ -1428,7 +1428,7 @@ SettingsItemDefinition loginItemSettingsItem() {
     return {QStringLiteral("system.login-item-settings"),
             settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Open Login Items Settings")),
             settingsText(QT_TRANSLATE_NOOP(
-                "SettingsCatalog", "Manage Snow Shot's login permission in macOS System Settings")),
+                "SettingsCatalog", "Manage WingShot's login permission in macOS System Settings")),
             {},
             {},
             payload};
@@ -1439,11 +1439,11 @@ SettingsItemDefinition autoStartItem() {
         QStringLiteral("system.auto-start-at-boot"),
 #ifdef Q_OS_MACOS
         QT_TRANSLATE_NOOP("SettingsCatalog", "Launch at login"),
-        QT_TRANSLATE_NOOP("SettingsCatalog", "Start Snow Shot in the background when you log in."),
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Start WingShot in the background when you log in."),
 #else
         QT_TRANSLATE_NOOP("SettingsCatalog", "Auto start at boot"),
         QT_TRANSLATE_NOOP("SettingsCatalog",
-                          "Start Snow Shot in the background when Windows starts"),
+                          "Start WingShot in the background when Windows starts"),
 #endif
         QStringLiteral("system/auto_start_at_boot"), SettingsSwitchBinding::AutoStartAtBoot);
 }
@@ -2587,7 +2587,7 @@ QVector<SettingsPageDefinition> builtInPages() {
          QStringLiteral("/settings/appPermissions"),
          settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "App Permissions")),
          settingsText(
-             QT_TRANSLATE_NOOP("SettingsCatalog", "Manage macOS permissions for Snow Shot")),
+             QT_TRANSLATE_NOOP("SettingsCatalog", "Manage macOS permissions for WingShot")),
          {{QStringLiteral("permissions"),
            settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "App Permissions")),
            settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Permission status and access")),

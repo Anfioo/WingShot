@@ -125,7 +125,7 @@ class TranslationCatalogTests(unittest.TestCase):
     def test_metadata_plural_disambiguation_and_mixed_text_survive(self):
         for locale in catalogs.LOCALES:
             root = catalogs.empty_catalog(locale)
-            root.set("extra-po-header-language_team", "Snow Shot")
+            root.set("extra-po-header-language_team", "WingShot")
             ET.SubElement(root, "extra-po-header", {"example": "preserve"}).text = "metadata"
             context = ET.SubElement(root, "context")
             ET.SubElement(context, "name").text = "Core"

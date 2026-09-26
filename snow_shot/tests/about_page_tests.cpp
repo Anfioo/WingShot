@@ -713,7 +713,7 @@ void mainNavigationSearchThemesAndLanguages() {
                     ->styleSheet()
                     .contains(scheme.map.colorBorderSecondary.name(QColor::HexArgb)),
                 "compact version surface follows the neutral theme tokens");
-        require(!child<QLabel>(*page, "aboutLogo")->pixmap().isNull(), "render the Snow Shot icon");
+        require(!child<QLabel>(*page, "aboutLogo")->pixmap().isNull(), "render the WingShot icon");
         auto* logo = child<QLabel>(*page, "aboutLogo");
         require(qFuzzyCompare(logo->pixmap().devicePixelRatio(), logo->devicePixelRatioF()),
                 "the logo uses the current display pixel ratio");
@@ -742,7 +742,7 @@ void mainNavigationSearchThemesAndLanguages() {
                 "load a compiled application translation catalog");
         QCoreApplication::installTranslator(&translator);
         flushEvents();
-        const QString translatedTitle = translator.translate("AboutPageWidget", "About Snow Shot");
+        const QString translatedTitle = translator.translate("AboutPageWidget", "About WingShot");
         require(!translatedTitle.isEmpty() && page->accessibleName() == translatedTitle,
                 "an open About page retranslates immediately");
         require(child<QLabel>(*page, "aboutVersionValue")->text() ==
@@ -760,17 +760,30 @@ void mainNavigationSearchThemesAndLanguages() {
             child<QLabel>(*page, "aboutOpenSource")->text() ==
                     translator.translate("AboutPageWidget", "Free · Open source") &&
                 child<QLabel>(*page, "aboutDescription")->text() ==
-                    translator.translate(
-                        "AboutPageWidget",
-                        "Capture, annotate, recognize text, and record your screen,\n"
-                        "so every moment on screen can be expressed clearly and shared easily."),
+                    translator.translate("AboutPageWidget",
+                                         "Capture, annotate, recognize text, and record your "
+                                         "screen."),
             "the new hero copy retranslates immediately");
+        // The upstream attribution shares the hero copy's line budget, so it must stay a single
+        // line and keep pointing at both the original project and this fork.
+        const QString attribution = child<QLabel>(*page, "aboutAttribution")->text();
+        for (const QString& fragment :
+             translator.translate("AboutPageWidget", "Fork of %1 by mg-chao · %2")
+                 .split(QLatin1Char('%'), Qt::SkipEmptyParts)) {
+            const QString copy = fragment.mid(1).trimmed();
+            if (!copy.isEmpty()) {
+                require(attribution.contains(copy), "the upstream attribution retranslates");
+            }
+        }
+        require(attribution.contains(QStringLiteral("github.com/mg-chao/snow-apps")) &&
+                    attribution.contains(QStringLiteral("github.com/Anfioo/WingShot")),
+                "the upstream attribution links the original project and this fork");
         require(child<QLabel>(*page, "aboutTagline")
                     ->text()
                     .contains(translator.translate("AboutPageWidget", "Elegant screenshots")),
                 "the two-tone headline retranslates");
         require(child<QLabel>(*page, "aboutSlogan")->text() ==
-                    translator.translate("AboutPageWidget", "Snow Shot · Make expression clearer"),
+                    translator.translate("AboutPageWidget", "WingShot · Make expression clearer"),
                 "the footer slogan retranslates");
         const std::array<const char*, 6> features{"Screenshot capture", "Easy annotation",
                                                   "Text recognition",   "Screen recording",

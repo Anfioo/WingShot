@@ -10825,13 +10825,13 @@ void screenshotProductStyleProfileIsComplete() {
                 defaults.rectangle.stroke == red && exact(defaults.rectangle.strokeWidth, 2.0) &&
                 defaults.rectangle.strokeStyle == SnowCanvasStrokeStyle::Solid &&
                 defaults.rectangle.cornerRadii == SnowCanvasCornerRadii{6.0, 6.0, 6.0, 6.0},
-            "rectangle defaults should match the Snow Shot product profile");
+            "rectangle defaults should match the WingShot product profile");
     require(defaults.arrow.stroke == red && exact(defaults.arrow.strokeWidth, 2.0) &&
                 defaults.arrow.startArrowhead == SnowCanvasArrowhead::None &&
                 defaults.arrow.endArrowhead == SnowCanvasArrowhead::Arrow &&
                 defaults.arrow.strokeStyle == SnowCanvasStrokeStyle::Solid &&
                 defaults.arrow.arrowType == SnowCanvasArrowType::Curve,
-            "arrow defaults should match the Snow Shot product profile");
+            "arrow defaults should match the WingShot product profile");
 
     struct ShapeExpectation {
         const SnowCanvasShapeStyle* style;
@@ -10846,16 +10846,16 @@ void screenshotProductStyleProfileIsComplete() {
     const ShapeExpectation shapes[] = {
         {&defaults.line, transparent, red, 2.0, 1.0, SnowCanvasArrowType::Curve,
          SnowCanvasHighlightShape::Rectangle,
-         "line defaults should match the Snow Shot product profile"},
+         "line defaults should match the WingShot product profile"},
         {&defaults.freeDraw, transparent, red, 2.0, 1.0, SnowCanvasArrowType::Straight,
          SnowCanvasHighlightShape::Rectangle,
-         "free-draw defaults should match the Snow Shot product profile"},
+         "free-draw defaults should match the WingShot product profile"},
         {&defaults.rectangleHighlight, red, redAccent, 0.0, 1.0, SnowCanvasArrowType::Straight,
          SnowCanvasHighlightShape::Rectangle,
-         "rectangle-highlight defaults should match the Snow Shot product profile"},
+         "rectangle-highlight defaults should match the WingShot product profile"},
         {&defaults.penHighlight, transparent, red, 30.0, 1.0, SnowCanvasArrowType::Straight,
          SnowCanvasHighlightShape::Rectangle,
-         "pen-highlight defaults should match the Snow Shot product profile"},
+         "pen-highlight defaults should match the WingShot product profile"},
     };
     for (const ShapeExpectation& expected : shapes) {
         require(expected.style->fill == expected.fill &&
@@ -10878,7 +10878,7 @@ void screenshotProductStyleProfileIsComplete() {
                 defaults.penFilter.type == SnowCanvasFilterType::Mosaic &&
                 exact(defaults.penFilter.strength, 0.5) && exact(defaults.penFilter.opacity, 1.0) &&
                 exact(defaults.penFilter.strokeWidth, 30.0),
-            "filter defaults should match the Snow Shot product profile");
+            "filter defaults should match the WingShot product profile");
     require(defaults.text.color == red && exact(defaults.text.fontSize, 30.0) &&
                 defaults.text.fontFamily.isEmpty() && defaults.text.fill == transparent &&
                 defaults.text.fillStyle == SnowCanvasFillStyle::Solid &&
@@ -10888,7 +10888,7 @@ void screenshotProductStyleProfileIsComplete() {
                 defaults.text.horizontalAlign == SnowCanvasTextHorizontalAlign::Left &&
                 defaults.text.verticalAlign == SnowCanvasTextVerticalAlign::Center &&
                 exact(defaults.text.opacity, 1.0),
-            "text defaults should match the Snow Shot product profile");
+            "text defaults should match the WingShot product profile");
     require(defaults.serialNumber.number == 1 &&
                 defaults.serialNumber.type == SnowCanvasSerialNumberType::OutlinedCircle &&
                 defaults.serialNumber.color == red && defaults.serialNumber.fill == transparent &&
@@ -10898,17 +10898,17 @@ void screenshotProductStyleProfileIsComplete() {
                 exact(defaults.serialNumber.strokeWidth, 2.0) &&
                 defaults.serialNumber.strokeStyle == SnowCanvasStrokeStyle::Solid &&
                 exact(defaults.serialNumber.opacity, 1.0),
-            "sequence-number defaults should match the Snow Shot product profile");
+            "sequence-number defaults should match the WingShot product profile");
     require(defaults.watermark.color == QColor(0, 0, 0, 255) && defaults.watermark.text.isEmpty() &&
                 defaults.watermark.templateValue.isEmpty() &&
                 !defaults.watermark.templateApplicationTime.has_value() &&
                 exact(defaults.watermark.fontSize, 16.0) &&
                 defaults.watermark.fontFamily.isEmpty() && exact(defaults.watermark.angle, 30.0) &&
                 exact(defaults.watermark.gap, 56.0) && exact(defaults.watermark.opacity, 0.16),
-            "watermark defaults should match the Snow Shot product profile");
+            "watermark defaults should match the WingShot product profile");
     require(defaults.spotlight.color == QColor(0, 0, 0, 255) &&
                 exact(defaults.spotlight.opacity, 0.64),
-            "spotlight defaults should match the Snow Shot product profile");
+            "spotlight defaults should match the WingShot product profile");
 }
 
 void resetStyleStateRestoresTheCompleteInjectedProfileWithoutCommands() {

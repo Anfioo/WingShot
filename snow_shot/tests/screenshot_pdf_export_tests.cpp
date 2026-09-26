@@ -50,8 +50,8 @@ void validateStructure(const QByteArray& pdf) {
     require(pdf.count("/Type /Page ") == 1 && pdf.contains("/Count 1"),
             "PDF must contain one page");
     require(pdf.contains("1 1 1 rg\n0 0 "), "PDF must explicitly paint a white page");
-    require(pdf.contains("/Creator <feff0053006e006f0077002000530068006f0074>"),
-            "PDF creator must identify Snow Shot");
+    require(pdf.contains("/Creator <feff00570069006e006700530068006f0074>"),
+            "PDF creator must identify WingShot");
 }
 void layoutRules() {
     for (QSize size :

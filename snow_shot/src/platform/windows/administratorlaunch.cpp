@@ -131,7 +131,7 @@ bool peerMatches(QLocalSocket& socket, DWORD expected, bool serverPeer) {
 QString taskName(const QString& executable, const QString& sid) {
     const QByteArray identity =
         QDir::cleanPath(QDir::fromNativeSeparators(executable)).toCaseFolded().toUtf8();
-    return QStringLiteral("SnowShot-%1-%2")
+    return QStringLiteral("WingShot-%1-%2")
         .arg(sid,
              QString::fromLatin1(
                  QCryptographicHash::hash(identity, QCryptographicHash::Sha256).toHex().left(24)));
@@ -369,9 +369,9 @@ struct RegistryHandle {
             RegCloseKey(value);
     }
 };
-// Reconciles the Snow Shot auto-start value under base\subKey for uninstall and migration.
+// Reconciles the WingShot auto-start value under base\subKey for uninstall and migration.
 // Returns whether an accessible matching registration was removed or rewritten.
-// A key that cannot be opened for reading cannot contain a verifiable Snow Shot
+// A key that cannot be opened for reading cannot contain a verifiable WingShot
 // registration: machine hives (.DEFAULT, service accounts S-1-5-19/S-1-5-20) deny access
 // to filtered tokens, and the service hives are readable only by SYSTEM, so probing must
 // skip them instead of failing the whole uninstall. Only a registration that was verified
@@ -387,7 +387,7 @@ bool reconcileStartupRunValue(HKEY base, const QString& subKey, const QString& e
     wchar_t command[32768];
     DWORD bytes = sizeof(command);
     const LSTATUS read =
-        RegGetValueW(run, nullptr, L"SnowShot", RRF_RT_REG_SZ, nullptr, command, &bytes);
+        RegGetValueW(run, nullptr, L"WingShot", RRF_RT_REG_SZ, nullptr, command, &bytes);
     if (read != ERROR_SUCCESS ||
         QString::fromWCharArray(command).compare(expectedCommand, Qt::CaseInsensitive) != 0) {
         return false;
@@ -401,11 +401,11 @@ bool reconcileStartupRunValue(HKEY base, const QString& subKey, const QString& e
     check(HRESULT_FROM_WIN32(opened));
     RegistryHandle writeGuard{write};
     if (replacementCommand.isEmpty()) {
-        check(HRESULT_FROM_WIN32(RegDeleteValueW(write, L"SnowShot")));
+        check(HRESULT_FROM_WIN32(RegDeleteValueW(write, L"WingShot")));
     } else {
         const std::wstring value = replacementCommand.toStdWString();
         check(HRESULT_FROM_WIN32(RegSetValueExW(
-            write, L"SnowShot", 0, REG_SZ, reinterpret_cast<const BYTE*>(value.c_str()),
+            write, L"WingShot", 0, REG_SZ, reinterpret_cast<const BYTE*>(value.c_str()),
             static_cast<DWORD>((value.size() + 1) * sizeof(wchar_t)))));
     }
     return true;
@@ -859,11 +859,11 @@ static AdministratorResult updateInstallationStartup(const QString& root,
                 SysFreeString(user);
             } catch (...) {
                 // A task that cannot be inspected (for example a third-party task with a
-                // restrictive security descriptor) is not a verifiable Snow Shot
+                // restrictive security descriptor) is not a verifiable WingShot
                 // registration; skipping it must not abort the uninstall.
                 continue;
             }
-            if (!candidate.startsWith(u"SnowShot-"))
+            if (!candidate.startsWith(u"WingShot-"))
                 continue;
             tasks.sid = canonicalAccountSid(owner);
             if (tasks.sid.isEmpty() || candidate != taskName(tasks.executable, tasks.sid))

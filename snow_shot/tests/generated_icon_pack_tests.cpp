@@ -94,10 +94,10 @@ void everySnowShotEntryRenders() {
     namespace icons = snow_shot::presentation::icons::custom;
     adqt::icons::IconRenderer renderer;
     const auto registered = icons::registerWith(renderer);
-    require(registered.ok(), "Snow Shot pack registration should succeed");
+    require(registered.ok(), "WingShot pack registration should succeed");
     const adqt::icons::IconPack* staticPack = icons::pack().staticPack();
     require(staticPack != nullptr && staticPack->entryCount == 142,
-            "Snow Shot pack should contain all 142 project-owned assets");
+            "WingShot pack should contain all 142 project-owned assets");
 
     adqt::icons::IconRenderRequest request;
     request.logicalSize = QSize(32, 32);
@@ -113,18 +113,18 @@ void everySnowShotEntryRenders() {
     } capture;
     for (std::size_t index = 0; index < staticPack->entryCount; ++index) {
         const auto ref = icons::pack().icon(index);
-        require(ref.isValid(), "every Snow Shot pack entry should create a reference");
+        require(ref.isValid(), "every WingShot pack entry should create a reference");
         const QPixmap pixmap = renderer.renderIconPixmap(ref, request);
         require(!pixmap.isNull() && pixmap.size() == QSize(40, 40) &&
                     qFuzzyCompare(pixmap.devicePixelRatio(), 1.25),
-                "every Snow Shot pack entry should render at fractional DPR");
+                "every WingShot pack entry should render at fractional DPR");
         require(!alphaBounds(pixmap.toImage()).isEmpty(),
-                "every Snow Shot pack entry should have nonblank alpha bounds");
+                "every WingShot pack entry should have nonblank alpha bounds");
     }
     for (const auto& warning : renderWarnings)
         std::cerr << warning.toStdString() << '\n';
     require(renderWarnings.isEmpty(),
-            "every Snow Shot icon must render without missing images or undefined references");
+            "every WingShot icon must render without missing images or undefined references");
 }
 
 void recaptureIconUsesThemeColor() {
@@ -151,27 +151,27 @@ void projectIconColorsAndModelsArePreserved() {
     namespace icons = snow_shot::presentation::icons::custom;
     const QColor primary(0, 166, 90);
     const QColor brandPurple(0x92, 0x54, 0xde);
-    const auto logoRef = icons::brand::SnowShotLogo(adqt::icons::IconColors::primary(primary));
+    const auto logoRef = icons::brand::WingshotLogo(adqt::icons::IconColors::primary(primary));
     const auto logoMetadata = adqt::icons::describeIcon(logoRef);
-    require(logoMetadata.key.pack == QStringLiteral("snow-shot") &&
+    require(logoMetadata.key.pack == QStringLiteral("wingshot") &&
                 logoMetadata.key.variant == QStringLiteral("brand") &&
                 logoMetadata.colorModel == adqt::icons::IconColorModel::Monochrome,
-            "Snow Shot logo should be a project-owned hybrid monochrome reference");
+            "WingShot logo should be a project-owned hybrid monochrome reference");
     const QImage logo = render(logoRef, QSize(190, 34)).toImage();
     require(containsOpaqueColor(logo, brandPurple) && containsOpaqueColor(logo, primary),
-            "Snow Shot logo should preserve its fixed purple mark and themed text slot");
+            "WingShot logo should preserve its fixed purple mark and themed text slot");
 
     const auto opacityRef = icons::outlined::Opacity(adqt::icons::IconColors::primary(primary));
     const auto opacityMetadata = adqt::icons::describeIcon(opacityRef);
     const QImage opacity = render(opacityRef, QSize(32, 32)).toImage();
-    require(opacityMetadata.key.pack == QStringLiteral("snow-shot") &&
+    require(opacityMetadata.key.pack == QStringLiteral("wingshot") &&
                 opacityMetadata.key.name == QStringLiteral("opacity") &&
                 containsOpaqueColor(opacity, primary),
-            "opacity should render from the Snow Shot pack with its primary slot");
+            "opacity should render from the WingShot pack with its primary slot");
 
     const auto mouseRef = icons::outlined::Mouse(adqt::icons::IconColors::primary(primary));
     const auto mouseMetadata = adqt::icons::describeIcon(mouseRef);
-    require(mouseMetadata.key.pack == QStringLiteral("snow-shot") &&
+    require(mouseMetadata.key.pack == QStringLiteral("wingshot") &&
                 mouseMetadata.key.name == QStringLiteral("mouse") &&
                 containsOpaqueColor(render(mouseRef, QSize(32, 32)).toImage(), primary),
             "mouse should expose a tintable project-owned icon factory");
@@ -199,7 +199,7 @@ void projectIconColorsAndModelsArePreserved() {
     }
     require(appMetadata.colorModel == adqt::icons::IconColorModel::FullColor &&
                 opaqueColors.size() > 4,
-            "Snow Shot application icon should preserve full-color source pixels");
+            "WingShot application icon should preserve full-color source pixels");
 }
 
 void ocrTranslateIconUsesTheSuppliedProjectAsset() {
@@ -209,7 +209,7 @@ void ocrTranslateIconUsesTheSuppliedProjectAsset() {
         icons::outlined::OcrTranslate(adqt::icons::IconColors::primary(primary));
     const auto translateMetadata = adqt::icons::describeIcon(translateRef);
     const QImage translate = render(translateRef, QSize(32, 32)).toImage();
-    require(translateMetadata.key.pack == QStringLiteral("snow-shot") &&
+    require(translateMetadata.key.pack == QStringLiteral("wingshot") &&
                 translateMetadata.key.name == QStringLiteral("ocr-translate") &&
                 containsOpaqueColor(translate, primary) && !alphaBounds(translate).isEmpty(),
             "OCR Translate should render the supplied project asset with its primary color");
@@ -221,10 +221,10 @@ void flipVerticalIconUsesTheRotatedProjectAsset() {
     const auto metadata = adqt::icons::describeIcon(ref);
     const QRect bounds = alphaBounds(render(ref, QSize(64, 64)).toImage());
 
-    require(metadata.key.pack == QStringLiteral("snow-shot") &&
+    require(metadata.key.pack == QStringLiteral("wingshot") &&
                 metadata.key.name == QStringLiteral("flip-vertical") &&
                 bounds.height() > bounds.width(),
-            "flip-vertical should use the rotated Snow Shot project asset");
+            "flip-vertical should use the rotated WingShot project asset");
 }
 
 void conversionIconsUseTheSuppliedProjectAssets() {
@@ -233,7 +233,7 @@ void conversionIconsUseTheSuppliedProjectAssets() {
         const auto colors = adqt::icons::IconColors::primary(tint);
         for (const auto& ref : {icons::Markdown(colors), icons::Html(colors)}) {
             const auto metadata = adqt::icons::describeIcon(ref);
-            require(metadata.key.pack == QStringLiteral("snow-shot") &&
+            require(metadata.key.pack == QStringLiteral("wingshot") &&
                         (metadata.key.name == QStringLiteral("markdown") ||
                          metadata.key.name == QStringLiteral("html")),
                     "conversion icons resolve to the supplied project vector assets");

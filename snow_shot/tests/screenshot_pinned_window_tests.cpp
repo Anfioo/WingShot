@@ -9716,7 +9716,7 @@ void pinnedSaveDialogRoutingAndCancellation() {
             "restore custom save directory failed");
     require(settings.setLastManualSaveFormat(QStringLiteral("png")) &&
                 settings.setSaveAsFileDialog(QStringLiteral("snow_shot")),
-            "Snow Shot routing setup failed");
+            "WingShot routing setup failed");
     auto* editButton = buttonNamed(*window, QStringLiteral("Enable drawing mode"));
     require(editButton, "pinned save test drawing button missing");
     editButton->click();
@@ -9727,7 +9727,7 @@ void pinnedSaveDialogRoutingAndCancellation() {
     action->trigger();
     auto* modal = window->findChild<AdModal*>(QStringLiteral("screenshotSaveAsFileModal"));
     require(modal && modal->mode() == AdModal::Mode::Window,
-            "pinned save must open Snow Shot dialog");
+            "pinned save must open WingShot dialog");
     require(toolbar->isVisible() &&
                 modal->contentWidget()->window()->windowHandle()->transientParent() ==
                     toolbar->windowHandle(),

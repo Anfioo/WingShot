@@ -131,14 +131,14 @@ void failuresAndEligibility() {
 }
 void launchAndPaths() {
     const QString user = QStringLiteral("/Users/example/Applications");
-    require(loginItemLocationAllowed(QStringLiteral("/Applications/Snow Shot.app"), user),
+    require(loginItemLocationAllowed(QStringLiteral("/Applications/WingShot.app"), user),
             "system Applications allowed");
-    require(loginItemLocationAllowed(user + QStringLiteral("/Snow Shot.app"), user),
+    require(loginItemLocationAllowed(user + QStringLiteral("/WingShot.app"), user),
             "user Applications allowed");
     for (const auto& path :
-         {QStringLiteral("/Applications-other/Snow Shot.app"),
-          QStringLiteral("/Volumes/Snow Shot/Snow Shot.app"),
-          QStringLiteral("/private/var/AppTranslocation/Snow Shot.app"),
+         {QStringLiteral("/Applications-other/WingShot.app"),
+          QStringLiteral("/Volumes/WingShot/WingShot.app"),
+          QStringLiteral("/private/var/AppTranslocation/WingShot.app"),
           QStringLiteral("/build/snow_shot.app"), QStringLiteral("/Applications/snow_shot")})
         require(!loginItemLocationAllowed(path, user), "non-installed bundle rejected");
     const QStringList manual{QStringLiteral("snow_shot"), QStringLiteral("--show-main-window")};

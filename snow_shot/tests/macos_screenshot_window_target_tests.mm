@@ -40,7 +40,7 @@ int main() {
         ];
         const auto snapshot = reinterpret_cast<CFArrayRef>(windows);
         require(focusedWindowTarget(snapshot, self).id == 4,
-                "focused capture must allow Snow Shot's own foreground window");
+                "focused capture must allow WingShot's own foreground window");
         require(focusedWindowTarget(snapshot, other).id == 5,
                 "focused capture must select the frontmost eligible window of its owner");
         require(focusedWindowTarget(snapshot, 0).id == 0 &&

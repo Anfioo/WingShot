@@ -96,7 +96,7 @@ over HTTPS from the same release source, not a separate publisher-signature syst
 
 The DMG contains `Snow Shot.app` at its root (the installer also accepts legacy
 `snow_shot.app` packages), with bundle ID
-`com.snowshot.snow_shot`, executable `snow_shot`, a minimum macOS version, and a
+`com.anfioo.wingshot`, executable `snow_shot`, a minimum macOS version, and a
 valid bundle signature (ad-hoc is supported). Publishing these assets and this
 installer remains a separate release operation. Nothing is uploaded by the script.
 
@@ -336,7 +336,7 @@ and microphone permissions when using the corresponding capabilities.
 Ad-hoc signatures identify a particular build by its code hash. After rebuilding,
 TCC can reject the old grant while System Settings still shows Snow Shot enabled.
 The system log then reports `Failed to match existing code requirement` for
-`com.snowshot.snow_shot` and `kTCCServiceAccessibility`.
+`com.anfioo.wingshot` and `kTCCServiceAccessibility`.
 
 Quit Snow Shot, remove its old entry from System Settings > Privacy & Security >
 Accessibility with the minus button, then add and enable the exact deployed app:

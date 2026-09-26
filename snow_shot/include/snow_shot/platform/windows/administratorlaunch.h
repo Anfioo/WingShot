@@ -55,7 +55,7 @@ int dispatchAdministratorHelper(const QStringList& arguments);
 AdministratorResult reconcileStartupMode(StartupMode mode);
 // Reconciles the auto-start Run value under an HKEY_USERS-relative Run key path (for
 // example "S-1-5-21-...\\Software\\Microsoft\\Windows\\CurrentVersion\\Run"). Keys that are
-// missing or deny read access cannot contain a verifiable Snow Shot registration and are
+// missing or deny read access cannot contain a verifiable WingShot registration and are
 // skipped; throws only when a matching registration cannot be removed or rewritten.
 void reconcileStartupRunValue(const QString& usersRunKey, const QString& expectedCommand,
                               const QString& replacementCommand);

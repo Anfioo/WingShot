@@ -277,7 +277,7 @@ bool write(const Payload& payload, QIODevice* output, const ScreenshotPdfOptions
         options.creationTime.isValid() ? options.creationTime : QDateTime::currentDateTimeUtc();
     const int info =
         writer.object("<< /Title " + pdfString(options.title) + " /Creator " +
-                      pdfString(QStringLiteral("Snow Shot")) + " /CreationDate (D:" +
+                      pdfString(QStringLiteral("WingShot")) + " /CreationDate (D:" +
                       time.toUTC().toString(QStringLiteral("yyyyMMddHHmmss")).toLatin1() + "Z) >>");
     if (isCancelled(cancelled, error))
         return false;

@@ -25,7 +25,7 @@ class MacOSBundleMetadata(unittest.TestCase):
         package_source = (ROOT / 'cmake/SnowShotMacOSPackage.cmake').read_text()
         self.assertIn('@SNOW_DMG_WORDMARK@', background_source)
         self.assertNotIn('>Snow Shot</', background_source)
-        self.assertIn('icons/resources/snow-shot-logo.svg', package_source)
+        self.assertIn('icons/resources/wingshot-logo.svg', package_source)
         self.assertIn('configure_file(', package_source)
         language_key = '{http://www.w3.org/XML/1998/namespace}lang'
         groups = {element.attrib[language_key]: element
@@ -46,7 +46,7 @@ class MacOSBundleMetadata(unittest.TestCase):
         self.assertEqual(plist['CFBundleInfoDictionaryVersion'], '6.0')
         self.assertEqual(plist['CFBundleName'], 'Snow Shot')
         self.assertEqual(plist['CFBundleDisplayName'], 'Snow Shot')
-        self.assertEqual(plist['CFBundleIdentifier'], 'com.snowshot.snow_shot')
+        self.assertEqual(plist['CFBundleIdentifier'], 'com.anfioo.wingshot')
         self.assertEqual(plist['LSApplicationCategoryType'], 'public.app-category.productivity')
         self.assertEqual(plist['NSHumanReadableCopyright'], '${SNOW_SHOT_COPYRIGHT}')
         for language in plist['CFBundleLocalizations']:
@@ -337,7 +337,7 @@ if name == 'openssl':
         macos = (ROOT / 'cmake/SnowShotMacOS.cmake').read_text()
         self.assertIn('SNOW_MACOS_CODESIGN_IDENTITY STREQUAL "AUTO"', macos)
         self.assertIn('ensure-macos-codesign-identity.sh', macos)
-        self.assertIn('--identifier com.snowshot.snow_shot', macos)
+        self.assertIn('--identifier com.anfioo.wingshot', macos)
         self.assertIn('$<TARGET_FILE:snow_shot>', macos)
         self.assertIn('$<TARGET_FILE:snow_shot>.snow-signing', macos)
 

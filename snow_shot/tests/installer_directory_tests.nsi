@@ -1,6 +1,6 @@
 Unicode true
 !include "${PACKAGING}\InstallDirectory.nsh"
-Name "Snow Shot installer directory test"
+Name "WingShot installer directory test"
 OutFile "${OUTPUT}"
 RequestExecutionLevel user
 InstallDir "${DEFAULT_DIRECTORY}"

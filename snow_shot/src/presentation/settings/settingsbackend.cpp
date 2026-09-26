@@ -186,7 +186,7 @@ applyStartupSettings(bool enabled, bool elevated, platform::macos::LoginItemServ
     if (!result.success && !save(restoredEnabled, restoredElevated)) {
         auto failed = result;
         failed.error += QCoreApplication::translate(
-            "AdministratorLaunch", " Settings recovery failed. Retry before closing Snow Shot.");
+            "AdministratorLaunch", " Settings recovery failed. Retry before closing WingShot.");
         return failed;
     }
     return result;

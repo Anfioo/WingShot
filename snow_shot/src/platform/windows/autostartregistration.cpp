@@ -17,7 +17,7 @@ namespace snow_shot::platform::windows {
 namespace {
 #if defined(Q_OS_WIN) || defined(_WIN32)
 constexpr wchar_t RUN_KEY[] = L"Software\\Microsoft\\Windows\\CurrentVersion\\Run";
-constexpr wchar_t VALUE_NAME[] = L"SnowShot";
+constexpr wchar_t VALUE_NAME[] = L"WingShot";
 
 QString windowsErrorMessage(const QString& operation, LSTATUS status) {
     return QStringLiteral("%1 failed with Windows error %2").arg(operation).arg(status);

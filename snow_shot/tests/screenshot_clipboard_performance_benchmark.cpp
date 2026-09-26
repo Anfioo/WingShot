@@ -738,7 +738,7 @@ bool runSelfTest(Collector& collector) {
 
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
-    QCoreApplication::setApplicationName(QStringLiteral("Snow Shot Clipboard Benchmark"));
+    QCoreApplication::setApplicationName(QStringLiteral("WingShot Clipboard Benchmark"));
     QCoreApplication::setApplicationVersion(QStringLiteral("1"));
 
     QCommandLineParser parser;

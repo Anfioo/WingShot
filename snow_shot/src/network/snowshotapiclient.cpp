@@ -130,7 +130,7 @@ QString problemDetail(const QJsonObject& object) {
 
 QString translationSystemPrompt(const SnowShotTranslationRequest& request) {
     return QStringLiteral(
-               "You are the translation engine for Snow Shot's screenshot text editor.\n"
+               "You are the translation engine for WingShot's screenshot text editor.\n"
                "Source language: %1\n"
                "Target language: %2\n\n"
                "Translate the entire user message faithfully and naturally into the target "

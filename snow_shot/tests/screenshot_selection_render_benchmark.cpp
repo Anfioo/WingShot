@@ -69,7 +69,7 @@ struct BenchmarkFixture {
     explicit BenchmarkFixture(const QSize& size)
         : canvas(std::make_unique<SnowCanvasWidget>(&window)),
           renderer(std::make_unique<ScreenshotCanvasRenderer>(*canvas)) {
-        window.setWindowTitle(QStringLiteral("Snow Shot selection benchmark"));
+        window.setWindowTitle(QStringLiteral("WingShot selection benchmark"));
         window.setAttribute(Qt::WA_NativeWindow, true);
         window.resize(size);
         auto* layout = new QVBoxLayout(&window);
@@ -362,7 +362,7 @@ QJsonObject writeReports(const QList<QJsonObject>& objects, const QString& jsonl
     }
     const QByteArray summaryJson = QJsonDocument(summary).toJson(QJsonDocument::Indented);
     const QByteArray htmlContent =
-        "<!doctype html><meta charset=\"utf-8\"><title>Snow Shot selection render benchmark</title>"
+        "<!doctype html><meta charset=\"utf-8\"><title>WingShot selection render benchmark</title>"
         "<style>body{font:14px system-ui;margin:24px}pre{white-space:pre-wrap}</style>"
         "<h1>Selection render benchmark</h1><pre>" +
         summaryJson + "</pre>";
@@ -376,7 +376,7 @@ int main(int argc, char** argv) {
     QApplication application(argc, argv);
     QCommandLineParser parser;
     parser.setApplicationDescription(
-        QStringLiteral("Native Windows Snow Shot selection rendering benchmark"));
+        QStringLiteral("Native Windows WingShot selection rendering benchmark"));
     parser.addHelpOption();
     parser.addOption({QStringLiteral("jsonl"), QStringLiteral("JSONL output path"),
                       QStringLiteral("path"), QStringLiteral("selection-render-benchmark.jsonl")});

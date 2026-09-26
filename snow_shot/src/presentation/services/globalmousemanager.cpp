@@ -295,10 +295,10 @@ QString globalMousePermissionMessage(const GlobalMousePermissionState& state) {
     case Status::Ready:
         return GlobalMouseManager::tr("Global mouse gestures are ready.");
     case Status::ListenRequired:
-        return GlobalMouseManager::tr("Allow Snow Shot in System Settings > Privacy & Security > "
+        return GlobalMouseManager::tr("Allow WingShot in System Settings > Privacy & Security > "
                                       "Input Monitoring to use global mouse gestures.");
     case Status::AccessibilityRequired:
-        return GlobalMouseManager::tr("Allow Snow Shot in System Settings > Privacy & Security > "
+        return GlobalMouseManager::tr("Allow WingShot in System Settings > Privacy & Security > "
                                       "Accessibility to use global mouse gestures.");
     case Status::Unavailable:
         return GlobalMouseManager::tr(

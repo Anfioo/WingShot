@@ -267,7 +267,7 @@ void globalMouseNativePerformanceTests() {
             for (int i = 0; i < 1000; ++i)
                 input.move(i);
             require(input.queries == idleQueries && input.mouseInstalls == 0,
-                    "ordinary desktop movement must do no Snow Shot mouse work");
+                    "ordinary desktop movement must do no WingShot mouse work");
             input.key(VK_LWIN, false);
             require(input.mouse == nullptr, "partial modifier matches must not arm mouse input");
             input.key(VK_LMENU, false);

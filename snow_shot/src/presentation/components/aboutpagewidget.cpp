@@ -144,7 +144,7 @@ class AboutArtwork final : public QWidget {
         const auto translated = [](const char* source) {
             return QCoreApplication::translate("AboutPageWidget", source).toHtmlEscaped().toUtf8();
         };
-        svg.replace("{{product}}", translated(QT_TRANSLATE_NOOP("AboutPageWidget", "Snow Shot")));
+        svg.replace("{{product}}", translated(QT_TRANSLATE_NOOP("AboutPageWidget", "WingShot")));
         svg.replace("{{moment}}",
                     translated(QT_TRANSLATE_NOOP("AboutPageWidget", "Make every moment clear.")));
         svg.replace("{{ocr}}",
@@ -310,6 +310,11 @@ QUrl aboutProjectUrl(const QString& suffix = {}) {
     url.setPath(path + suffix);
     return url;
 }
+
+QString aboutLink(const QString& url, const QString& label) {
+    return QStringLiteral("<a href=\"%1\">%2</a>")
+        .arg(url.toHtmlEscaped(), label.toHtmlEscaped());
+}
 } // namespace
 
 struct AboutPageWidget::Ui {
@@ -364,6 +369,7 @@ struct AboutPageWidget::Ui {
     QLabel* community = nullptr;
     QLabel* heart = nullptr;
     QLabel* license = nullptr;
+    QLabel* attribution = nullptr;
     QLabel* copyright = nullptr;
     QLabel* slogan = nullptr;
     int featureColumns = 0;
@@ -415,6 +421,16 @@ AboutPageWidget::AboutPageWidget(QWidget* parent, UrlOpener urlOpener,
     copyLayout->addWidget(m_ui->tagline);
     m_ui->description = aboutLabel(QStringLiteral("aboutDescription"), m_ui->heroCopy);
     copyLayout->addWidget(m_ui->description);
+    // The upstream attribution shares the hero copy's line budget. The About page already fills
+    // the default window exactly, so the hero description and the footer license line are held
+    // one line shorter to pay for it; keep this text on a single line.
+    m_ui->attribution = aboutLabel(QStringLiteral("aboutAttribution"), m_ui->heroCopy);
+    m_ui->attribution->setTextFormat(Qt::RichText);
+    m_ui->attribution->setTextInteractionFlags(Qt::TextBrowserInteraction);
+    m_ui->attribution->setOpenExternalLinks(false);
+    connect(m_ui->attribution, &QLabel::linkActivated, this,
+            [this](const QString& url) { openProjectLink(QUrl(url)); });
+    copyLayout->addWidget(m_ui->attribution);
     m_ui->heroLayout->addWidget(m_ui->heroCopy, 1);
     m_ui->artwork = new AboutArtwork(m_ui->hero);
     m_ui->heroLayout->addWidget(m_ui->artwork, 0, Qt::AlignCenter);
@@ -707,9 +723,13 @@ void AboutPageWidget::applyTheme(const styles::ThemeColorScheme& scheme) {
     styleAboutLabel(m_ui->versionValue, metric.fontSizeLG, QFont::DemiBold, colors.colorText);
     styleAboutLabel(m_ui->community, metric.fontSizeSM, QFont::Normal, colors.colorTextSecondary);
     styleAboutLabel(m_ui->copyright, metric.fontSizeSM, QFont::Normal, colors.colorTextSecondary);
-    for (QLabel* label : {m_ui->license, m_ui->slogan}) {
+    for (QLabel* label : {m_ui->license, m_ui->attribution, m_ui->slogan}) {
         styleAboutLabel(label, metric.fontSizeSM - 2, QFont::Normal, colors.colorTextTertiary);
     }
+    // Rich-text links take QPalette::Link rather than the label's window text.
+    QPalette attributionPalette = m_ui->attribution->palette();
+    attributionPalette.setColor(QPalette::Link, colors.colorPrimary);
+    m_ui->attribution->setPalette(attributionPalette);
     styleAboutLabel(m_ui->linkError, metric.fontSizeSM, QFont::Normal, colors.colorErrorText);
     const int logoSize = metric.controlHeight;
     m_ui->logo->setFixedSize(logoSize, logoSize);
@@ -740,9 +760,9 @@ void AboutPageWidget::applyTheme(const styles::ThemeColorScheme& scheme) {
 void AboutPageWidget::retranslateUi() {
     refreshUpdateStatus();
     const bool hasVersion = !m_version.trimmed().isEmpty();
-    setAccessibleName(tr("About Snow Shot"));
-    m_ui->productName->setText(tr("Snow Shot"));
-    m_ui->logo->setAccessibleName(tr("Snow Shot logo"));
+    setAccessibleName(tr("About WingShot"));
+    m_ui->productName->setText(tr("WingShot"));
+    m_ui->logo->setAccessibleName(tr("WingShot logo"));
     m_ui->openSource->setText(tr("Free · Open source"));
     const QColor violet(m_ui->scheme.appearance == styles::ThemeAppearance::Dark ? "#b58aec"
                                                                                  : "#7052d8");
@@ -750,8 +770,7 @@ void AboutPageWidget::retranslateUi() {
                                .arg(violet.name(), tr("Elegant screenshots").toHtmlEscaped(),
                                     tr(", excellent work.").toHtmlEscaped()));
     m_ui->description->setText(
-        tr("Capture, annotate, recognize text, and record your screen,\n"
-           "so every moment on screen can be expressed clearly and shared easily."));
+        tr("Capture, annotate, recognize text, and record your screen."));
     const std::array<QString, 6> features{tr("Screenshot capture"), tr("Easy annotation"),
                                           tr("Text recognition"),   tr("Screen recording"),
                                           tr("Pin to screen"),      tr("Screenshot history")};
@@ -787,10 +806,20 @@ void AboutPageWidget::retranslateUi() {
     m_ui->community->setText(tr("Built for daily work, and growing with the community."));
     m_ui->license->setText(
         tr("%1 · %2").arg(tr("GNU General Public License v3.0 or later"),
-                          tr("Free and open-source software. Distributed without any warranty.")));
+                          tr("Free software, without warranty.")));
     m_ui->copyright->setText(
         tr("Copyright © %1 %2").arg(QStringLiteral("2025–2026"), QStringLiteral("mg-chao")));
-    m_ui->slogan->setText(tr("Snow Shot · Make expression clearer"));
+    m_ui->attribution->setText(
+        tr("Fork of %1 by mg-chao · %2")
+            .arg(aboutLink(QStringLiteral("https://github.com/mg-chao/snow-apps"),
+                           QStringLiteral("Snow Shot")),
+                 aboutLink(QStringLiteral(SNOW_SHOT_PROJECT_URL), QStringLiteral("WingShot"))));
+    m_ui->attribution->setToolTip(
+        tr("WingShot is a fork of Snow Shot (https://github.com/mg-chao/snow-apps) by mg-chao. "
+           "The earlier Tauri version is at https://github.com/xiaofeiTM233/snow-shot. In "
+           "https://github.com/Anfioo/WingShot the main branch keeps the original project and "
+           "the new branch carries the WingShot changes."));
+    m_ui->slogan->setText(tr("WingShot · Make expression clearer"));
     m_ui->linkError->setText(m_failedUrl.isEmpty()
                                  ? QString()
                                  : tr("Could not open the link. Open %1 in your browser.")
@@ -914,7 +943,7 @@ void AboutPageWidget::refreshUpdateStatus() {
         text = tr("Automatic updates are unavailable for this copy.");
         break;
     case UpdateState::Idle:
-        text = status.version.isEmpty() ? tr("Check for a newer version of Snow Shot.")
+        text = status.version.isEmpty() ? tr("Check for a newer version of WingShot.")
                                         : tr("You are up to date.");
         if (!status.version.isEmpty()) {
             statusIcon = outlined::CheckCircle();

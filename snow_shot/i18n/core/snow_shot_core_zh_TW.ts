@@ -12,8 +12,8 @@
             <translation>，出色工作。</translation>
         </message>
         <message>
-            <source>About Snow Shot</source>
-            <translation>關於 Snow Shot</translation>
+            <source>About WingShot</source>
+            <translation>關於 WingShot</translation>
         </message>
         <message>
             <source>Automatic updates are unavailable for this copy.</source>
@@ -28,18 +28,16 @@
             <translation>取消下載</translation>
         </message>
         <message>
-            <source>Capture, annotate, recognize text, and record your screen,
-so every moment on screen can be expressed clearly and shared easily.</source>
-            <translation>截圖、標註、文字辨識和螢幕錄影，
-讓螢幕上的每一刻都能清晰表達、輕鬆分享。</translation>
+            <source>Capture, annotate, recognize text, and record your screen.</source>
+            <translation>截圖、標註、文字辨識與錄屏，讓每一刻清晰表達。</translation>
         </message>
         <message>
             <source>Changelog</source>
             <translation>更新日誌</translation>
         </message>
         <message>
-            <source>Check for a newer version of Snow Shot.</source>
-            <translation>檢查是否有新版 Snow Shot。</translation>
+            <source>Check for a newer version of WingShot.</source>
+            <translation>檢查是否有新版 WingShot。</translation>
         </message>
         <message>
             <source>Check for updates</source>
@@ -110,8 +108,12 @@ so every moment on screen can be expressed clearly and shared easily.</source>
             <translation>回饋與建議</translation>
         </message>
         <message>
-            <source>Free and open-source software. Distributed without any warranty.</source>
-            <translation>自由開源軟體，不提供任何擔保。</translation>
+            <source>Fork of %1 by mg-chao · %2</source>
+            <translation>基於 mg-chao 的 %1 二次開發 · %2</translation>
+        </message>
+        <message>
+            <source>Free software, without warranty.</source>
+            <translation>自由軟體，不提供任何擔保。</translation>
         </message>
         <message>
             <source>Free · Open source</source>
@@ -174,18 +176,6 @@ so every moment on screen can be expressed clearly and shared easily.</source>
             <translation>截圖選取範圍、標註工具與辨識文字</translation>
         </message>
         <message>
-            <source>Snow Shot</source>
-            <translation>Snow Shot</translation>
-        </message>
-        <message>
-            <source>Snow Shot logo</source>
-            <translation>Snow Shot 標誌</translation>
-        </message>
-        <message>
-            <source>Snow Shot · Make expression clearer</source>
-            <translation>Snow Shot · 讓表達更清晰</translation>
-        </message>
-        <message>
             <source>Text recognition</source>
             <translation>文字辨識</translation>
         </message>
@@ -216,6 +206,22 @@ so every moment on screen can be expressed clearly and shared easily.</source>
         <message>
             <source>View the source and improve it together</source>
             <translation>查看原始碼，一起改進</translation>
+        </message>
+        <message>
+            <source>WingShot</source>
+            <translation>WingShot</translation>
+        </message>
+        <message>
+            <source>WingShot is a fork of Snow Shot (https://github.com/mg-chao/snow-apps) by mg-chao. The earlier Tauri version is at https://github.com/xiaofeiTM233/snow-shot. In https://github.com/Anfioo/WingShot the main branch keeps the original project and the new branch carries the WingShot changes.</source>
+            <translation>WingShot 是基於 Snow Shot（https://github.com/mg-chao/snow-apps）二次開發的衍生專案，原作者 mg-chao。更早的 Tauri 版本見 https://github.com/xiaofeiTM233/snow-shot。在 https://github.com/Anfioo/WingShot 中，main 分支保留原專案程式碼，new 分支為 WingShot 的改動。</translation>
+        </message>
+        <message>
+            <source>WingShot logo</source>
+            <translation>WingShot 標誌</translation>
+        </message>
+        <message>
+            <source>WingShot · Make expression clearer</source>
+            <translation>WingShot · 讓表達更清晰</translation>
         </message>
         <message>
             <source>You are up to date.</source>
@@ -610,8 +616,8 @@ so every moment on screen can be expressed clearly and shared easily.</source>
     <context>
         <name>snow_shot::app::ApplicationController</name>
         <message>
-            <source>An update is ready. Open About to restart and update Snow Shot.</source>
-            <translation>更新已準備就緒。請開啟「關於」頁面，重新啟動並更新 Snow Shot。</translation>
+            <source>An update is ready. Open About to restart and update WingShot.</source>
+            <translation>更新已準備就緒。請開啟「關於」頁面，重新啟動並更新 WingShot。</translation>
         </message>
         <message>
             <source>Could not pin selected files</source>
@@ -634,12 +640,12 @@ so every moment on screen can be expressed clearly and shared easily.</source>
             <translation>重新啟動失敗</translation>
         </message>
         <message>
-            <source>Snow Shot %1 is available. Open About for update options.</source>
-            <translation>Snow Shot %1 已推出。開啟「關於」查看更新選項。</translation>
+            <source>WingShot %1 is available. Open About for update options.</source>
+            <translation>WingShot %1 已推出。開啟「關於」查看更新選項。</translation>
         </message>
         <message>
-            <source>Snow Shot will close and restart to install the update. Continue?</source>
-            <translation>Snow Shot 將關閉並重新啟動以安裝更新。是否繼續？</translation>
+            <source>WingShot will close and restart to install the update. Continue?</source>
+            <translation>WingShot 將關閉並重新啟動以安裝更新。是否繼續？</translation>
         </message>
         <message>
             <source>Your settings could not be saved. Please retry before updating.</source>

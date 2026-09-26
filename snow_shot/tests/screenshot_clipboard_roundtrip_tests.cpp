@@ -202,9 +202,9 @@ void publishAndReadThroughQt() {
                   QApplication::clipboard()->image().convertToFormat(QImage::Format_ARGB32));
     auto snapshot = ScreenshotClipboardContentReader::snapshot(QApplication::clipboard(), 1.0);
     require(snapshot.has_value() && !snapshot->encodedImages.isEmpty(),
-            "Snow Shot must capture encoded PNG before considering a bitmap");
+            "WingShot must capture encoded PNG before considering a bitmap");
     const auto decoded = ScreenshotClipboardContentReader::decode(std::move(*snapshot));
-    require(decoded.has_value(), "Snow Shot PNG readback failed");
+    require(decoded.has_value(), "WingShot PNG readback failed");
     comparePixels(source, decoded->image.convertToFormat(QImage::Format_ARGB32));
 }
 

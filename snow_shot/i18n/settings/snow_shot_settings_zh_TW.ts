@@ -8,8 +8,8 @@
             <translation> 復原失敗：%1</translation>
         </message>
         <message>
-            <source> Settings recovery failed. Retry before closing Snow Shot.</source>
-            <translation> 設定復原失敗。請在關閉 Snow Shot 前重試。</translation>
+            <source> Settings recovery failed. Retry before closing WingShot.</source>
+            <translation> 設定復原失敗。請在關閉 WingShot 前重試。</translation>
         </message>
         <message>
             <source>Administrator authorization was declined.</source>
@@ -246,8 +246,8 @@
             <translation>API 金鑰不能包含換行符。</translation>
         </message>
         <message>
-            <source>The model name displayed in Snow Shot.</source>
-            <translation>在 Snow Shot 中顯示的模型名稱。</translation>
+            <source>The model name displayed in WingShot.</source>
+            <translation>在 WingShot 中顯示的模型名稱。</translation>
         </message>
         <message>
             <source>This model was deleted. Close this form and create a new model.</source>
@@ -447,8 +447,8 @@
             <translation>正在變更登入時啟動設定。</translation>
         </message>
         <message>
-            <source>Approval required. Allow Snow Shot in System Settings &gt; General &gt; Login Items.</source>
-            <translation>需要批准。請在「系統設定 &gt; 一般 &gt; 登入項目」中允許 Snow Shot。</translation>
+            <source>Approval required. Allow WingShot in System Settings &gt; General &gt; Login Items.</source>
+            <translation>需要批准。請在「系統設定 &gt; 一般 &gt; 登入項目」中允許 WingShot。</translation>
         </message>
         <message>
             <source>Could not change launch at login: %1</source>
@@ -463,16 +463,16 @@
             <translation>無法儲存登入時啟動偏好設定。顯示的 macOS 狀態仍為目前狀態。</translation>
         </message>
         <message>
-            <source>Move the signed Snow Shot app to /Applications or ~/Applications to use launch at login.</source>
-            <translation>請將已簽署的 Snow Shot App 移至 /Applications 或 ~/Applications，以使用登入時啟動功能。</translation>
+            <source>Move the signed WingShot app to /Applications or ~/Applications to use launch at login.</source>
+            <translation>請將已簽署的 WingShot App 移至 /Applications 或 ~/Applications，以使用登入時啟動功能。</translation>
         </message>
         <message>
-            <source>Snow Shot needs a valid code signature to use launch at login. Reinstall the signed app.</source>
-            <translation>Snow Shot 需要有效的程式碼簽章才能使用登入時啟動功能。請重新安裝已簽署的 App。</translation>
+            <source>WingShot needs a valid code signature to use launch at login. Reinstall the signed app.</source>
+            <translation>WingShot 需要有效的程式碼簽章才能使用登入時啟動功能。請重新安裝已簽署的 App。</translation>
         </message>
         <message>
-            <source>macOS could not find Snow Shot's login item. Reinstall the app in Applications.</source>
-            <translation>macOS 找不到 Snow Shot 的登入項目。請將 App 重新安裝到「應用程式」中。</translation>
+            <source>macOS could not find WingShot's login item. Reinstall the app in Applications.</source>
+            <translation>macOS 找不到 WingShot 的登入項目。請將 App 重新安裝到「應用程式」中。</translation>
         </message>
         <message>
             <source>macOS did not apply the launch-at-login change. Check Login Items in System Settings.</source>
@@ -1818,12 +1818,12 @@
             <translation>放大鏡顯示</translation>
         </message>
         <message>
-            <source>Manage Snow Shot's login permission in macOS System Settings</source>
-            <translation>在 macOS 系統設定中管理 Snow Shot 的登入權限</translation>
+            <source>Manage WingShot's login permission in macOS System Settings</source>
+            <translation>在 macOS 系統設定中管理 WingShot 的登入權限</translation>
         </message>
         <message>
-            <source>Manage macOS permissions for Snow Shot</source>
-            <translation>管理 Snow Shot 的 macOS 權限</translation>
+            <source>Manage macOS permissions for WingShot</source>
+            <translation>管理 WingShot 的 macOS 權限</translation>
         </message>
         <message>
             <source>Manual</source>
@@ -2298,8 +2298,8 @@
             <translation>重新啟動應用程式</translation>
         </message>
         <message>
-            <source>Restart Snow Shot with administrator privileges</source>
-            <translation>以系統管理員權限重新啟動 Snow Shot</translation>
+            <source>Restart WingShot with administrator privileges</source>
+            <translation>以系統管理員權限重新啟動 WingShot</translation>
         </message>
         <message>
             <source>Restart as administrator</source>
@@ -2530,8 +2530,8 @@
             <translation>序號</translation>
         </message>
         <message>
-            <source>Set image quality for screenshot files saved outside the Snow Shot dialog</source>
-            <translation>設定透過 Snow Shot 對話框以外的方式儲存截圖檔案時的影像品質</translation>
+            <source>Set image quality for screenshot files saved outside the WingShot dialog</source>
+            <translation>設定透過 WingShot 對話框以外的方式儲存截圖檔案時的影像品質</translation>
         </message>
         <message>
             <source>Set the border color of pinned screenshots</source>
@@ -2678,10 +2678,6 @@
             <translation>智慧選取</translation>
         </message>
         <message>
-            <source>Snow Shot</source>
-            <translation>Snow Shot</translation>
-        </message>
-        <message>
             <source>Snowflake</source>
             <translation>雪花</translation>
         </message>
@@ -2718,16 +2714,16 @@
             <translation>獨立翻譯視窗</translation>
         </message>
         <message>
-            <source>Start Snow Shot in the background when Windows starts</source>
-            <translation>Windows 啟動時在背景啟動 Snow Shot</translation>
+            <source>Start WingShot in the background when Windows starts</source>
+            <translation>Windows 啟動時在背景啟動 WingShot</translation>
         </message>
         <message>
-            <source>Start Snow Shot in the background when you log in.</source>
-            <translation>登入時在背景啟動 Snow Shot。</translation>
+            <source>Start WingShot in the background when you log in.</source>
+            <translation>登入時在背景啟動 WingShot。</translation>
         </message>
         <message>
-            <source>Start Snow Shot with administrator privileges when you sign in</source>
-            <translation>登入時以系統管理員權限啟動 Snow Shot</translation>
+            <source>Start WingShot with administrator privileges when you sign in</source>
+            <translation>登入時以系統管理員權限啟動 WingShot</translation>
         </message>
         <message>
             <source>Start a screen recording from a confirmed selection</source>
@@ -2988,6 +2984,10 @@
         <message>
             <source>Window grouping</source>
             <translation>視窗分組</translation>
+        </message>
+        <message>
+            <source>WingShot</source>
+            <translation>WingShot</translation>
         </message>
         <message>
             <source>Write the screenshot to a file and copy that file to the clipboard</source>
@@ -3314,12 +3314,12 @@ Unavailable: %2</source>
     <context>
         <name>snow_shot::presentation::GlobalMouseManager</name>
         <message>
-            <source>Allow Snow Shot in System Settings &gt; Privacy &amp; Security &gt; Accessibility to use global mouse gestures.</source>
-            <translation>請在「系統設定 &gt; 隱私權與安全性 &gt; 輔助使用」中允許 Snow Shot，以使用全域滑鼠手勢。</translation>
+            <source>Allow WingShot in System Settings &gt; Privacy &amp; Security &gt; Accessibility to use global mouse gestures.</source>
+            <translation>請在「系統設定 &gt; 隱私權與安全性 &gt; 輔助使用」中允許 WingShot，以使用全域滑鼠手勢。</translation>
         </message>
         <message>
-            <source>Allow Snow Shot in System Settings &gt; Privacy &amp; Security &gt; Input Monitoring to use global mouse gestures.</source>
-            <translation>請在「系統設定 &gt; 隱私權與安全性 &gt; 輸入監控」中允許 Snow Shot，以使用全域滑鼠手勢。</translation>
+            <source>Allow WingShot in System Settings &gt; Privacy &amp; Security &gt; Input Monitoring to use global mouse gestures.</source>
+            <translation>請在「系統設定 &gt; 隱私權與安全性 &gt; 輸入監控」中允許 WingShot，以使用全域滑鼠手勢。</translation>
         </message>
         <message>
             <source>Checking global mouse permissions...</source>
@@ -3353,12 +3353,12 @@ Unavailable: %2</source>
             <translation>無法建立設定壓縮檔。</translation>
         </message>
         <message>
-            <source>The configuration archive was created by a newer version of Snow Shot.</source>
-            <translation>該設定壓縮檔由較新版本的 Snow Shot 建立。</translation>
+            <source>The configuration archive was created by a newer version of WingShot.</source>
+            <translation>該設定壓縮檔由較新版本的 WingShot 建立。</translation>
         </message>
         <message>
-            <source>The file is not a Snow Shot configuration archive.</source>
-            <translation>該檔案不是 Snow Shot 設定壓縮檔。</translation>
+            <source>The file is not a WingShot configuration archive.</source>
+            <translation>該檔案不是 WingShot 設定壓縮檔。</translation>
         </message>
         <message>
             <source>The file is not a valid configuration archive.</source>

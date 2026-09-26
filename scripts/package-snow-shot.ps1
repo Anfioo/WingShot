@@ -641,10 +641,10 @@ if (-not (Test-Path -LiteralPath $cpackConfig)) {
 $cpackConfiguration = Get-Content -LiteralPath $cpackConfig -Raw
 $requiredCpackSettings = @{
     CPACK_CREATE_DESKTOP_LINKS = "snow_shot"
-    CPACK_PACKAGE_EXECUTABLES = "snow_shot;Snow Shot"
-    CPACK_PACKAGE_HOMEPAGE_URL = "https://snowshot.top"
-    CPACK_PACKAGE_INSTALL_DIRECTORY = "SnowShot"
-    CPACK_PACKAGE_INSTALL_REGISTRY_KEY = "SnowShot"
+    CPACK_PACKAGE_EXECUTABLES = "snow_shot;WingShot"
+    CPACK_PACKAGE_HOMEPAGE_URL = "https://wingshot.anfioo.com"
+    CPACK_PACKAGE_INSTALL_DIRECTORY = "WingShot"
+    CPACK_PACKAGE_INSTALL_REGISTRY_KEY = "WingShot"
     CPACK_NSIS_INSTALLED_ICON_NAME = "bin\\snow_shot.exe"
 }
 foreach ($setting in $requiredCpackSettings.Keys) {
@@ -1290,13 +1290,13 @@ string(REPLACE "snow-shot-$packageVersion-windows-x64.exe" "$packageBaseName.exe
     }
     $installerVersionInfo = (Get-Item -LiteralPath $packagePath).VersionInfo
     $expectedInstallerMetadata = @{
-        CompanyName = "Snow Apps"
-        FileDescription = "Snow Shot installer"
+        CompanyName = "WingShot"
+        FileDescription = "WingShot installer"
         FileVersion = "$packageVersionNumeric.0"
-        InternalName = "snow-shot-installer"
+        InternalName = "wingshot-installer"
         LegalCopyright = "Copyright (C) 2025-2026 mg-chao"
         OriginalFilename = "$packageBaseName.exe"
-        ProductName = "Snow Shot"
+        ProductName = "WingShot"
         ProductVersion = $packageVersion
     }
     foreach ($property in $expectedInstallerMetadata.Keys) {

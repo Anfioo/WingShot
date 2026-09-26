@@ -50,7 +50,7 @@ QPixmap renderBrandLogo(int logicalHeight, const QColor& color, qreal devicePixe
     request.logicalSize = QSize(logicalWidth, logicalHeight);
     request.devicePixelRatio = devicePixelRatio;
     return adqt::icons::renderIconPixmap(
-        custom_icons::brand::SnowShotLogo(adqt::icons::IconColors::primary(color)), request);
+        custom_icons::brand::WingshotLogo(adqt::icons::IconColors::primary(color)), request);
 }
 
 #ifndef Q_OS_MACOS

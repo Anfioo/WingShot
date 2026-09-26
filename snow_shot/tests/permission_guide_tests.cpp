@@ -31,14 +31,14 @@ void flush() {
         QApplication::processEvents();
 }
 PermissionGuideApplication bundle(const QString& root) {
-    const QString path = root + QString::fromUtf8("/Snow Shot 测试.app");
+    const QString path = root + QString::fromUtf8("/WingShot 测试.app");
     QDir().mkpath(path + QStringLiteral("/Contents"));
     QFile plist(path + QStringLiteral("/Contents/Info.plist"));
     require(plist.open(QIODevice::WriteOnly), "create bundle metadata");
     plist.write("<?xml version=\"1.0\"?><plist version=\"1.0\"><dict/></plist>");
     QPixmap icon(32, 32);
     icon.fill(QColor("#4080ff"));
-    return {QStringLiteral("Snow Shot"), QUrl::fromLocalFile(path), QIcon(icon)};
+    return {QStringLiteral("WingShot"), QUrl::fromLocalFile(path), QIcon(icon)};
 }
 class FakePermissions final : public AppPermissionBackend {
   public:
@@ -246,7 +246,7 @@ void buttonInteractions(const PermissionGuideApplication& app) {
                 "release outside cancels the action and releases interaction state");
         send(QEvent::MouseButtonPress, Qt::LeftButton);
         require(button->isDown(), "single press reaches guide button");
-        // The non-focusable guide cannot become key when clicking activates Snow Shot.
+        // The non-focusable guide cannot become key when clicking activates WingShot.
         // A workspace notification or placement timer can run before mouse release.
         fake->state.settingsActive = false;
         fake->state.guideActive = false;
@@ -286,7 +286,7 @@ void payloadAndCopy(const PermissionGuideApplication& app) {
     require(!widget.createDragMimeData() &&
                 instruction->text().contains(QStringLiteral("administrator")),
             "restricted access cannot be fixed by dragging");
-    PermissionGuideWidget unbundled({QStringLiteral("Snow Shot"), {}, {}});
+    PermissionGuideWidget unbundled({QStringLiteral("WingShot"), {}, {}});
     require(!unbundled.createDragMimeData(), "unbundled executable cannot be dragged");
     require(unbundled.findChild<QLabel*>(QStringLiteral("permissionGuideInstruction"))
                 ->text()

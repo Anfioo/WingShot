@@ -3096,7 +3096,7 @@ void ScreenshotController::Impl::pinSelectedFilesToScreen(
         case Error::None:
             return;
         case Error::PermissionDenied:
-            message = owner.tr("Allow Snow Shot to access Finder in System Settings > Privacy & "
+            message = owner.tr("Allow WingShot to access Finder in System Settings > Privacy & "
                                "Security > Automation, then try again.");
             break;
         case Error::Timeout:

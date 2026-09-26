@@ -215,7 +215,7 @@ if(NOT SNOW_MACOS_CODESIGN_IDENTITY STREQUAL "-")
         COMMAND "${CMAKE_COMMAND}" -E copy "$<TARGET_FILE:snow_shot>"
             "$<TARGET_FILE:snow_shot>.snow-signing"
         COMMAND /usr/bin/codesign --force --sign "${SNOW_MACOS_CODESIGN_IDENTITY}"
-            --identifier com.snowshot.snow_shot "$<TARGET_FILE:snow_shot>.snow-signing"
+            --identifier com.anfioo.wingshot "$<TARGET_FILE:snow_shot>.snow-signing"
         COMMAND /usr/bin/codesign --verify --strict "$<TARGET_FILE:snow_shot>.snow-signing"
         COMMAND "${CMAKE_COMMAND}" -E copy "$<TARGET_FILE:snow_shot>.snow-signing"
             "$<TARGET_FILE:snow_shot>"

@@ -50,9 +50,9 @@ option(SNOW_SHOT_BUILD_BENCHMARKS "Build opt-in native Snow Shot benchmarks." OF
 option(SNOW_SHOT_SCROLLING_PERF_DETAIL "Compile detailed scrolling C++ and Rust timings." OFF)
 option(SNOW_SHOT_RELEASE_STATIC "Prefer static Snow Shot release linkage." OFF)
 option(SNOW_SHOT_QT_STATIC "Link Snow Shot against a static Qt build." OFF)
-set(SNOW_SHOT_WEBSITE_URL "https://snowshot.top" CACHE STRING "Public Snow Shot website URL.")
-set(SNOW_SHOT_PROJECT_URL "https://github.com/mg-chao/snow-apps" CACHE STRING
-    "Public Snow Shot source repository URL.")
+set(SNOW_SHOT_WEBSITE_URL "https://wingshot.anfioo.com" CACHE STRING "Public WingShot website URL.")
+set(SNOW_SHOT_PROJECT_URL "https://github.com/Anfioo/WingShot" CACHE STRING
+    "Public WingShot source repository URL.")
 unset(SNOW_SHOT_CAMERA_SHUTTER_AUDIO_SOURCE CACHE)
 set(
     SNOW_SHOT_CAMERA_SHUTTER_AUDIO_SOURCE
@@ -6902,7 +6902,7 @@ if(SNOW_SHOT_ENABLE_STRICT_COMPILE)
 endif()
 
 set_target_properties(snow_shot PROPERTIES
-    MACOSX_BUNDLE_GUI_IDENTIFIER com.snowshot.snow_shot
+    MACOSX_BUNDLE_GUI_IDENTIFIER com.anfioo.wingshot
     MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION}
     MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
     MACOSX_BUNDLE TRUE

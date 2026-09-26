@@ -195,7 +195,7 @@ void verifyCrash(const QString& kind) {
     require(exception, "dump contains an exception stream");
     require(reports.front().context.contains(QStringLiteral("exception_code")),
             "readable crash exception summary");
-    require(data.contains("Snow Shot") && data.contains("crash.breadcrumb"),
+    require(data.contains("WingShot") && data.contains("crash.breadcrumb"),
             "build identity and recent event survive");
     if (kind == QStringLiteral("fatal") || kind == QStringLiteral("terminate") ||
         kind == QStringLiteral("panic")) {

@@ -19,7 +19,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
                                 .hInstance = instance,
                                 .lpszClassName = L"SnowShotInstallerTest"};
     if (!RegisterClassW(&windowClass) ||
-        !CreateWindowW(windowClass.lpszClassName, L"Snow Shot installer test", WS_OVERLAPPED, 0, 0,
+        !CreateWindowW(windowClass.lpszClassName, L"WingShot installer test", WS_OVERLAPPED, 0, 0,
                        100, 100, nullptr, nullptr, instance, nullptr)) {
         return 1;
     }

@@ -261,7 +261,7 @@ void deterministicOwnershipPartialFailureAndSuspension() {
         "earlier action must deterministically own a duplicate runtime identity");
     require(manager.validateShortcut(GlobalShortcutAction::Screenshot, shared).supported &&
                 !manager.validateShortcut(GlobalShortcutAction::ScreenshotCopy, shared).supported,
-            "validation must allow the owning action and reject other Snow Shot owners");
+            "validation must allow the owning action and reject other WingShot owners");
 
     input->failures.insert(QStringLiteral("Ctrl+F11"),
                            {false, GlobalShortcutFailureReason::SystemError, -9876});

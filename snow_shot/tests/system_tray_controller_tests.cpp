@@ -123,7 +123,7 @@ int main(int argc, char* argv[]) {
     require(trayIcon->icon().isMask(),
             "bundled macOS tray icons must use native template rendering");
 #endif
-    require(trayIcon->toolTip() == QStringLiteral("SnowShot"),
+    require(trayIcon->toolTip() == QStringLiteral("WingShot"),
             "the tray tooltip should be SnowShot");
     controller.show();
     require(trayIcon->isVisible(), "show should make the tray icon visible");
@@ -795,7 +795,7 @@ int main(int argc, char* argv[]) {
     const int screenshotRequestsBeforeMessageClicks = screenshotRequests;
     const int showMainWindowRequestsBeforeMessageClicks = showMainWindowRequests;
     const int functionSettingsRequestsBeforeMessageClicks = functionSettingsRequests;
-    controller.showUpdateMessage(QStringLiteral("Snow Shot 2.0.0 is available."));
+    controller.showUpdateMessage(QStringLiteral("WingShot 2.0.0 is available."));
     trayIcon->messageClicked();
     require(aboutRequests == 1 && screenshotRequests == screenshotRequestsBeforeMessageClicks &&
                 showMainWindowRequests == showMainWindowRequestsBeforeMessageClicks &&

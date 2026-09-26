@@ -152,27 +152,27 @@ void LanguageManager::discoverCatalogs() {
             resourceName.mid(prefix.size(), resourceName.size() - prefix.size() - suffix.size());
         const auto fileLocale = parseLocaleName(fileLocaleName);
         if (!fileLocale.has_value()) {
-            qWarning() << "Ignoring Snow Shot translation with malformed locale" << resourceName;
+            qWarning() << "Ignoring WingShot translation with malformed locale" << resourceName;
             continue;
         }
 
         const QString resourcePath = QString::fromLatin1(CATALOG_RESOURCE_PREFIX) + resourceName;
         auto translator = std::make_unique<QTranslator>();
         if (!translator->load(resourcePath)) {
-            qWarning() << "Ignoring Snow Shot translation that could not be loaded" << resourcePath;
+            qWarning() << "Ignoring WingShot translation that could not be loaded" << resourcePath;
             continue;
         }
 
         const auto translatorLocale = parseLocaleName(translator->language());
         if (!translatorLocale.has_value() || translatorLocale->name != fileLocale->name) {
-            qWarning() << "Ignoring Snow Shot translation whose locale does not match its"
+            qWarning() << "Ignoring WingShot translation whose locale does not match its"
                           " resource name"
                        << resourceName << translator->language();
             continue;
         }
 
         if (m_catalogResources.contains(translatorLocale->name)) {
-            qWarning() << "Ignoring duplicate Snow Shot translation locale"
+            qWarning() << "Ignoring duplicate WingShot translation locale"
                        << translatorLocale->name;
             continue;
         }
@@ -180,7 +180,7 @@ void LanguageManager::discoverCatalogs() {
         const QString nativeName =
             translator->translate("LanguageCatalog", LANGUAGE_NAME_SOURCE).trimmed();
         if (nativeName.isEmpty()) {
-            qWarning() << "Ignoring Snow Shot translation without a native language name"
+            qWarning() << "Ignoring WingShot translation without a native language name"
                        << resourceName;
             continue;
         }
@@ -247,14 +247,14 @@ bool LanguageManager::applyPreference(const QString& preference, bool persist) {
     const QString resource = m_catalogResources.value(effectiveLocaleName);
     const QLocale effectiveLocale = m_catalogLocales.value(effectiveLocaleName);
     if (resource.isEmpty() || effectiveLocale.language() == QLocale::AnyLanguage) {
-        qWarning() << "Unable to resolve Snow Shot translation preference" << preference;
+        qWarning() << "Unable to resolve WingShot translation preference" << preference;
         emit languageChangeFailed(preference);
         return false;
     }
 
     auto nextTranslator = std::make_unique<QTranslator>();
     if (!nextTranslator->load(resource)) {
-        qWarning() << "Unable to load Snow Shot translation resource" << resource;
+        qWarning() << "Unable to load WingShot translation resource" << resource;
         emit languageChangeFailed(preference);
         return false;
     }

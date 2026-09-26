@@ -1,5 +1,5 @@
 Unicode true
-Name "Snow Shot installer owned cleanup tests"
+Name "WingShot installer owned cleanup tests"
 OutFile "${OUTPUT}"
 RequestExecutionLevel user
 !include "LogicLib.nsh"

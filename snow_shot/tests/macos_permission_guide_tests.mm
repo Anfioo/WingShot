@@ -37,7 +37,7 @@ int main(int argc, char** argv) {
     // Model the real workflow: the app already has a settings window before
     // the user opens System Settings. Qt activates on its first visible window.
     QWidget host;
-    host.setWindowTitle(QStringLiteral("Snow Shot Permission Guide Test"));
+    host.setWindowTitle(QStringLiteral("WingShot Permission Guide Test"));
     host.resize(320, 160);
     host.show();
     QApplication::processEvents();
@@ -70,7 +70,7 @@ int main(int argc, char** argv) {
             "guide persists alongside Settings with a native shadow");
     require(!view.window.keyWindow &&
                 NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier == frontmost,
-            "showing guide must not activate Snow Shot or take keyboard focus");
+            "showing guide must not activate WingShot or take keyboard focus");
     std::unique_ptr<QMimeData> payload(widget.createDragMimeData());
     require(payload && payload->urls() == QList<QUrl>{identity.bundleUrl},
             "native bundle exports a file URL for Finder-compatible dragging");

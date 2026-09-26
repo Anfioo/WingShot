@@ -26,7 +26,7 @@ QString LoginItemService::hint() const {
     if (m_snapshot.status == LoginItemStatus::ApprovalRequired)
         return text(QT_TRANSLATE_NOOP(
             "LoginItemService",
-            "Approval required. Allow Snow Shot in System Settings > General > Login Items."));
+            "Approval required. Allow WingShot in System Settings > General > Login Items."));
     return {};
 }
 LoginItemResult LoginItemService::initialize(bool enabledByDefault) {

@@ -17,7 +17,7 @@ import unittest
 
 SCRIPT = Path(__file__).resolve().with_name('install-snow-shot-macos.sh')
 FINGERPRINT = 'A' * 40
-REQUIREMENT = 'identifier "com.snowshot.snow_shot" and anchor = H"' + FINGERPRINT + '"'
+REQUIREMENT = 'identifier "com.anfioo.wingshot" and anchor = H"' + FINGERPRINT + '"'
 PRIMARY = 'https://snowshot.top/setup/snow-shot_macos-arm64.dmg'
 API = 'https://api.github.com/repos/mg-chao/snow-apps/releases/latest'
 ASSET = 'snow-shot-1.2.3-macos-arm64.dmg'
@@ -123,7 +123,7 @@ class InstallerTests(unittest.TestCase):
         self.bundle = self.root / 'bundle'
         (self.bundle / 'Contents/MacOS').mkdir(parents=True)
         (self.bundle / 'Contents/Resources/assets/ocr').mkdir(parents=True)
-        self.info = dict(CFBundleIdentifier='com.snowshot.snow_shot', CFBundleExecutable='snow_shot', LSMinimumSystemVersion='15.0')
+        self.info = dict(CFBundleIdentifier='com.anfioo.wingshot', CFBundleExecutable='snow_shot', LSMinimumSystemVersion='15.0')
         self.write_info()
         self.executable = self.bundle / 'Contents/MacOS/snow_shot'
         self.executable.write_bytes(b'fixture executable')
@@ -369,7 +369,7 @@ openssl x509 -in "$work/certificate.pem" -noout -text > "$FIXTURE/certificate.tx
         helper.chmod(0o755)
         self.stage()
         # Ad-hoc fixture tests sealing only; permission continuity needs a real identity.
-        (self.state / 'requirement').write_text('identifier "com.snowshot.snow_shot"')
+        (self.state / 'requirement').write_text('identifier "com.anfioo.wingshot"')
         self.shell('''codesign() { /usr/bin/codesign "$@"; }
 prepare_identity() { signing_identity=-; }
 sign_application

@@ -12,13 +12,13 @@ if(NOT SNOW_SHOT_VERSION MATCHES "^([0-9]+\\.[0-9]+\\.[0-9]+)(-[0-9A-Za-z.-]+)?$
     message(FATAL_ERROR "SNOW_SHOT_VERSION must be a semantic version such as 0.8.0-dev")
 endif()
 set(SNOW_SHOT_VERSION_NUMERIC "${CMAKE_MATCH_1}")
-set(SNOW_SHOT_PRODUCT_NAME "Snow Shot")
+set(SNOW_SHOT_PRODUCT_NAME "WingShot")
 set(SNOW_SHOT_EXECUTABLE_NAME "snow_shot")
-set(SNOW_SHOT_VENDOR "Snow Apps")
+set(SNOW_SHOT_VENDOR "WingShot")
 set(SNOW_SHOT_DESCRIPTION
     "A screenshot utility for capturing, annotating, pinning, and recognizing screen content.")
-set(SNOW_SHOT_HOMEPAGE_URL "https://snowshot.top")
-set(SNOW_SHOT_SUPPORT_EMAIL "chao@mgchao.top")
+set(SNOW_SHOT_HOMEPAGE_URL "https://wingshot.anfioo.com")
+set(SNOW_SHOT_SUPPORT_EMAIL "https://github.com/Anfioo/WingShot/issues")
 set(SNOW_SHOT_COPYRIGHT "Copyright (C) 2025-2026 mg-chao")
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -401,8 +401,8 @@ if(SNOW_APPS_PACKAGE_SNOW_SHOT AND NOT APPLE)
     set(CPACK_PACKAGE_DESCRIPTION "${SNOW_SHOT_DESCRIPTION}")
     set(CPACK_PACKAGE_HOMEPAGE_URL "${SNOW_SHOT_HOMEPAGE_URL}")
     set(CPACK_PACKAGE_VERSION "${SNOW_SHOT_VERSION}")
-    set(CPACK_PACKAGE_INSTALL_DIRECTORY "SnowShot")
-    set(CPACK_PACKAGE_INSTALL_REGISTRY_KEY "SnowShot")
+    set(CPACK_PACKAGE_INSTALL_DIRECTORY "WingShot")
+    set(CPACK_PACKAGE_INSTALL_REGISTRY_KEY "WingShot")
     set(CPACK_PACKAGE_FILE_NAME "snow-shot-${SNOW_SHOT_VERSION}-windows-x64")
     set(CPACK_PACKAGE_DIRECTORY "${CMAKE_BINARY_DIR}")
     set(CPACK_PACKAGE_CHECKSUM "SHA256")
@@ -436,7 +436,7 @@ if(SNOW_APPS_PACKAGE_SNOW_SHOT AND NOT APPLE)
         "VIAddVersionKey /LANG=1033 \"CompanyName\" \"${SNOW_SHOT_VENDOR}\"\n"
         "VIAddVersionKey /LANG=1033 \"FileDescription\" \"${SNOW_SHOT_PRODUCT_NAME} installer\"\n"
         "VIAddVersionKey /LANG=1033 \"FileVersion\" \"${SNOW_SHOT_VERSION_NUMERIC}.0\"\n"
-        "VIAddVersionKey /LANG=1033 \"InternalName\" \"snow-shot-installer\"\n"
+        "VIAddVersionKey /LANG=1033 \"InternalName\" \"wingshot-installer\"\n"
         "VIAddVersionKey /LANG=1033 \"LegalCopyright\" \"${SNOW_SHOT_COPYRIGHT}\"\n"
         "VIAddVersionKey /LANG=1033 \"OriginalFilename\" \"${CPACK_PACKAGE_FILE_NAME}.exe\"\n"
         "VIAddVersionKey /LANG=1033 \"ProductName\" \"${SNOW_SHOT_PRODUCT_NAME}\"\n"

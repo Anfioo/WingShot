@@ -677,7 +677,7 @@ QByteArray encodeClipboardDibV5(const QImage& image) {
 
 QByteArray buildClipboardHtmlFragment() {
     QString fragment = QStringLiteral(
-        "<h1 style=\"font-size:24px;color:#1f3b73;margin:10px 0\">Snow Shot clipboard HTML pin "
+        "<h1 style=\"font-size:24px;color:#1f3b73;margin:10px 0\">WingShot clipboard HTML pin "
         "benchmark</h1>");
     for (int paragraph = 0; paragraph < 18; ++paragraph) {
         fragment +=
@@ -1500,7 +1500,7 @@ int run(const QCommandLineParser& parser) {
     QFile html(QDir(configuration.output).filePath(QStringLiteral("report.html")));
     require(html.open(QIODevice::WriteOnly | QIODevice::Truncate), "could not write report.html");
     html.write(
-        ("<!doctype html><meta charset=utf-8><title>Snow Shot pin performance</title>"
+        ("<!doctype html><meta charset=utf-8><title>WingShot pin performance</title>"
          "<h1>Pin-to-screen performance</h1><pre>" +
          htmlEscape(QString::fromUtf8(QJsonDocument(report).toJson(QJsonDocument::Indented))) +
          "</pre>")

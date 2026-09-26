@@ -22,7 +22,7 @@ bool initialLoginLaunch = false;
 id launchObserver = nil;
 QString markerPath() {
     return QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation) +
-           QStringLiteral("/SnowShot/macos-login-item.ini");
+           QStringLiteral("/WingShot/macos-login-item.ini");
 }
 LoginItemSnapshot query() {
     @autoreleasepool {
@@ -33,12 +33,12 @@ LoginItemSnapshot query() {
             QFileInfo(QDir::homePath() + QStringLiteral("/Applications")).canonicalFilePath();
         NSNumber* readOnly = nil;
         [bundle.bundleURL getResourceValue:&readOnly forKey:NSURLVolumeIsReadOnlyKey error:nil];
-        if (![bundle.bundleIdentifier isEqualToString:@"com.snowshot.snow_shot"] ||
+        if (![bundle.bundleIdentifier isEqualToString:@"com.anfioo.wingshot"] ||
             !loginItemLocationAllowed(path, applications) || readOnly == nil ||
             readOnly.boolValue) {
             return {LoginItemStatus::Unavailable,
                     text(QT_TRANSLATE_NOOP("LoginItemService",
-                                           "Move the signed Snow Shot app to /Applications or "
+                                           "Move the signed WingShot app to /Applications or "
                                            "~/Applications to use launch at login."))};
         }
         SecStaticCodeRef code = nullptr;
@@ -51,7 +51,7 @@ LoginItemSnapshot query() {
         if (signature != errSecSuccess)
             return {LoginItemStatus::Unavailable,
                     text(QT_TRANSLATE_NOOP("LoginItemService",
-                                           "Snow Shot needs a valid code signature to use launch "
+                                           "WingShot needs a valid code signature to use launch "
                                            "at login. Reinstall the signed app."))};
         switch (SMAppService.mainAppService.status) {
         case SMAppServiceStatusNotRegistered:
@@ -65,7 +65,7 @@ LoginItemSnapshot query() {
         }
         return {LoginItemStatus::Unavailable,
                 text(QT_TRANSLATE_NOOP("LoginItemService",
-                                       "macOS could not find Snow Shot's login item. Reinstall the "
+                                       "macOS could not find WingShot's login item. Reinstall the "
                                        "app in Applications."))};
     }
 }

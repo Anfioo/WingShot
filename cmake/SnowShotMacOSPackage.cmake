@@ -13,7 +13,7 @@ set(CPACK_DMG_FORMAT UDZO)
 set(CPACK_DMG_DISABLE_APPLICATIONS_SYMLINK OFF)
 set(_snow_dmg_assets "${CMAKE_CURRENT_LIST_DIR}/../snow_shot/packaging/macos")
 set(_snow_dmg_wordmark
-    "${CMAKE_CURRENT_LIST_DIR}/../snow_shot/src/presentation/components/icons/resources/snow-shot-logo.svg")
+    "${CMAKE_CURRENT_LIST_DIR}/../snow_shot/src/presentation/components/icons/resources/wingshot-logo.svg")
 set(_snow_dmg_background_svg "${CMAKE_CURRENT_BINARY_DIR}/macos/dmg-background.svg")
 set(CPACK_DMG_BACKGROUND_IMAGE "${CMAKE_CURRENT_BINARY_DIR}/macos/dmg-background.png")
 file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/macos")

@@ -212,7 +212,7 @@ void translations() {
 QString registryValue(const QString& path) {
     wchar_t command[2048];
     DWORD bytes = sizeof(command);
-    const LSTATUS status = RegGetValueW(HKEY_CURRENT_USER, path.toStdWString().c_str(), L"SnowShot",
+    const LSTATUS status = RegGetValueW(HKEY_CURRENT_USER, path.toStdWString().c_str(), L"WingShot",
                                         RRF_RT_REG_SZ, nullptr, command, &bytes);
     require(status == ERROR_SUCCESS, "test registration must be readable");
     return QString::fromWCharArray(command);
@@ -220,7 +220,7 @@ QString registryValue(const QString& path) {
 void setRegistryValue(const QString& path, const QString& command) {
     const std::wstring value = command.toStdWString();
     require(RegSetKeyValueW(
-                HKEY_CURRENT_USER, path.toStdWString().c_str(), L"SnowShot", REG_SZ, value.c_str(),
+                HKEY_CURRENT_USER, path.toStdWString().c_str(), L"WingShot", REG_SZ, value.c_str(),
                 static_cast<DWORD>((value.size() + 1) * sizeof(wchar_t))) == ERROR_SUCCESS,
             "test registration must be writable");
 }
@@ -306,7 +306,7 @@ void startupRunValueReconciliation() {
 
     setRegistryValue(run, expected);
     reconcileStartupRunValue(usersRunKey, expected, QString());
-    require(RegGetValueW(HKEY_CURRENT_USER, run.toStdWString().c_str(), L"SnowShot", RRF_RT_REG_SZ,
+    require(RegGetValueW(HKEY_CURRENT_USER, run.toStdWString().c_str(), L"WingShot", RRF_RT_REG_SZ,
                          nullptr, nullptr, nullptr) == ERROR_FILE_NOT_FOUND,
             "uninstall must remove a matching registration");
 
@@ -338,7 +338,7 @@ void startupRunValueReconciliation() {
     }
     require(registryValue(run) == expected, "a failed modification must leave the value intact");
 
-    RegDeleteKeyValueW(HKEY_CURRENT_USER, run.toStdWString().c_str(), L"SnowShot");
+    RegDeleteKeyValueW(HKEY_CURRENT_USER, run.toStdWString().c_str(), L"WingShot");
     reconcileStartupRunValue(usersRunKey, expected, QString());
     reconcileStartupRunValue(sid + QStringLiteral("\\Software\\SnowShotTests\\missing\\Run"),
                              expected, QString());

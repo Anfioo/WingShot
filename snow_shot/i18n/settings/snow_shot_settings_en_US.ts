@@ -8,8 +8,8 @@
             <translation> Recovery failed: %1</translation>
         </message>
         <message>
-            <source> Settings recovery failed. Retry before closing Snow Shot.</source>
-            <translation> Settings recovery failed. Retry before closing Snow Shot.</translation>
+            <source> Settings recovery failed. Retry before closing WingShot.</source>
+            <translation> Settings recovery failed. Retry before closing WingShot.</translation>
         </message>
         <message>
             <source>Administrator authorization was declined.</source>
@@ -246,8 +246,8 @@
             <translation>The API key must not contain line breaks.</translation>
         </message>
         <message>
-            <source>The model name displayed in Snow Shot.</source>
-            <translation>The model name displayed in Snow Shot.</translation>
+            <source>The model name displayed in WingShot.</source>
+            <translation>The model name displayed in WingShot.</translation>
         </message>
         <message>
             <source>This model was deleted. Close this form and create a new model.</source>
@@ -447,8 +447,8 @@
             <translation>A launch-at-login change is already in progress.</translation>
         </message>
         <message>
-            <source>Approval required. Allow Snow Shot in System Settings &gt; General &gt; Login Items.</source>
-            <translation>Approval required. Allow Snow Shot in System Settings &gt; General &gt; Login Items.</translation>
+            <source>Approval required. Allow WingShot in System Settings &gt; General &gt; Login Items.</source>
+            <translation>Approval required. Allow WingShot in System Settings &gt; General &gt; Login Items.</translation>
         </message>
         <message>
             <source>Could not change launch at login: %1</source>
@@ -463,16 +463,16 @@
             <translation>Could not save the launch-at-login preference. The displayed macOS status is still current.</translation>
         </message>
         <message>
-            <source>Move the signed Snow Shot app to /Applications or ~/Applications to use launch at login.</source>
-            <translation>Move the signed Snow Shot app to /Applications or ~/Applications to use launch at login.</translation>
+            <source>Move the signed WingShot app to /Applications or ~/Applications to use launch at login.</source>
+            <translation>Move the signed WingShot app to /Applications or ~/Applications to use launch at login.</translation>
         </message>
         <message>
-            <source>Snow Shot needs a valid code signature to use launch at login. Reinstall the signed app.</source>
-            <translation>Snow Shot needs a valid code signature to use launch at login. Reinstall the signed app.</translation>
+            <source>WingShot needs a valid code signature to use launch at login. Reinstall the signed app.</source>
+            <translation>WingShot needs a valid code signature to use launch at login. Reinstall the signed app.</translation>
         </message>
         <message>
-            <source>macOS could not find Snow Shot's login item. Reinstall the app in Applications.</source>
-            <translation>macOS could not find Snow Shot's login item. Reinstall the app in Applications.</translation>
+            <source>macOS could not find WingShot's login item. Reinstall the app in Applications.</source>
+            <translation>macOS could not find WingShot's login item. Reinstall the app in Applications.</translation>
         </message>
         <message>
             <source>macOS did not apply the launch-at-login change. Check Login Items in System Settings.</source>
@@ -1818,12 +1818,12 @@
             <translation>Magnifier visibility</translation>
         </message>
         <message>
-            <source>Manage Snow Shot's login permission in macOS System Settings</source>
-            <translation>Manage Snow Shot's login permission in macOS System Settings</translation>
+            <source>Manage WingShot's login permission in macOS System Settings</source>
+            <translation>Manage WingShot's login permission in macOS System Settings</translation>
         </message>
         <message>
-            <source>Manage macOS permissions for Snow Shot</source>
-            <translation>Manage macOS permissions for Snow Shot</translation>
+            <source>Manage macOS permissions for WingShot</source>
+            <translation>Manage macOS permissions for WingShot</translation>
         </message>
         <message>
             <source>Manual</source>
@@ -2298,8 +2298,8 @@
             <translation>Restart App</translation>
         </message>
         <message>
-            <source>Restart Snow Shot with administrator privileges</source>
-            <translation>Restart Snow Shot with administrator privileges</translation>
+            <source>Restart WingShot with administrator privileges</source>
+            <translation>Restart WingShot with administrator privileges</translation>
         </message>
         <message>
             <source>Restart as administrator</source>
@@ -2530,8 +2530,8 @@
             <translation>Serial number</translation>
         </message>
         <message>
-            <source>Set image quality for screenshot files saved outside the Snow Shot dialog</source>
-            <translation>Set image quality for screenshot files saved outside the Snow Shot dialog</translation>
+            <source>Set image quality for screenshot files saved outside the WingShot dialog</source>
+            <translation>Set image quality for screenshot files saved outside the WingShot dialog</translation>
         </message>
         <message>
             <source>Set the border color of pinned screenshots</source>
@@ -2678,10 +2678,6 @@
             <translation>Smart selection</translation>
         </message>
         <message>
-            <source>Snow Shot</source>
-            <translation>Snow Shot</translation>
-        </message>
-        <message>
             <source>Snowflake</source>
             <translation>Snowflake</translation>
         </message>
@@ -2718,16 +2714,16 @@
             <translation>Standalone Translation Window</translation>
         </message>
         <message>
-            <source>Start Snow Shot in the background when Windows starts</source>
-            <translation>Start Snow Shot in the background when Windows starts</translation>
+            <source>Start WingShot in the background when Windows starts</source>
+            <translation>Start WingShot in the background when Windows starts</translation>
         </message>
         <message>
-            <source>Start Snow Shot in the background when you log in.</source>
-            <translation>Start Snow Shot in the background when you log in.</translation>
+            <source>Start WingShot in the background when you log in.</source>
+            <translation>Start WingShot in the background when you log in.</translation>
         </message>
         <message>
-            <source>Start Snow Shot with administrator privileges when you sign in</source>
-            <translation>Start Snow Shot with administrator privileges when you sign in</translation>
+            <source>Start WingShot with administrator privileges when you sign in</source>
+            <translation>Start WingShot with administrator privileges when you sign in</translation>
         </message>
         <message>
             <source>Start a screen recording from a confirmed selection</source>
@@ -2988,6 +2984,10 @@
         <message>
             <source>Window grouping</source>
             <translation>Window grouping</translation>
+        </message>
+        <message>
+            <source>WingShot</source>
+            <translation>WingShot</translation>
         </message>
         <message>
             <source>Write the screenshot to a file and copy that file to the clipboard</source>
@@ -3314,12 +3314,12 @@ Unavailable: %2</translation>
     <context>
         <name>snow_shot::presentation::GlobalMouseManager</name>
         <message>
-            <source>Allow Snow Shot in System Settings &gt; Privacy &amp; Security &gt; Accessibility to use global mouse gestures.</source>
-            <translation>Allow Snow Shot in System Settings &gt; Privacy &amp; Security &gt; Accessibility to use global mouse gestures.</translation>
+            <source>Allow WingShot in System Settings &gt; Privacy &amp; Security &gt; Accessibility to use global mouse gestures.</source>
+            <translation>Allow WingShot in System Settings &gt; Privacy &amp; Security &gt; Accessibility to use global mouse gestures.</translation>
         </message>
         <message>
-            <source>Allow Snow Shot in System Settings &gt; Privacy &amp; Security &gt; Input Monitoring to use global mouse gestures.</source>
-            <translation>Allow Snow Shot in System Settings &gt; Privacy &amp; Security &gt; Input Monitoring to use global mouse gestures.</translation>
+            <source>Allow WingShot in System Settings &gt; Privacy &amp; Security &gt; Input Monitoring to use global mouse gestures.</source>
+            <translation>Allow WingShot in System Settings &gt; Privacy &amp; Security &gt; Input Monitoring to use global mouse gestures.</translation>
         </message>
         <message>
             <source>Checking global mouse permissions...</source>
@@ -3353,12 +3353,12 @@ Unavailable: %2</translation>
             <translation>The configuration archive could not be created.</translation>
         </message>
         <message>
-            <source>The configuration archive was created by a newer version of Snow Shot.</source>
-            <translation>The configuration archive was created by a newer version of Snow Shot.</translation>
+            <source>The configuration archive was created by a newer version of WingShot.</source>
+            <translation>The configuration archive was created by a newer version of WingShot.</translation>
         </message>
         <message>
-            <source>The file is not a Snow Shot configuration archive.</source>
-            <translation>The file is not a Snow Shot configuration archive.</translation>
+            <source>The file is not a WingShot configuration archive.</source>
+            <translation>The file is not a WingShot configuration archive.</translation>
         </message>
         <message>
             <source>The file is not a valid configuration archive.</source>

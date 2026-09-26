@@ -224,16 +224,16 @@
             <translation>此平台不支持提升权限</translation>
         </message>
         <message>
-            <source>Elevation requires a registered Snow Shot installation</source>
-            <translation>提升权限需要已注册的 Snow Shot 安装</translation>
+            <source>Elevation requires a registered WingShot installation</source>
+            <translation>提升权限需要已注册的 WingShot 安装</translation>
         </message>
         <message>
             <source>Incomplete update archive</source>
             <translation>更新压缩包不完整</translation>
         </message>
         <message>
-            <source>Invalid Snow Shot installation root</source>
-            <translation>无效的 Snow Shot 安装目录</translation>
+            <source>Invalid WingShot installation root</source>
+            <translation>无效的 WingShot 安装目录</translation>
         </message>
         <message>
             <source>Invalid previous installation path</source>
@@ -396,8 +396,8 @@
             <translation>更新目标与应用程序进程不匹配</translation>
         </message>
         <message>
-            <source>This copy does not have valid Snow Shot installation metadata</source>
-            <translation>此副本缺少有效的 Snow Shot 安装元数据</translation>
+            <source>This copy does not have valid WingShot installation metadata</source>
+            <translation>此副本缺少有效的 WingShot 安装元数据</translation>
         </message>
         <message>
             <source>Unexpected update package URL</source>

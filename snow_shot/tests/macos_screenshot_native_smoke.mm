@@ -296,7 +296,7 @@ int main(int argc, char** argv) {
     });
     CaptureFixture fixture;
     fixture.resize(160, 120);
-    fixture.setWindowTitle(QStringLiteral("Snow Shot screenshot fixture"));
+    fixture.setWindowTitle(QStringLiteral("WingShot screenshot fixture"));
     fixture.show();
     app.processEvents();
     auto* view = reinterpret_cast<NSView*>(fixture.winId());

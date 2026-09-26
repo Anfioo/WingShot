@@ -255,13 +255,13 @@ class ApplicationController::Impl {
                          [this](const QString& version) {
                              systemTray.showUpdateMessage(
                                  ApplicationController::tr(
-                                     "Snow Shot %1 is available. Open About for update options.")
+                                     "WingShot %1 is available. Open About for update options.")
                                      .arg(version));
                          });
 #ifndef Q_OS_MACOS
         QObject::connect(updates, &update::UpdateService::updateReady, &q, [this] {
             systemTray.showUpdateMessage(ApplicationController::tr(
-                "An update is ready. Open About to restart and update Snow Shot."));
+                "An update is ready. Open About to restart and update WingShot."));
         });
 #endif
         platform::windows::setAdministratorRestartGuard([this] { return restartAllowed(); });
@@ -279,7 +279,7 @@ class ApplicationController::Impl {
             const auto answer = QMessageBox::question(
                 mainWindow, ApplicationController::tr("Restart and update"),
                 ApplicationController::tr(
-                    "Snow Shot will close and restart to install the update. Continue?"),
+                    "WingShot will close and restart to install the update. Continue?"),
                 QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel);
             if (answer != QMessageBox::Yes) {
                 return;

@@ -6,7 +6,7 @@
     <key>LSApplicationCategoryType</key><string>public.app-category.productivity</string>
     <key>NSHumanReadableCopyright</key><string>${SNOW_SHOT_COPYRIGHT}</string>
     <key>CFBundleExecutable</key><string>${MACOSX_BUNDLE_EXECUTABLE_NAME}</string>
-    <key>CFBundleIdentifier</key><string>com.snowshot.snow_shot</string>
+    <key>CFBundleIdentifier</key><string>com.anfioo.wingshot</string>
     <key>CFBundleName</key><string>Snow Shot</string>
     <key>CFBundleDisplayName</key><string>Snow Shot</string>
     <key>CFBundleIconFile</key><string>${MACOSX_BUNDLE_ICON_FILE}</string>

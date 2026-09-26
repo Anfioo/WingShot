@@ -156,7 +156,7 @@ validate_and_stage() {
     bundle="$mount_dir/Snow Shot.app"
     if [[ ! -e "$bundle" ]]; then bundle="$mount_dir/snow_shot.app"; fi
     [[ -d "$bundle" && ! -L "$bundle" ]] || return 1
-    [[ "$(plutil -extract CFBundleIdentifier raw -o - "$bundle/Contents/Info.plist" 2>> "$work/diagnostic.log")" == com.snowshot.snow_shot ]] || return 1
+    [[ "$(plutil -extract CFBundleIdentifier raw -o - "$bundle/Contents/Info.plist" 2>> "$work/diagnostic.log")" == com.anfioo.wingshot ]] || return 1
     executable=$(plutil -extract CFBundleExecutable raw -o - "$bundle/Contents/Info.plist" 2>> "$work/diagnostic.log") || return 1
     [[ "$executable" == snow_shot && -x "$bundle/Contents/MacOS/$executable" ]] || return 1
     minimum=$(plutil -extract LSMinimumSystemVersion raw -o - "$bundle/Contents/Info.plist" 2>> "$work/diagnostic.log") || return 1
@@ -262,7 +262,7 @@ sign_application() {
     say signing
     prepare_identity
     # Do not use --deep when signing: OCR's manifest hashes the embedded helpers.
-    run codesign --force --sign "$signing_identity" --identifier com.snowshot.snow_shot \
+    run codesign --force --sign "$signing_identity" --identifier com.anfioo.wingshot \
         --keychain "$HOME/Library/Keychains/login.keychain-db" \
         "$work/snow_shot.app" || die identity
     run codesign --verify --deep --strict "$work/snow_shot.app" || die invalid

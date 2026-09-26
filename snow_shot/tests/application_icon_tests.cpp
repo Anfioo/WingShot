@@ -126,7 +126,7 @@ void installedApplicationIconPreservesItsGreenTaskbarBorder() {
     namespace icons = snow_shot::presentation::icons::custom;
     QApplication::setWindowIcon(adqt::icons::makeIcon(icons::app::ApplicationIcon()));
     const QIcon installedIcon = QApplication::windowIcon();
-    require(!installedIcon.isNull(), "QApplication did not retain the Snow Shot icon");
+    require(!installedIcon.isNull(), "QApplication did not retain the WingShot icon");
 
     for (const int size : {16, 20, 24, 32, 40, 48, 64}) {
         const QPixmap pixmap = installedIcon.pixmap(QSize(size, size));
@@ -144,11 +144,11 @@ void executableIconResourcePreservesItsGreenTaskbarBorder() {
     for (const int size : {16, 32, 48}) {
         HICON icon = static_cast<HICON>(
             LoadImageW(module, MAKEINTRESOURCEW(101), IMAGE_ICON, size, size, LR_DEFAULTCOLOR));
-        require(icon != nullptr, "Snow Shot executable did not contain its application icon");
+        require(icon != nullptr, "WingShot executable did not contain its application icon");
         const QImage image = QImage::fromHICON(icon);
         DestroyIcon(icon);
         require(!image.isNull() && containsGreenNearBorder(image),
-                "embedded Snow Shot application icon should preserve its green border");
+                "embedded WingShot application icon should preserve its green border");
     }
 }
 #endif

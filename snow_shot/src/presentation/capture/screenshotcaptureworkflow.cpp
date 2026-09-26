@@ -387,7 +387,7 @@ void ScreenshotCaptureWorkflow::beginCapturePreparation(quint64 sessionId) {
             m_startup->qtDisplaySlots.push_back(slot);
         });
     SNOW_SHOT_CAPTURE_PERF_MILESTONE("capture.overlay_prep_done");
-    // Once Snow Shot's windows are excluded, start native acquisition at
+    // Once WingShot's windows are excluded, start native acquisition at
     // once. The capture worker can initialize lazy GPU resources while the
     // UI thread prepares selector and presentation state.
     m_context.runtime.captureAsync(ScreenshotCaptureRequest{sessionId,

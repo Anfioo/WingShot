@@ -287,7 +287,7 @@ int main(int argc, char** argv) {
 #else
     QTemporaryDir directory;
     require(directory.isValid(), "create adapter test directory");
-    const QString root = directory.filePath(QStringLiteral("Snow Shot"));
+    const QString root = directory.filePath(QStringLiteral("WingShot"));
     require(QDir().mkpath(QDir(root).filePath(QStringLiteral("bin"))), "create fake installation");
     const QString helper = QDir(root).filePath(QStringLiteral("bin/snow-shot-updater.exe"));
     require(QFile::copy(QCoreApplication::applicationFilePath(), helper), "copy fake sidecar");

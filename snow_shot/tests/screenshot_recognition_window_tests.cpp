@@ -1998,7 +1998,7 @@ void tableClipboardPreservesLargeValuesForWholeTableAndSelection() {
     editor.selectionModel()->clearSelection();
     editor.pasteSelection();
     require(session->document.cellText(1, 1) == value,
-            "pasting Snow Shot's protected clipboard should restore the unprefixed value");
+            "pasting WingShot's protected clipboard should restore the unprefixed value");
 }
 } // namespace
 

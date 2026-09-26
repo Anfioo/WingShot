@@ -224,16 +224,16 @@
             <translation>Elevation is unavailable on this platform</translation>
         </message>
         <message>
-            <source>Elevation requires a registered Snow Shot installation</source>
-            <translation>Elevation requires a registered Snow Shot installation</translation>
+            <source>Elevation requires a registered WingShot installation</source>
+            <translation>Elevation requires a registered WingShot installation</translation>
         </message>
         <message>
             <source>Incomplete update archive</source>
             <translation>Incomplete update archive</translation>
         </message>
         <message>
-            <source>Invalid Snow Shot installation root</source>
-            <translation>Invalid Snow Shot installation root</translation>
+            <source>Invalid WingShot installation root</source>
+            <translation>Invalid WingShot installation root</translation>
         </message>
         <message>
             <source>Invalid previous installation path</source>
@@ -396,8 +396,8 @@
             <translation>The update target does not match its application process</translation>
         </message>
         <message>
-            <source>This copy does not have valid Snow Shot installation metadata</source>
-            <translation>This copy does not have valid Snow Shot installation metadata</translation>
+            <source>This copy does not have valid WingShot installation metadata</source>
+            <translation>This copy does not have valid WingShot installation metadata</translation>
         </message>
         <message>
             <source>Unexpected update package URL</source>

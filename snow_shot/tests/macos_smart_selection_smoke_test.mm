@@ -66,7 +66,7 @@ int main(int argc, char** argv) {
     }
     QAccessible::setActive(true);
     QWidget window;
-    window.setWindowTitle(QStringLiteral("Snow Shot Smart selection smoke fixture"));
+    window.setWindowTitle(QStringLiteral("WingShot Smart selection smoke fixture"));
     auto* layout = new QVBoxLayout(&window);
     auto* edit = new QLineEdit(QStringLiteral("Accessibility child selection"), &window);
     layout->addWidget(edit);

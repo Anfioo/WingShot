@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "pack": "snow-shot",
+  "pack": "wingshot",
   "cppNamespace": "snow_shot::presentation::icons::custom",
   "headerInclude": "snow_shot/presentation/components/icons/snowshoticons.h",
-  "source": "Snow Shot project-owned static SVG assets",
+  "source": "WingShot project-owned static SVG assets",
   "entries": [
     {
       "variant": "app",
@@ -23,9 +23,9 @@
     },
     {
       "variant": "brand",
-      "symbol": "SnowShotLogo",
-      "name": "snow-shot-logo",
-      "source": "../src/presentation/components/icons/resources/snow-shot-logo.svg",
+      "symbol": "WingshotLogo",
+      "name": "wingshot-logo",
+      "source": "../src/presentation/components/icons/resources/wingshot-logo.svg",
       "colorModel": "monochrome",
       "fit": "contain"
     },

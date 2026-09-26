@@ -233,7 +233,7 @@ class SystemTrayController::Impl {
         menu->setObjectName(QStringLiteral("systemTrayMenu"));
         menu->setMinimumWidth(300);
         trayIcon->setObjectName(QStringLiteral("snowShotSystemTrayIcon"));
-        trayIcon->setToolTip(QStringLiteral("SnowShot"));
+        trayIcon->setToolTip(QStringLiteral("WingShot"));
         updateIcon();
 
         buildMenu();
