@@ -161,34 +161,30 @@ void customTitleBarUsesPlatformWindowControls() {
         const auto normal = titleBar.grab().toImage();
         const qreal scale = normal.devicePixelRatio();
         const QColor background = titleBar.palette().color(QPalette::Window);
-        adqt::icons::IconRenderRequest wordmarkRequest;
-        const int logoHeight = std::clamp(scheme.metricAlias.fontSizeSM, 10, 14);
-        wordmarkRequest.logicalSize = QSize(qRound(logoHeight * 95.0 / 17.0), logoHeight);
-        wordmarkRequest.devicePixelRatio = scale;
-        const auto wordmark = adqt::icons::renderIconPixmap(
-            snow_shot::presentation::icons::custom::brand::WingshotLogo(
-                adqt::icons::IconColors::primary(ink)),
-            wordmarkRequest);
-        QImage expected(wordmark.size(), QImage::Format_ARGB32_Premultiplied);
-        expected.setDevicePixelRatio(scale);
-        expected.fill(background);
-        {
-            QPainter painter(&expected);
-            painter.drawPixmap(0, 0, wordmark);
-        }
-        const QRect wordmarkRect(qRound(48 * scale),
-                                 qRound((titleBar.height() * scale - wordmark.height()) / 2.0),
-                                 wordmark.width(), wordmark.height());
-        require(normal.copy(wordmarkRect).convertToFormat(expected.format()) == expected,
-                "the title must preserve the original SVG wordmark artwork exactly");
+        // The caption paints the wordmark as text: the leading word keeps the application icon's
+        // fixed brand mark color and the trailing word follows the themed caption ink.
+        const QColor brandMark(0x92, 0x54, 0xDE);
+        // Antialiased strokes at caption size rarely reach the exact ink color, so the themed
+        // word gets a wider tolerance than the flat brand mark.
+        const auto near = [](const QColor& pixel, const QColor& expected, int tolerance) {
+            return qAbs(pixel.red() - expected.red()) <= tolerance &&
+                   qAbs(pixel.green() - expected.green()) <= tolerance &&
+                   qAbs(pixel.blue() - expected.blue()) <= tolerance;
+        };
         bool hasCaptionText = false;
+        bool paintsBrandMark = false;
+        bool paintsThemedWord = false;
         for (int y = 8; y < 24; ++y) {
-            for (int x = 48; x < 110; ++x) {
-                hasCaptionText |=
-                    normal.pixelColor(qRound(x * scale), qRound(y * scale)) != background;
+            for (int x = 48; x < 140; ++x) {
+                const QColor pixel = normal.pixelColor(qRound(x * scale), qRound(y * scale));
+                hasCaptionText |= pixel != background;
+                paintsBrandMark |= near(pixel, brandMark, 20);
+                paintsThemedWord |= near(pixel, ink, 45);
             }
         }
-        require(hasCaptionText, "the original wordmark must be rendered next to the left icon");
+        require(hasCaptionText, "the brand wordmark must be rendered next to the left icon");
+        require(paintsBrandMark && paintsThemedWord,
+                "the wordmark must keep its brand mark color and its themed trailing word");
         const QString renderDir = qEnvironmentVariable("SNOW_TITLEBAR_RENDER_DIR");
         if (!renderDir.isEmpty()) {
             QDir().mkpath(renderDir);
