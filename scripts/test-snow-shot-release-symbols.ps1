@@ -8,12 +8,12 @@ $bin = Join-Path $stage 'bin'
 $null = New-Item -ItemType Directory -Path $bin
 . (Join-Path $PSScriptRoot 'snow-build-environment.ps1')
 $null = Set-SnowBuildEnvironment -Preset 'snow-shot-msvc-release'
-& cl /nologo /std:c++20 /O2 /MT /Zi "/Fd:$root/compile.pdb" "/Fo:$root/fixture.obj" "/Fe:$bin/snow_shot.exe" `
+& cl /nologo /std:c++20 /O2 /MT /Zi "/Fd:$root/compile.pdb" "/Fo:$root/fixture.obj" "/Fe:$bin/WingShot.exe" `
     (Join-Path $repo 'snow_shot/tests/update_helper_fixture.cpp') /link /DEBUG "/PDB:$root/fixture.pdb" advapi32.lib
 if ($LASTEXITCODE -ne 0) { throw 'Symbol fixture compilation failed.' }
 # dumpbin reports the RSDS age in decimal. Raise the freshly linked pair's age
 # to a multi-digit value so a hex misreading of the dumpbin field fails here.
-$fixtureExe = [IO.File]::ReadAllBytes((Join-Path $bin 'snow_shot.exe'))
+$fixtureExe = [IO.File]::ReadAllBytes((Join-Path $bin 'WingShot.exe'))
 $rsdsOffset = -1
 for ($i = 0; $i -lt $fixtureExe.Length - 16; $i++) {
     if ($fixtureExe[$i] -eq 0x52 -and $fixtureExe[$i + 1] -eq 0x53 -and
@@ -21,7 +21,7 @@ for ($i = 0; $i -lt $fixtureExe.Length - 16; $i++) {
 }
 if ($rsdsOffset -lt 0) { throw 'Fixture executable has no RSDS record.' }
 [BitConverter]::GetBytes([uint32]10).CopyTo($fixtureExe, $rsdsOffset + 20)
-[IO.File]::WriteAllBytes((Join-Path $bin 'snow_shot.exe'), $fixtureExe)
+[IO.File]::WriteAllBytes((Join-Path $bin 'WingShot.exe'), $fixtureExe)
 $fixturePdbPath = Join-Path $root 'fixture.pdb'
 $fixturePdb = [IO.File]::ReadAllBytes($fixturePdbPath)
 $guidBytes = [byte[]]::new(16)
@@ -39,8 +39,8 @@ foreach ($pdbAgeOffset in $pdbAgeOffsets) {
     [BitConverter]::GetBytes([uint32]10).CopyTo($fixturePdb, $pdbAgeOffset)
 }
 [IO.File]::WriteAllBytes($fixturePdbPath, $fixturePdb)
-Copy-Item -LiteralPath (Join-Path $bin 'snow_shot.exe') -Destination (Join-Path $bin 'snow-shot-updater.exe')
-Copy-Item -LiteralPath (Join-Path $bin 'snow_shot.exe') -Destination (Join-Path $bin 'snow-ocr-process.exe')
+Copy-Item -LiteralPath (Join-Path $bin 'WingShot.exe') -Destination (Join-Path $bin 'snow-shot-updater.exe')
+Copy-Item -LiteralPath (Join-Path $bin 'WingShot.exe') -Destination (Join-Path $bin 'snow-ocr-process.exe')
 foreach ($external in @($false, $true)) {
     $options = @{}
     if ($external) { $options.OcrAssetManifest = Join-Path $repo 'snow_shot/packaging/snow-shot-ocr-asset-manifest.json' }

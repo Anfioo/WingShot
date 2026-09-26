@@ -28,8 +28,8 @@ add_executable(snow-ocr-process helper.cpp)
 set(CMAKE_INSTALL_DEFAULT_COMPONENT_NAME SnowShot)
 install(TARGETS snow_shot BUNDLE DESTINATION .)
 install(TARGETS snow_shot_image_codec_backend
-    LIBRARY DESTINATION snow_shot.app/Contents/Frameworks)
-install(TARGETS snow-ocr-process RUNTIME DESTINATION snow_shot.app/Contents/MacOS)
+    LIBRARY DESTINATION WingShot.app/Contents/Frameworks)
+install(TARGETS snow-ocr-process RUNTIME DESTINATION WingShot.app/Contents/MacOS)
 find_program(SNOW_CRASHPAD_HANDLER NAMES crashpad_handler
     PATHS "${SNOW_FFMPEG_ROOT}/tools/crashpad" "${SNOW_FFMPEG_ROOT}/tools"
     NO_DEFAULT_PATH REQUIRED)

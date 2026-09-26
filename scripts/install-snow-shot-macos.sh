@@ -153,19 +153,19 @@ validate_and_stage() {
     mkdir -p "$mount_dir" || return 1
     run hdiutil attach -readonly -nobrowse -noautoopen -mountpoint "$mount_dir" "$dmg" || return 1
     package_mounted=1
-    bundle="$mount_dir/Snow Shot.app"
-    if [[ ! -e "$bundle" ]]; then bundle="$mount_dir/snow_shot.app"; fi
+    bundle="$mount_dir/WingShot.app"
+    if [[ ! -e "$bundle" ]]; then bundle="$mount_dir/WingShot.app"; fi
     [[ -d "$bundle" && ! -L "$bundle" ]] || return 1
     [[ "$(plutil -extract CFBundleIdentifier raw -o - "$bundle/Contents/Info.plist" 2>> "$work/diagnostic.log")" == com.anfioo.wingshot ]] || return 1
     executable=$(plutil -extract CFBundleExecutable raw -o - "$bundle/Contents/Info.plist" 2>> "$work/diagnostic.log") || return 1
-    [[ "$executable" == snow_shot && -x "$bundle/Contents/MacOS/$executable" ]] || return 1
+    [[ "$executable" == WingShot && -x "$bundle/Contents/MacOS/$executable" ]] || return 1
     minimum=$(plutil -extract LSMinimumSystemVersion raw -o - "$bundle/Contents/Info.plist" 2>> "$work/diagnostic.log") || return 1
     version_supported "$os_version" "$minimum" || return 1
     description=$(file -b "$bundle/Contents/MacOS/$executable") || return 1
     [[ "$description" == *Mach-O* && "$description" == *"$asset_arch"* ]] || return 1
     run codesign --verify --deep --strict "$bundle" || return 1
-    run ditto "$bundle" "$work/snow_shot.app" || return 1
-    run codesign --verify --deep --strict "$work/snow_shot.app" || return 1
+    run ditto "$bundle" "$work/WingShot.app" || return 1
+    run codesign --verify --deep --strict "$work/WingShot.app" || return 1
     unmount_package || return 1
 }
 
@@ -183,7 +183,7 @@ obtain_package() {
     fi
     # Detach before attempting another image; never delete an active mount point.
     unmount_package || die invalid
-    rm -rf -- "$work/snow_shot.app"
+    rm -rf -- "$work/WingShot.app"
     say fallback
     fetch 'https://api.github.com/repos/mg-chao/snow-apps/releases/latest' "$work/release.json" || die unavailable
     urls=$(github_urls "$work/release.json" 2>> "$work/diagnostic.log") || die unavailable
@@ -264,19 +264,19 @@ sign_application() {
     # Do not use --deep when signing: OCR's manifest hashes the embedded helpers.
     run codesign --force --sign "$signing_identity" --identifier com.anfioo.wingshot \
         --keychain "$HOME/Library/Keychains/login.keychain-db" \
-        "$work/snow_shot.app" || die identity
-    run codesign --verify --deep --strict "$work/snow_shot.app" || die invalid
+        "$work/WingShot.app" || die identity
+    run codesign --verify --deep --strict "$work/WingShot.app" || die invalid
     if [[ -f "$state/requirement" ]]; then
         requirement=$(cat "$state/requirement")
         [[ -n "$requirement" ]] || die continuity
-        run codesign --verify --strict -R "=$requirement" "$work/snow_shot.app" || die continuity
+        run codesign --verify --strict -R "=$requirement" "$work/WingShot.app" || die continuity
     else
-        requirement=$(codesign -d -r- "$work/snow_shot.app" 2>> "$work/diagnostic.log" | sed -n 's/^# //; s/^designated => //p')
+        requirement=$(codesign -d -r- "$work/WingShot.app" 2>> "$work/diagnostic.log" | sed -n 's/^# //; s/^designated => //p')
         [[ -n "$requirement" && "$requirement" != *cdhash* ]] || die continuity
     fi
     # Only the validated, locally signed staged copy is eligible for removal.
-    if xattr -p com.apple.quarantine "$work/snow_shot.app" >/dev/null 2>&1; then
-        run xattr -dr com.apple.quarantine "$work/snow_shot.app"
+    if xattr -p com.apple.quarantine "$work/WingShot.app" >/dev/null 2>&1; then
+        run xattr -dr com.apple.quarantine "$work/WingShot.app"
     fi
 }
 
@@ -324,7 +324,7 @@ install_application() {
     fi
     slot=$(as_install mktemp -d "$applications_dir/.snow-shot-install.XXXXXX")
     if [[ "$needs_sudo" == 1 ]]; then as_install chown "$(id -u):$(id -g)" "$slot"; fi
-    run ditto "$work/snow_shot.app" "$slot/new.app"
+    run ditto "$work/WingShot.app" "$slot/new.app"
     run codesign --verify --deep --strict "$slot/new.app"
     quit_installed
     [[ ! -e "$previous_destination" ]] || had_previous=1

@@ -802,7 +802,7 @@ pub fn apply_transaction(
         let ready = hooks.probe.map_or_else(
             || {
                 run_with_timeout(
-                    Command::new(root.join("bin/snow_shot.exe"))
+                    Command::new(root.join("bin/WingShot.exe"))
                         .arg("--update-probe")
                         .arg(&release.version)
                         .stdout(Stdio::piped())
@@ -986,7 +986,7 @@ pub fn audit_release(directory: &Path, release: &UpdateRelease) -> Result<()> {
             "Release signature is invalid or its signing key is not trusted",
         )?;
         let succeeded = run_with_timeout(
-            Command::new(temporary.path().join("bin/snow_shot.exe"))
+            Command::new(temporary.path().join("bin/WingShot.exe"))
                 .arg("--update-probe")
                 .arg(&release.version),
             Duration::from_secs(60),
@@ -1145,12 +1145,12 @@ mod tests {
         let root = directory.path().join("雪图 SnowShot café 中文路径 🧊");
         fs::create_dir_all(root.join("bin")).unwrap();
         let old_app = b"old application";
-        fs::write(root.join("bin/snow_shot.exe"), old_app).unwrap();
+        fs::write(root.join("bin/WingShot.exe"), old_app).unwrap();
         let old_record = InstallationRecord {
             schema: 1,
             variant: "online".to_owned(),
             version: "1.0.0".to_owned(),
-            files: vec![descriptor("bin/snow_shot.exe", old_app)],
+            files: vec![descriptor("bin/WingShot.exe", old_app)],
         };
         fs::write(
             root.join(INSTALLATION_RECORD),
@@ -1163,19 +1163,19 @@ mod tests {
             schema: 1,
             variant: "online".to_owned(),
             version: "2.0.0".to_owned(),
-            files: vec![descriptor("bin/snow_shot.exe", new_app)],
+            files: vec![descriptor("bin/WingShot.exe", new_app)],
         };
         let new_record_bytes = serde_json::to_vec(&new_record).unwrap();
         let archive = directory.path().join("更新包 🧊.zip");
         write_zip(
             &archive,
             &[
-                ("bin/snow_shot.exe", new_app, None),
+                ("bin/WingShot.exe", new_app, None),
                 (INSTALLATION_RECORD, &new_record_bytes, None),
             ],
         );
         let mut update_package = package(vec![
-            descriptor("bin/snow_shot.exe", new_app),
+            descriptor("bin/WingShot.exe", new_app),
             descriptor(INSTALLATION_RECORD, &new_record_bytes),
         ]);
         update_package.size = fs::metadata(&archive).unwrap().len();
@@ -1196,7 +1196,7 @@ mod tests {
             },
         )
         .unwrap();
-        assert_eq!(fs::read(root.join("bin/snow_shot.exe")).unwrap(), new_app);
+        assert_eq!(fs::read(root.join("bin/WingShot.exe")).unwrap(), new_app);
         assert_eq!(
             serde_json::from_slice::<InstallationRecord>(
                 &fs::read(root.join(INSTALLATION_RECORD)).unwrap()
@@ -1216,14 +1216,14 @@ mod tests {
             fs::create_dir_all(root.join("bin")).unwrap();
             let old_app = b"old application";
             let old_helper = b"old helper";
-            fs::write(root.join("bin/snow_shot.exe"), old_app).unwrap();
+            fs::write(root.join("bin/WingShot.exe"), old_app).unwrap();
             fs::write(root.join("bin/snow-shot-updater.exe"), old_helper).unwrap();
             let old_record = InstallationRecord {
                 schema: 1,
                 variant: "online".to_owned(),
                 version: "1.0.0".to_owned(),
                 files: vec![
-                    descriptor("bin/snow_shot.exe", old_app),
+                    descriptor("bin/WingShot.exe", old_app),
                     descriptor("bin/snow-shot-updater.exe", old_helper),
                 ],
             };
@@ -1240,7 +1240,7 @@ mod tests {
                 variant: "online".to_owned(),
                 version: "2.0.0".to_owned(),
                 files: vec![
-                    descriptor("bin/snow_shot.exe", new_app),
+                    descriptor("bin/WingShot.exe", new_app),
                     descriptor("bin/snow-shot-updater.exe", new_helper),
                 ],
             };
@@ -1249,13 +1249,13 @@ mod tests {
             write_zip(
                 &archive,
                 &[
-                    ("bin/snow_shot.exe", new_app, None),
+                    ("bin/WingShot.exe", new_app, None),
                     ("bin/snow-shot-updater.exe", new_helper, None),
                     (INSTALLATION_RECORD, &new_record_bytes, None),
                 ],
             );
             let mut update_package = package(vec![
-                descriptor("bin/snow_shot.exe", new_app),
+                descriptor("bin/WingShot.exe", new_app),
                 descriptor("bin/snow-shot-updater.exe", new_helper),
                 descriptor(INSTALLATION_RECORD, &new_record_bytes),
             ]);
@@ -1278,12 +1278,12 @@ mod tests {
             );
             if probe_succeeds {
                 result.unwrap();
-                assert_eq!(fs::read(root.join("bin/snow_shot.exe")).unwrap(), new_app);
+                assert_eq!(fs::read(root.join("bin/WingShot.exe")).unwrap(), new_app);
                 assert!(!transaction_pending(&root));
-                assert!(work_path(&root, "backup/bin/snow_shot.exe").is_file());
+                assert!(work_path(&root, "backup/bin/WingShot.exe").is_file());
             } else {
                 assert_eq!(result.unwrap_err().code, "startup_probe_failed");
-                assert_eq!(fs::read(root.join("bin/snow_shot.exe")).unwrap(), old_app);
+                assert_eq!(fs::read(root.join("bin/WingShot.exe")).unwrap(), old_app);
                 assert_eq!(
                     fs::read_to_string(work_path(&root, "failed-version.txt")).unwrap(),
                     "2.0.0"
@@ -1299,13 +1299,13 @@ mod tests {
             let directory = tempfile::tempdir().unwrap();
             let root = directory.path().join("SnowShot");
             fs::create_dir_all(root.join("bin")).unwrap();
-            fs::write(root.join("bin/snow_shot.exe"), b"application").unwrap();
+            fs::write(root.join("bin/WingShot.exe"), b"application").unwrap();
             if let Some(bytes) = damaged {
                 fs::write(root.join(INSTALLATION_RECORD), bytes).unwrap();
             }
 
             uninstall(&root, false).unwrap();
-            assert!(root.join("bin/snow_shot.exe").is_file());
+            assert!(root.join("bin/WingShot.exe").is_file());
             assert!(!root.join(UPDATE_WORK).exists());
         }
     }
@@ -1317,13 +1317,13 @@ mod tests {
         fs::create_dir_all(root.join("bin")).unwrap();
         let application = b"application";
         let helper = b"helper";
-        fs::write(root.join("bin/snow_shot.exe"), application).unwrap();
+        fs::write(root.join("bin/WingShot.exe"), application).unwrap();
         let record = InstallationRecord {
             schema: 1,
             variant: "online".to_owned(),
             version: "1.0.0".to_owned(),
             files: vec![
-                descriptor("bin/snow_shot.exe", application),
+                descriptor("bin/WingShot.exe", application),
                 descriptor("bin/snow-shot-updater.exe", helper),
             ],
         };
@@ -1334,7 +1334,7 @@ mod tests {
         .unwrap();
 
         uninstall(&root, false).unwrap();
-        assert!(!root.join("bin/snow_shot.exe").exists());
+        assert!(!root.join("bin/WingShot.exe").exists());
         assert!(!root.join("bin/snow-shot-updater.exe").exists());
     }
 
@@ -1345,13 +1345,13 @@ mod tests {
         fs::create_dir_all(root.join("bin")).unwrap();
         fs::create_dir_all(work_path(&root, "backup/bin")).unwrap();
         let application = b"application";
-        fs::write(root.join("bin/snow_shot.exe"), application).unwrap();
+        fs::write(root.join("bin/WingShot.exe"), application).unwrap();
         fs::write(root.join("bin/user-data.dat"), b"user data").unwrap();
         let record = InstallationRecord {
             schema: 1,
             variant: "online".to_owned(),
             version: "1.0.0".to_owned(),
-            files: vec![descriptor("bin/snow_shot.exe", application)],
+            files: vec![descriptor("bin/WingShot.exe", application)],
         };
         fs::write(
             root.join(INSTALLATION_RECORD),
@@ -1361,7 +1361,7 @@ mod tests {
         fs::write(work_path(&root, "journal.json"), b"damaged journal").unwrap();
 
         uninstall(&root, false).unwrap();
-        assert!(!root.join("bin/snow_shot.exe").exists());
+        assert!(!root.join("bin/WingShot.exe").exists());
         assert!(root.join("bin/user-data.dat").is_file());
         assert!(!root.join(UPDATE_WORK).exists());
     }
@@ -1372,7 +1372,7 @@ mod tests {
         let root = directory.path().join("SnowShot");
         fs::create_dir_all(root.join("bin")).unwrap();
         let application = b"application";
-        fs::write(root.join("bin/snow_shot.exe"), application).unwrap();
+        fs::write(root.join("bin/WingShot.exe"), application).unwrap();
         // The selected data directory covers one claimed file; removing that
         // entry must not block removal of the remaining owned files.
         fs::write(root.join("bin/__data_directory"), b"missing-data").unwrap();
@@ -1381,7 +1381,7 @@ mod tests {
             variant: "online".to_owned(),
             version: "1.0.0".to_owned(),
             files: vec![
-                descriptor("bin/snow_shot.exe", application),
+                descriptor("bin/WingShot.exe", application),
                 descriptor("bin/missing-data/plugin.dll", b"plugin"),
             ],
         };
@@ -1392,7 +1392,7 @@ mod tests {
         .unwrap();
 
         uninstall(&root, false).unwrap();
-        assert!(!root.join("bin/snow_shot.exe").exists());
+        assert!(!root.join("bin/WingShot.exe").exists());
         assert!(!root.join(UPDATE_WORK).exists());
     }
 
@@ -1431,13 +1431,13 @@ mod tests {
         let root = directory.path().join("SnowShot");
         fs::create_dir_all(root.join("bin")).unwrap();
         let application = b"application";
-        fs::write(root.join("bin/snow_shot.exe"), application).unwrap();
+        fs::write(root.join("bin/WingShot.exe"), application).unwrap();
         fs::write(root.join("bin/__data_directory"), [0xff]).unwrap();
         let record = InstallationRecord {
             schema: 1,
             variant: "online".to_owned(),
             version: "1.0.0".to_owned(),
-            files: vec![descriptor("bin/snow_shot.exe", application)],
+            files: vec![descriptor("bin/WingShot.exe", application)],
         };
         fs::write(
             root.join(INSTALLATION_RECORD),
@@ -1450,7 +1450,7 @@ mod tests {
             "data_directory_invalid"
         );
         uninstall(&root, true).unwrap();
-        assert!(!root.join("bin/snow_shot.exe").exists());
+        assert!(!root.join("bin/WingShot.exe").exists());
     }
 
     #[test]
@@ -1459,7 +1459,7 @@ mod tests {
         let root = directory.path().join("SnowShot");
         fs::create_dir_all(root.join("bin")).unwrap();
         let application = b"application";
-        fs::write(root.join("bin/snow_shot.exe"), application).unwrap();
+        fs::write(root.join("bin/WingShot.exe"), application).unwrap();
         fs::create_dir_all(work_path(&root, "user")).unwrap();
         fs::write(work_path(&root, "user/photo.png"), b"photo").unwrap();
         fs::write(root.join("bin/__data_directory"), b"../.snow-shot-update").unwrap();
@@ -1467,7 +1467,7 @@ mod tests {
             schema: 1,
             variant: "online".to_owned(),
             version: "1.0.0".to_owned(),
-            files: vec![descriptor("bin/snow_shot.exe", application)],
+            files: vec![descriptor("bin/WingShot.exe", application)],
         };
         fs::write(
             root.join(INSTALLATION_RECORD),
@@ -1480,7 +1480,7 @@ mod tests {
             "selected_data_collision"
         );
         uninstall(&root, false).unwrap();
-        assert!(!root.join("bin/snow_shot.exe").exists());
+        assert!(!root.join("bin/WingShot.exe").exists());
         assert_eq!(
             fs::read(work_path(&root, "user/photo.png")).unwrap(),
             b"photo"
@@ -1495,12 +1495,12 @@ mod tests {
         let root = directory.path().join("SnowShot");
         fs::create_dir_all(root.join("bin")).unwrap();
         let application = b"application";
-        fs::write(root.join("bin/snow_shot.exe"), application).unwrap();
+        fs::write(root.join("bin/WingShot.exe"), application).unwrap();
         let record = InstallationRecord {
             schema: 1,
             variant: "online".to_owned(),
             version: "1.0.0".to_owned(),
-            files: vec![descriptor("bin/snow_shot.exe", application)],
+            files: vec![descriptor("bin/WingShot.exe", application)],
         };
         fs::write(
             root.join(INSTALLATION_RECORD),
@@ -1513,7 +1513,7 @@ mod tests {
             uninstall(&root, false).unwrap_err().code,
             "update_lock_failed"
         );
-        assert!(root.join("bin/snow_shot.exe").is_file());
+        assert!(root.join("bin/WingShot.exe").is_file());
     }
 
     #[test]
@@ -1522,13 +1522,13 @@ mod tests {
         let root = directory.path().join("SnowShot");
         fs::create_dir_all(root.join("bin/plugin.dll")).unwrap();
         let application = b"application";
-        fs::write(root.join("bin/snow_shot.exe"), application).unwrap();
+        fs::write(root.join("bin/WingShot.exe"), application).unwrap();
         let record = InstallationRecord {
             schema: 1,
             variant: "online".to_owned(),
             version: "1.0.0".to_owned(),
             files: vec![
-                descriptor("bin/snow_shot.exe", application),
+                descriptor("bin/WingShot.exe", application),
                 descriptor("bin/plugin.dll", b"plugin"),
             ],
         };
@@ -1539,7 +1539,7 @@ mod tests {
         .unwrap();
 
         uninstall(&root, false).unwrap();
-        assert!(!root.join("bin/snow_shot.exe").exists());
+        assert!(!root.join("bin/WingShot.exe").exists());
         assert!(root.join("bin/plugin.dll").is_dir());
     }
 }

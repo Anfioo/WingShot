@@ -834,7 +834,7 @@ static AdministratorResult updateInstallationStartup(const QString& root,
 #ifdef Q_OS_WIN
     try {
         Tasks tasks;
-        tasks.executable = QDir(root).filePath(QStringLiteral("bin/snow_shot.exe"));
+        tasks.executable = QDir(root).filePath(QStringLiteral("bin/WingShot.exe"));
         ComPtr<IRegisteredTaskCollection> collection;
         check(tasks.folder->GetTasks(TASK_ENUM_HIDDEN, &collection));
         LONG count = 0;
@@ -875,7 +875,7 @@ static AdministratorResult updateInstallationStartup(const QString& root,
             const QString previousExecutable = tasks.executable;
             if (!replacementRoot.isEmpty()) {
                 tasks.executable =
-                    QDir(replacementRoot).filePath(QStringLiteral("bin/snow_shot.exe"));
+                    QDir(replacementRoot).filePath(QStringLiteral("bin/WingShot.exe"));
                 tasks.name = taskName(tasks.executable, tasks.sid);
                 if (tasks.current())
                     throw std::runtime_error(QT_TRANSLATE_NOOP(
@@ -887,7 +887,7 @@ static AdministratorResult updateInstallationStartup(const QString& root,
             if (!replacementRoot.isEmpty()) {
                 try {
                     tasks.executable =
-                        QDir(replacementRoot).filePath(QStringLiteral("bin/snow_shot.exe"));
+                        QDir(replacementRoot).filePath(QStringLiteral("bin/WingShot.exe"));
                     tasks.name = taskName(tasks.executable, tasks.sid);
                     tasks.create();
                 } catch (...) {
@@ -910,7 +910,7 @@ static AdministratorResult updateInstallationStartup(const QString& root,
                 ? QString()
                 : QStringLiteral("\"%1\" --autostart")
                       .arg(QDir::toNativeSeparators(
-                          QDir(replacementRoot).filePath(QStringLiteral("bin/snow_shot.exe"))));
+                          QDir(replacementRoot).filePath(QStringLiteral("bin/WingShot.exe"))));
         // Enumerate loaded user hives, never confuse the installer account with the app owner.
         for (DWORD index = 0;; ++index) {
             wchar_t sid[256];

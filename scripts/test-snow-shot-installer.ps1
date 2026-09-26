@@ -10,7 +10,7 @@ New-Item -ItemType Directory -Path $testRoot | Out-Null
 $fixture = Join-Path $testRoot "fixture.exe"
 $destination = Join-Path $testRoot ("installed app " + [char]0x5b89)
 New-Item -ItemType Directory -Path $destination | Out-Null
-$installed = Join-Path $destination "snow_shot.exe"
+$installed = Join-Path $destination "WingShot.exe"
 
 function Compile-Installer {
     param([string]$Output, [switch]$Guard, [string]$Answer)
@@ -186,7 +186,7 @@ if (-not $ReproduceOnly) {
         "/DOWNED_CLEANUP=$repoRoot\snow_shot\packaging\OwnedCleanup.nsh" `
         "$repoRoot\snow_shot\tests\installer_owned_cleanup_tests.nsi"
     if ($LASTEXITCODE -ne 0) { throw "Owned cleanup test compilation failed." }
-    $ownedApp = Join-Path $ownedDestination "bin\snow_shot.exe"
+    $ownedApp = Join-Path $ownedDestination "bin\WingShot.exe"
     $ownedManifest = Join-Path $ownedDestination "snow-shot-installation.json"
     $ownedMarker = Join-Path $ownedDestination "snow-shot-updater-ran.txt"
 

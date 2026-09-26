@@ -302,7 +302,7 @@ if ($LASTEXITCODE -ne 0) {
     throw "Snow Shot install step failed."
 }
 
-$mainExecutable = Join-Path $installDirectory "bin\snow_shot.exe"
+$mainExecutable = Join-Path $installDirectory "bin\WingShot.exe"
 if (-not (Test-Path -LiteralPath $mainExecutable)) {
     throw "The staged application was not found: $mainExecutable"
 }
@@ -313,7 +313,7 @@ $expectedBinaryMetadata = @{
     FileDescription = "Snow Shot screenshot utility"
     InternalName = "snow_shot"
     LegalCopyright = "Copyright (C) 2025-2026 mg-chao"
-    OriginalFilename = "snow_shot.exe"
+    OriginalFilename = "WingShot.exe"
     ProductName = "Snow Shot"
 }
 foreach ($property in $expectedBinaryMetadata.Keys) {
@@ -343,7 +343,7 @@ foreach ($property in $expectedUpdaterMetadata.Keys) {
 }
 
 $requiredStageFiles = @(
-    "bin\snow_shot.exe",
+    "bin\WingShot.exe",
     "bin\crashpad_handler.exe",
     "bin\snow-ocr-process.exe",
     "bin\DirectML.dll",
@@ -388,7 +388,7 @@ if (Test-Path -LiteralPath $stagedQtPluginDirectory -PathType Container) {
 }
 
 $stagedExecutables = @(Get-ChildItem -LiteralPath $installDirectory -Recurse -File -Filter "*.exe")
-$expectedExecutables = @("snow_shot.exe", "snow-ocr-process.exe", "crashpad_handler.exe", "snow-shot-updater.exe")
+$expectedExecutables = @("WingShot.exe", "snow-ocr-process.exe", "crashpad_handler.exe", "snow-shot-updater.exe")
 $unexpectedExecutables = @($stagedExecutables | Where-Object { $_.Name -notin $expectedExecutables })
 if ($unexpectedExecutables.Count -gt 0) {
     throw "Release staging contains unexpected executables: $($unexpectedExecutables.FullName -join ', ')"
@@ -409,7 +409,7 @@ if ($debugArtifacts.Count -gt 0) {
 $stagedBinaries = @(Get-ChildItem -LiteralPath $installDirectory -Recurse -File |
     Where-Object { $_.Extension.ToLowerInvariant() -in @(".dll", ".exe") })
 $expectedBinaryPaths = @(
-    "bin\snow_shot.exe",
+    "bin\WingShot.exe",
     "bin\snow-shot-updater.exe",
     "bin\crashpad_handler.exe",
     "bin\snow-ocr-process.exe",
@@ -422,9 +422,9 @@ $unexpectedBinaries = @($stagedBinaries | Where-Object {
 if ($unexpectedBinaries.Count -gt 0) {
     throw "Release staging contains unexpected binary files: $($unexpectedBinaries.FullName -join ', ')"
 }
-$applicationPath = Join-Path $installDirectory "bin\snow_shot.exe"
+$applicationPath = Join-Path $installDirectory "bin\WingShot.exe"
 Assert-NoPeExports -Path $applicationPath
-Write-Output "PE export audit: snow_shot.exe has no export directory or exported symbols"
+Write-Output "PE export audit: WingShot.exe has no export directory or exported symbols"
 $stagedBinDirectory = Join-Path $installDirectory "bin"
 $windowsSystemDirectory = [Environment]::GetFolderPath([Environment+SpecialFolder]::System)
 $debugRuntimeImports = [System.Collections.Generic.List[string]]::new()
@@ -492,7 +492,7 @@ $allowedSystemImports = @(
     "wtsapi32.dll"
 )
 $allowedLocalImports = @{
-    "snow_shot.exe" = @()
+    "WingShot.exe" = @()
     "snow-shot-updater.exe" = @()
     "crashpad_handler.exe" = @()
     "snow-ocr-process.exe" = @("directml.dll")
@@ -641,11 +641,11 @@ if (-not (Test-Path -LiteralPath $cpackConfig)) {
 $cpackConfiguration = Get-Content -LiteralPath $cpackConfig -Raw
 $requiredCpackSettings = @{
     CPACK_CREATE_DESKTOP_LINKS = "snow_shot"
-    CPACK_PACKAGE_EXECUTABLES = "snow_shot;WingShot"
+    CPACK_PACKAGE_EXECUTABLES = "WingShot;WingShot"
     CPACK_PACKAGE_HOMEPAGE_URL = "https://wingshot.anfioo.com"
     CPACK_PACKAGE_INSTALL_DIRECTORY = "WingShot"
     CPACK_PACKAGE_INSTALL_REGISTRY_KEY = "WingShot"
-    CPACK_NSIS_INSTALLED_ICON_NAME = "bin\\snow_shot.exe"
+    CPACK_NSIS_INSTALLED_ICON_NAME = "bin\\WingShot.exe"
 }
 foreach ($setting in $requiredCpackSettings.Keys) {
     $escapedSetting = [regex]::Escape($setting)

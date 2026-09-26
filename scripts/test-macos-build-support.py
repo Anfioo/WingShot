@@ -64,7 +64,7 @@ class MacOSBundleMetadata(unittest.TestCase):
         self.assertIsNotNone(cmake)
         with tempfile.TemporaryDirectory(prefix='snow dmg staging ') as directory:
             stage = Path(directory)
-            bundle = stage / 'snow_shot.app'
+            bundle = stage / 'WingShot.app'
             files = {'Contents/Info.plist': b'plist',
                      'Contents/MacOS/snow_shot': b'executable',
                      'Contents/_CodeSignature/CodeResources': b'signature'}
@@ -160,13 +160,13 @@ if name == 'cmake' and '--preset' in sys.argv and '--build' not in sys.argv:
     (build / 'CMakeCache.txt').write_text('\\n'.join(entries) + '\\n')
 if name == 'cmake' and '--build' in sys.argv:
     preset = sys.argv[sys.argv.index('--preset') + 1].removeprefix('build-')
-    binary = pathlib.Path(os.environ['SNOW_TEST_ROOT']) / 'build' / preset / 'snow_shot/snow_shot.app/Contents/MacOS/snow_shot'
+    binary = pathlib.Path(os.environ['SNOW_TEST_ROOT']) / 'build' / preset / 'snow_shot/WingShot.app/Contents/MacOS/snow_shot'
     binary.parent.mkdir(parents=True, exist_ok=True)
     binary.touch()
     binary.chmod(0o755)
 if name == 'cmake' and '--install' in sys.argv and '--prefix' in sys.argv:
     prefix = pathlib.Path(sys.argv[sys.argv.index('--prefix') + 1])
-    binary = prefix / 'snow_shot.app/Contents/MacOS/snow_shot'
+    binary = prefix / 'WingShot.app/Contents/MacOS/snow_shot'
     binary.parent.mkdir(parents=True, exist_ok=True)
     binary.touch()
     binary.chmod(0o755)
@@ -386,12 +386,12 @@ if name == 'openssl':
         self.assertIn("'FEATURE_dup3:BOOL=OFF' 'QT_FEATURE_dup3:INTERNAL=OFF'", builder)
 
     def test_launch_bundle_with_arguments(self):
-        app = self.root / 'build/snow-shot-macos-arm64-debug/snow_shot/snow_shot.app'
+        app = self.root / 'build/snow-shot-macos-arm64-debug/snow_shot/WingShot.app'
         binary = app / 'Contents/MacOS/snow_shot'
         binary.parent.mkdir(parents=True)
         binary.touch()
         binary.chmod(0o755)
-        deployed = app.parent.parent / 'run/snow_shot.app'
+        deployed = app.parent.parent / 'run/WingShot.app'
         deployed.mkdir(parents=True)
         calls = self.run_script('run-snow-shot.sh', '--', '--example', 'a path')
         self.assertIn(['cmake', '--build', '--preset', 'build-snow-shot-macos-arm64-debug',
@@ -401,12 +401,12 @@ if name == 'openssl':
         self.assertEqual(calls[-2], ['lsregister', '-f', str(deployed)])
 
     def test_launch_stops_selected_build_instances_before_rebuilding(self):
-        app = self.root / 'build/snow-shot-macos-arm64-debug/snow_shot/snow_shot.app'
+        app = self.root / 'build/snow-shot-macos-arm64-debug/snow_shot/WingShot.app'
         binary = app / 'Contents/MacOS/snow_shot'
         binary.parent.mkdir(parents=True)
         binary.touch()
         binary.chmod(0o755)
-        running = app.parent.parent / 'run/snow_shot.app/Contents/MacOS/snow_shot'
+        running = app.parent.parent / 'run/WingShot.app/Contents/MacOS/snow_shot'
         running.parent.mkdir(parents=True)
         unrelated = self.root / 'other/snow_shot'
         process = subprocess.Popen(['/bin/sleep', '60'])
@@ -431,13 +431,13 @@ if name == 'openssl':
         self.assertEqual(process.returncode, -signal.SIGTERM)
 
     def test_launch_can_skip_or_clean_the_automatic_build(self):
-        app = self.root / 'build/snow-shot-macos-arm64-debug/snow_shot/snow_shot.app'
+        app = self.root / 'build/snow-shot-macos-arm64-debug/snow_shot/WingShot.app'
         binary = app / 'Contents/MacOS/snow_shot'
         binary.parent.mkdir(parents=True)
         binary.touch()
         binary.chmod(0o755)
 
-        deployed = app.parent.parent / 'run/snow_shot.app/Contents/MacOS/snow_shot'
+        deployed = app.parent.parent / 'run/WingShot.app/Contents/MacOS/snow_shot'
         deployed.parent.mkdir(parents=True)
         deployed.touch()
         deployed.chmod(0o755)
@@ -452,12 +452,12 @@ if name == 'openssl':
                        '--target', 'snow_shot', '--parallel'], calls)
 
     def test_launch_can_cache_a_persistent_codesign_identity(self):
-        app = self.root / 'build/snow-shot-macos-arm64-debug/snow_shot/snow_shot.app'
+        app = self.root / 'build/snow-shot-macos-arm64-debug/snow_shot/WingShot.app'
         binary = app / 'Contents/MacOS/snow_shot'
         binary.parent.mkdir(parents=True)
         binary.touch()
         binary.chmod(0o755)
-        deployed = app.parent.parent / 'run/snow_shot.app'
+        deployed = app.parent.parent / 'run/WingShot.app'
         deployed.mkdir(parents=True)
 
         identity = 'Snow Shot Development (Local)'
@@ -468,12 +468,12 @@ if name == 'openssl':
                        '--target', 'snow_shot', '--parallel'], calls)
 
     def test_launch_automatically_reuses_a_stable_local_codesign_identity(self):
-        app = self.root / 'build/snow-shot-macos-arm64-debug/snow_shot/snow_shot.app'
+        app = self.root / 'build/snow-shot-macos-arm64-debug/snow_shot/WingShot.app'
         binary = app / 'Contents/MacOS/snow_shot'
         binary.parent.mkdir(parents=True)
         binary.touch()
         binary.chmod(0o755)
-        (app.parent.parent / 'run/snow_shot.app').mkdir(parents=True)
+        (app.parent.parent / 'run/WingShot.app').mkdir(parents=True)
 
         calls = self.run_script('run-snow-shot.sh')
         configure = next(c for c in calls if c[0] == 'cmake' and '--preset' in c)
@@ -482,12 +482,12 @@ if name == 'openssl':
         self.assertFalse(any(c[0] == 'openssl' for c in calls))
 
     def test_launch_creates_the_local_codesign_identity_once_when_missing(self):
-        app = self.root / 'build/snow-shot-macos-arm64-debug/snow_shot/snow_shot.app'
+        app = self.root / 'build/snow-shot-macos-arm64-debug/snow_shot/WingShot.app'
         binary = app / 'Contents/MacOS/snow_shot'
         binary.parent.mkdir(parents=True)
         binary.touch()
         binary.chmod(0o755)
-        (app.parent.parent / 'run/snow_shot.app').mkdir(parents=True)
+        (app.parent.parent / 'run/WingShot.app').mkdir(parents=True)
         self.env['SNOW_TEST_CODESIGN_IDENTITY'] = ''
 
         calls = self.run_script('run-snow-shot.sh')
@@ -499,12 +499,12 @@ if name == 'openssl':
                       '0123456789ABCDEF0123456789ABCDEF01234567', configure)
 
     def test_explicit_adhoc_signing_does_not_provision_an_identity(self):
-        app = self.root / 'build/snow-shot-macos-arm64-debug/snow_shot/snow_shot.app'
+        app = self.root / 'build/snow-shot-macos-arm64-debug/snow_shot/WingShot.app'
         binary = app / 'Contents/MacOS/snow_shot'
         binary.parent.mkdir(parents=True)
         binary.touch()
         binary.chmod(0o755)
-        (app.parent.parent / 'run/snow_shot.app').mkdir(parents=True)
+        (app.parent.parent / 'run/WingShot.app').mkdir(parents=True)
 
         calls = self.run_script('run-snow-shot.sh', '--codesign-identity', '-')
         configure = next(c for c in calls if c[0] == 'cmake' and '--preset' in c)
@@ -638,13 +638,13 @@ class MacOSBundle(unittest.TestCase):
                 f"-DQt6_DIR={qt}", "-DCMAKE_BUILD_TYPE=Release",
                 f"-DCMAKE_OSX_ARCHITECTURES={os.uname().machine}")
             run("cmake", "--build", str(out))
-            run(str(out / "snow_shot.app/Contents/MacOS/crashpad_handler"), "--version", cwd="/")
-            stale_helper = stage / "snow_shot.app/Contents/MacOS/snow-shot-updater"
+            run(str(out / "WingShot.app/Contents/MacOS/crashpad_handler"), "--version", cwd="/")
+            stale_helper = stage / "WingShot.app/Contents/MacOS/snow-shot-updater"
             stale_helper.parent.mkdir(parents=True, exist_ok=True)
             stale_helper.write_text("obsolete helper")
             run("cmake", "--install", str(out), "--component", "SnowShot", "--prefix", str(stage))
             self.assertFalse(stale_helper.exists())
-            app = stage / "snow_shot.app"
+            app = stage / "WingShot.app"
             info = run("plutil", "-extract", "CFBundleIconFile", "raw", "-o", "-",
                        str(app / "Contents/Info.plist")).strip()
             self.assertEqual(info, "snow-shot.icns")
@@ -672,7 +672,7 @@ class MacOSBundle(unittest.TestCase):
             try:
                 packaged = mount / "Snow Shot.app"
                 self.assertTrue(packaged.is_dir())
-                self.assertFalse((mount / "snow_shot.app").exists())
+                self.assertFalse((mount / "WingShot.app").exists())
                 self.assertEqual(os.readlink(mount / "Applications"), "/Applications")
                 self.assertTrue((mount / ".background/background.png").is_file())
                 self.assertTrue((mount / ".DS_Store").is_file())

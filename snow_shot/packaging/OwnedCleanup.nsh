@@ -14,7 +14,7 @@
 ; because its failure (running application, active update, access denied)
 ; is recoverable before files are removed.
 !macro SnowShotUninstallOwnedCleanup
-  Push "$INSTDIR\bin\snow_shot.exe"
+  Push "$INSTDIR\bin\WingShot.exe"
   Call un.SnowShotEnsureAppClosed
   Push "$INSTDIR\bin\crashpad_handler.exe"
   Call un.SnowShotEnsureAppClosed

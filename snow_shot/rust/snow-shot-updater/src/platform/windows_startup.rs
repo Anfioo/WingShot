@@ -414,7 +414,7 @@ impl TaskManager {
                 security: unsafe { task.GetSecurityDescriptor(DACL_SECURITY_INFORMATION.0 as i32) }
                     .map_err(update_error)?,
             };
-            let destination = replacement.map(|path| path.join("bin/snow_shot.exe"));
+            let destination = replacement.map(|path| path.join("bin/WingShot.exe"));
             let destination_name = destination.as_deref().map(|path| task_name(path, &sid));
             if let Some(name) = destination_name.as_deref() {
                 self.destination_absent(name)?;
@@ -440,7 +440,7 @@ impl TaskManager {
 fn startup_command(root: &Path) -> String {
     format!(
         "\"{}\" --autostart",
-        root.join("bin/snow_shot.exe").display()
+        root.join("bin/WingShot.exe").display()
     )
 }
 
@@ -676,7 +676,7 @@ fn update_run_keys(root: &Path, replacement: Option<&Path>) -> Result<()> {
 }
 
 fn update_installation_startup(root: &Path, replacement: Option<&Path>) -> Result<()> {
-    let executable = root.join("bin/snow_shot.exe");
+    let executable = root.join("bin/WingShot.exe");
     TaskManager::new()?.update_tasks(&executable, replacement)?;
     update_run_keys(root, replacement)
 }

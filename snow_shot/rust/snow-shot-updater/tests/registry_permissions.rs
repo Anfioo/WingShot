@@ -144,9 +144,9 @@ fn prepare(root: &Path, archive: &Path) -> UpdateRelease {
         schema: 1,
         variant: "online".into(),
         version: version.into(),
-        files: vec![descriptor("bin/snow_shot.exe", bytes)],
+        files: vec![descriptor("bin/WingShot.exe", bytes)],
     };
-    fs::write(root.join("bin/snow_shot.exe"), b"old").unwrap();
+    fs::write(root.join("bin/WingShot.exe"), b"old").unwrap();
     fs::write(
         root.join(INSTALLATION_RECORD),
         serde_json::to_vec(&record("1.0.0", b"old")).unwrap(),
@@ -154,7 +154,7 @@ fn prepare(root: &Path, archive: &Path) -> UpdateRelease {
     .unwrap();
     let next = serde_json::to_vec(&record("2.0.0", b"new")).unwrap();
     let entries = [
-        ("bin/snow_shot.exe", b"new".as_slice()),
+        ("bin/WingShot.exe", b"new".as_slice()),
         (INSTALLATION_RECORD, &next),
     ];
     let mut zip = zip::ZipWriter::new(fs::File::create(archive).unwrap());
@@ -249,7 +249,7 @@ fn registry_permissions_and_transaction_recovery() {
         )
         .unwrap_err();
         assert_eq!(error.code, "registered_version_update_failed");
-        assert_eq!(fs::read(root.join("bin/snow_shot.exe")).unwrap(), b"old");
+        assert_eq!(fs::read(root.join("bin/WingShot.exe")).unwrap(), b"old");
         assert!(!transaction_pending(&root));
     }
 
@@ -286,7 +286,7 @@ fn registry_permissions_and_transaction_recovery() {
     )
     .unwrap_err();
     assert_eq!(error.code, "startup_probe_failed");
-    assert_eq!(fs::read(root.join("bin/snow_shot.exe")).unwrap(), b"old");
+    assert_eq!(fs::read(root.join("bin/WingShot.exe")).unwrap(), b"old");
     assert!(!transaction_pending(&root));
     acl(&uninstall, KEY_SET_VALUE.0);
     platform::write_registered_version(&root, "1.0.0").unwrap();

@@ -30,7 +30,7 @@ while [[ $# -gt 0 ]]; do
         *) snow_die "Unknown argument: $1" ;;
     esac
 done
-deployed_app="$snow_build_dir/run/snow_shot.app"
+deployed_app="$snow_build_dir/run/WingShot.app"
 wait_for_process_exit() {
     local pid="$1"
     local attempts="$2"
@@ -85,7 +85,7 @@ if [[ "$codesign_identity_set" == false ]]; then
 fi
 build_args+=(-- "-DSNOW_MACOS_CODESIGN_IDENTITY=$codesign_identity")
 "$(dirname "$0")/build.sh" "${build_args[@]}"
-app="$snow_build_dir/snow_shot/snow_shot.app"
+app="$snow_build_dir/snow_shot/WingShot.app"
 [[ -x "$app/Contents/MacOS/snow_shot" ]] || snow_die "Snow Shot was not found for $snow_preset. Run without --no-build to create it."
 # Deploy a separate development copy so dlopen-only OCR dependencies and Qt
 # plugins resolve exactly as they do in a package. Leave build products intact.

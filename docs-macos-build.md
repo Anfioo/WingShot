@@ -94,9 +94,9 @@ and requires exactly one matching architecture DMG and checksum asset. Pre-relea
 and draft assets are not selected. Checksums detect corruption; they are downloaded
 over HTTPS from the same release source, not a separate publisher-signature system.
 
-The DMG contains `Snow Shot.app` at its root (the installer also accepts legacy
+The DMG contains `WingShot.app` at its root (the installer also accepts legacy
 `snow_shot.app` packages), with bundle ID
-`com.anfioo.wingshot`, executable `snow_shot`, a minimum macOS version, and a
+`com.anfioo.wingshot`, executable `WingShot`, a minimum macOS version, and a
 valid bundle signature (ad-hoc is supported). Publishing these assets and this
 installer remains a separate release operation. Nothing is uploaded by the script.
 
@@ -110,7 +110,7 @@ machine’s language. Native privacy prompts use macOS language selection. Drag 
 app to Applications, eject the image, and open Snow Shot from Applications.
 The bundle includes its icon, full release version, copyright, Productivity
 category, supported languages, and localized macOS privacy prompts. The internal
-executable and settings identifier remain `snow_shot`.
+executable is `WingShot` and the settings identifier remains `snow_shot`.
 
 Packaging uses Finder through AppleScript to save the disk image layout. Run it
 in a logged-in macOS desktop session; macOS may request permission for the
@@ -340,7 +340,7 @@ The system log then reports `Failed to match existing code requirement` for
 
 Quit Snow Shot, remove its old entry from System Settings > Privacy & Security >
 Accessibility with the minus button, then add and enable the exact deployed app:
-`build/<preset>/run/snow_shot.app`. Restart that copy with
+`build/<preset>/run/WingShot.app`. Restart that copy with
 `scripts/run-snow-shot.sh <preset> --no-build`. This option launches the existing
 deployment without rebuilding, reinstalling, or signing it again. The raw app
 under `build/<preset>/snow_shot` has a different signature and is not the copy

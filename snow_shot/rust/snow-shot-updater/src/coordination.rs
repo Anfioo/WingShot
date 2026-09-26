@@ -666,7 +666,7 @@ mod windows_coordination {
 
     fn relaunch(root: &Path) -> Result<()> {
         spawn_detached(
-            &root.join("bin/snow_shot.exe"),
+            &root.join("bin/WingShot.exe"),
             &["--show-main-window".to_owned()],
             Some(root),
         )
@@ -838,7 +838,7 @@ mod windows_coordination {
                 verify_peer(
                     application.as_raw_handle(),
                     true,
-                    &root.join("bin/snow_shot.exe"),
+                    &root.join("bin/WingShot.exe"),
                     Some(numeric_option(args, "--parent")?),
                     None,
                     None,
@@ -1018,7 +1018,7 @@ mod windows_coordination {
             validate_worker_copy(args, &root)?;
             let parent = platform::open_validated_process(
                 numeric_option(args, "--parent")?,
-                &root.join("bin/snow_shot.exe"),
+                &root.join("bin/WingShot.exe"),
             )?;
             let service = if args.iter().any(|argument| argument == "--service-parent") {
                 Some(platform::open_validated_process(

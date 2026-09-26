@@ -13,7 +13,7 @@ if(NOT SNOW_SHOT_VERSION MATCHES "^([0-9]+\\.[0-9]+\\.[0-9]+)(-[0-9A-Za-z.-]+)?$
 endif()
 set(SNOW_SHOT_VERSION_NUMERIC "${CMAKE_MATCH_1}")
 set(SNOW_SHOT_PRODUCT_NAME "WingShot")
-set(SNOW_SHOT_EXECUTABLE_NAME "snow_shot")
+set(SNOW_SHOT_EXECUTABLE_NAME "WingShot")
 set(SNOW_SHOT_VENDOR "WingShot")
 set(SNOW_SHOT_DESCRIPTION
     "A screenshot utility for capturing, annotating, pinning, and recognizing screen content.")

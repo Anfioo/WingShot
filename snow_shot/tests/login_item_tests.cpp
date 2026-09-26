@@ -139,7 +139,7 @@ void launchAndPaths() {
          {QStringLiteral("/Applications-other/WingShot.app"),
           QStringLiteral("/Volumes/WingShot/WingShot.app"),
           QStringLiteral("/private/var/AppTranslocation/WingShot.app"),
-          QStringLiteral("/build/snow_shot.app"), QStringLiteral("/Applications/snow_shot")})
+          QStringLiteral("/build/WingShot.app"), QStringLiteral("/Applications/snow_shot")})
         require(!loginItemLocationAllowed(path, user), "non-installed bundle rejected");
     const QStringList manual{QStringLiteral("snow_shot"), QStringLiteral("--show-main-window")};
     require(loginItemLaunchArguments(manual, false) == manual, "manual launch preserved");

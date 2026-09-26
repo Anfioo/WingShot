@@ -30,12 +30,12 @@ if (!$SkipBuild) {
 
 $release = Join-Path $workspace "build\windows-msvc-performance\snow_shot\test-bin\Release"
 $benchmark = Join-Path $release "snow-shot-capture-startup-performance-benchmark.exe"
-$application = Join-Path $release "snow_shot.exe"
+$application = Join-Path $release "WingShot.exe"
 if (!(Test-Path $benchmark)) {
     $benchmark = (Get-ChildItem -Path (Join-Path $workspace "build\windows-msvc-performance") -Recurse -Filter "snow-shot-capture-startup-performance-benchmark.exe" | Select-Object -First 1).FullName
 }
 if (!(Test-Path $application)) {
-    $application = (Get-ChildItem -Path (Join-Path $workspace "build\windows-msvc-performance") -Recurse -Filter "snow_shot.exe" | Select-Object -First 1).FullName
+    $application = (Get-ChildItem -Path (Join-Path $workspace "build\windows-msvc-performance") -Recurse -Filter "WingShot.exe" | Select-Object -First 1).FullName
 }
 if (!(Test-Path $benchmark) -or !(Test-Path $application)) { throw "Expected benchmark binaries were not produced" }
 

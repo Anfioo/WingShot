@@ -62,7 +62,7 @@ elif name == 'file': print('Mach-O 64-bit executable ' + os.environ.get('BINARY_
 elif name == 'codesign':
     if '--force' in args:
         assert '--deep' not in args
-        executable = pathlib.Path(args[-1]) / 'Contents/MacOS/snow_shot'
+        executable = pathlib.Path(args[-1]) / 'Contents/MacOS/WingShot'
         executable.write_bytes(executable.read_bytes() + b' locally signed')
     elif '-d' in args: print('designated => ' + os.environ['REQUIREMENT'])
     elif (pathlib.Path(args[-1]) / 'reject-signature').exists(): fail()
@@ -123,9 +123,9 @@ class InstallerTests(unittest.TestCase):
         self.bundle = self.root / 'bundle'
         (self.bundle / 'Contents/MacOS').mkdir(parents=True)
         (self.bundle / 'Contents/Resources/assets/ocr').mkdir(parents=True)
-        self.info = dict(CFBundleIdentifier='com.anfioo.wingshot', CFBundleExecutable='snow_shot', LSMinimumSystemVersion='15.0')
+        self.info = dict(CFBundleIdentifier='com.anfioo.wingshot', CFBundleExecutable='WingShot', LSMinimumSystemVersion='15.0')
         self.write_info()
-        self.executable = self.bundle / 'Contents/MacOS/snow_shot'
+        self.executable = self.bundle / 'Contents/MacOS/WingShot'
         self.executable.write_bytes(b'fixture executable')
         self.executable.chmod(0o755)
         (self.bundle / 'Contents/MacOS/snow-ocr-process').write_bytes(b'signed helper')
@@ -151,8 +151,8 @@ class InstallerTests(unittest.TestCase):
 
     def test_accepts_legacy_dmg_bundle_name(self):
         self.shell('validate_and_stage "$FIXTURE/package.dmg" "$FIXTURE/package.dmg.sha256"',
-                   BUNDLE_NAME='snow_shot.app')
-        self.assertTrue((self.work / 'snow_shot.app/Contents/MacOS/snow_shot').is_file())
+                   BUNDLE_NAME='WingShot.app')
+        self.assertTrue((self.work / 'WingShot.app/Contents/MacOS/snow_shot').is_file())
 
     def write_info(self):
         (self.bundle / 'Contents/Info.plist').write_bytes(plistlib.dumps(self.info))
@@ -181,7 +181,7 @@ class InstallerTests(unittest.TestCase):
         return [call for call in calls if name is None or call[0] == name]
 
     def stage(self):
-        shutil.copytree(self.bundle, self.work / 'snow_shot.app')
+        shutil.copytree(self.bundle, self.work / 'WingShot.app')
 
     def identity(self):
         (self.state / 'identity').write_text(FINGERPRINT + '\n')
@@ -232,7 +232,7 @@ class InstallerTests(unittest.TestCase):
     def test_primary_download_and_validation(self):
         self.shell('obtain_package')
         self.assertEqual([c[-1] for c in self.calls('curl')], [PRIMARY, PRIMARY+'.sha256'])
-        self.assertTrue((self.work / 'snow_shot.app').is_dir())
+        self.assertTrue((self.work / 'WingShot.app').is_dir())
         self.assertFalse((self.root / 'mounted').exists())
         self.assertFalse(self.calls('security'))
 
@@ -375,7 +375,7 @@ prepare_identity() { signing_identity=-; }
 sign_application
 ''')
         for path in ['Contents/MacOS/snow-ocr-process', 'Contents/Resources/assets/ocr/asset-manifest.json']:
-            self.assertEqual((self.bundle / path).read_bytes(), (self.work / 'snow_shot.app' / path).read_bytes())
+            self.assertEqual((self.bundle / path).read_bytes(), (self.work / 'WingShot.app' / path).read_bytes())
 
     def test_missing_identity_never_regenerates(self):
         self.identity()
@@ -397,7 +397,7 @@ sign_application
         self.identity()
         self.shell('sign_application')
         for path in ['Contents/MacOS/snow-ocr-process', 'Contents/Resources/assets/ocr/asset-manifest.json']:
-            self.assertEqual((self.bundle / path).read_bytes(), (self.work / 'snow_shot.app' / path).read_bytes())
+            self.assertEqual((self.bundle / path).read_bytes(), (self.work / 'WingShot.app' / path).read_bytes())
         signing = [c for c in self.calls('codesign') if '--force' in c]
         self.assertEqual(len(signing), 1)
         self.assertNotIn('--deep', signing[0])
@@ -431,16 +431,16 @@ sign_application''', success=False)
 
     def test_legacy_installation_migrates_to_product_name(self):
         self.stage()
-        legacy = self.apps / 'snow_shot.app'
+        legacy = self.apps / 'WingShot.app'
         legacy.mkdir()
         (legacy / 'old-marker').write_text('previous application')
         self.shell('trap cleanup EXIT; requirement="$REQUIREMENT"; install_application')
         self.assertFalse(legacy.exists())
-        self.assertTrue((self.destination / 'Contents/MacOS/snow_shot').is_file())
+        self.assertTrue((self.destination / 'Contents/MacOS/WingShot').is_file())
 
     def test_failed_legacy_migration_restores_original_path(self):
         self.stage()
-        legacy = self.apps / 'snow_shot.app'
+        legacy = self.apps / 'WingShot.app'
         legacy.mkdir()
         (legacy / 'old-marker').write_text('previous application')
         self.shell('trap cleanup EXIT; requirement="$REQUIREMENT"; install_application',
@@ -453,7 +453,7 @@ sign_application''', success=False)
         self.stage()
         self.shell('trap cleanup EXIT; requirement="$REQUIREMENT"; launch=0; install_application')
         self.assertFalse((self.destination / 'old-marker').exists())
-        self.assertTrue((self.destination / 'Contents/MacOS/snow_shot').exists())
+        self.assertTrue((self.destination / 'Contents/MacOS/WingShot').exists())
         self.assertFalse(list(self.apps.glob('.snow-shot-install.*')))
         self.assertEqual((self.state / 'requirement').read_text().strip(), REQUIREMENT)
         self.assertFalse(self.calls('open'))
@@ -476,7 +476,7 @@ sign_application''', success=False)
         self.previous()
         self.stage()
         self.shell('trap cleanup EXIT; requirement="$REQUIREMENT"; install_application', success=False, FAIL_OPEN='1')
-        self.assertTrue((self.destination / 'Contents/MacOS/snow_shot').exists())
+        self.assertTrue((self.destination / 'Contents/MacOS/WingShot').exists())
         self.assertFalse((self.destination / 'old-marker').exists())
 
     def test_running_app_is_never_force_killed(self):

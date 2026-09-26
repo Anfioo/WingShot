@@ -41,7 +41,7 @@ endif()
 
 set_target_properties(snow_shot PROPERTIES
     MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_LIST_DIR}/../snow_shot/packaging/macos/Info.plist.in"
-    MACOSX_BUNDLE_BUNDLE_NAME "Snow Shot"
+    MACOSX_BUNDLE_BUNDLE_NAME "WingShot"
     MACOSX_BUNDLE_BUNDLE_VERSION "${SNOW_SHOT_VERSION_NUMERIC}"
     MACOSX_BUNDLE_SHORT_VERSION_STRING "${SNOW_SHOT_VERSION_NUMERIC}"
     MACOSX_BUNDLE_ICON_FILE "snow-shot.icns"
@@ -88,10 +88,10 @@ if(SNOW_SHOT_RELEASE_STATIC)
             "The audited static Qt license bundle is missing: ${_snow_static_qt_licenses}")
     endif()
     install(DIRECTORY "${_snow_static_qt_licenses}/"
-        DESTINATION "snow_shot.app/Contents/Resources/snow-shot/licenses/third-party/qt"
+        DESTINATION "WingShot.app/Contents/Resources/snow-shot/licenses/third-party/qt"
         COMPONENT SnowShot)
     install(DIRECTORY "${SNOW_FFMPEG_ROOT}/share/"
-        DESTINATION "snow_shot.app/Contents/Resources/snow-shot/licenses/third-party/vcpkg"
+        DESTINATION "WingShot.app/Contents/Resources/snow-shot/licenses/third-party/vcpkg"
         COMPONENT SnowShot FILES_MATCHING PATTERN "copyright")
 endif()
 
@@ -104,7 +104,7 @@ if(NOT SNOW_SHOT_OCR_STATIC_ONNXRUNTIME)
             "$<TARGET_FILE_DIR:snow_shot>/libonnxruntime.dylib"
         VERBATIM)
     install(FILES "$<TARGET_FILE:onnxruntime::onnxruntime>"
-        DESTINATION "snow_shot.app/Contents/MacOS" RENAME libonnxruntime.dylib
+        DESTINATION "WingShot.app/Contents/MacOS" RENAME libonnxruntime.dylib
         COMPONENT SnowShot)
 endif()
 
@@ -121,7 +121,7 @@ add_custom_command(TARGET snow_shot POST_BUILD
         -P "${CMAKE_CURRENT_LIST_DIR}/StageSnowShotCrashHandler.cmake"
     VERBATIM)
 install(PROGRAMS "${SNOW_CRASHPAD_HANDLER}"
-    DESTINATION "snow_shot.app/Contents/MacOS" COMPONENT SnowShot)
+    DESTINATION "WingShot.app/Contents/MacOS" COMPONENT SnowShot)
 
 # Archive UUID-matched symbols outside the app bundle for offline symbolication.
 find_program(SNOW_DSYMUTIL dsymutil REQUIRED)
@@ -173,7 +173,7 @@ if(CMAKE_OSX_ARCHITECTURES STREQUAL "arm64" AND TARGET snow_ocr_process)
         endif()
     endforeach()
     install(DIRECTORY "$<TARGET_FILE_DIR:snow_shot>/assets/ocr"
-        DESTINATION "snow_shot.app/Contents/MacOS/assets" COMPONENT SnowShot)
+        DESTINATION "WingShot.app/Contents/MacOS/assets" COMPONENT SnowShot)
 endif()
 
 if(NOT SNOW_SHOT_QT_STATIC)
@@ -182,7 +182,7 @@ if(NOT SNOW_SHOT_QT_STATIC)
     find_file(SNOW_QT_OFFSCREEN_PLUGIN NAMES libqoffscreen.dylib
         HINTS "${_snow_qt_bin}/../plugins/platforms" NO_DEFAULT_PATH REQUIRED)
     install(FILES "${SNOW_QT_OFFSCREEN_PLUGIN}"
-        DESTINATION "snow_shot.app/Contents/PlugIns/platforms" COMPONENT SnowShot)
+        DESTINATION "WingShot.app/Contents/PlugIns/platforms" COMPONENT SnowShot)
     find_program(SNOW_MACDEPLOYQT NAMES macdeployqt HINTS "${_snow_qt_bin}" REQUIRED)
 else()
     set(SNOW_MACDEPLOYQT "")

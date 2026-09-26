@@ -116,7 +116,7 @@ foreach ($binary in Get-ChildItem -LiteralPath (Join-Path $installRoot "bin") -F
             break
         }
     }
-    if ($binary.Name -in @("snow_shot.exe", "snow-shot-updater.exe", "snow-ocr-process.exe") -and -not $record.pdb) {
+    if ($binary.Name -in @("WingShot.exe", "snow-shot-updater.exe", "snow-ocr-process.exe") -and -not $record.pdb) {
         throw "The matching PDB is missing for $($binary.Name); release symbols are incomplete."
     }
     $manifest.binaries += $record

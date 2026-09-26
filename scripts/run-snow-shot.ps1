@@ -21,7 +21,7 @@ $configuration = switch ($Preset) {
     "windows-msvc-debug" { "Debug" }
     default { "Release" }
 }
-$executablePath = Join-Path $buildDirectory "snow_shot\$configuration\snow_shot.exe"
+$executablePath = Join-Path $buildDirectory "snow_shot\$configuration\WingShot.exe"
 
 function Test-PathIsUnderDirectory {
     param(

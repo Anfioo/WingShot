@@ -1337,6 +1337,10 @@ qt_add_executable(snow_shot
     ${PROJECT_SOURCES}
 )
 
+# The CMake target keeps its internal name so existing targets, scripts and packaging keep
+# resolving it, while the produced binary and macOS bundle carry the product name.
+set_target_properties(snow_shot PROPERTIES OUTPUT_NAME "${SNOW_SHOT_EXECUTABLE_NAME}")
+
 if(WIN32)
     configure_file(
         resources/windows-app-resource.rc.in
@@ -6569,7 +6573,7 @@ if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
         SNOW_SHOT_PIN_PERF_INSTRUMENTATION=1
     )
 
-    # Not registered with CTest: drives the real snow_shot.exe through UIA and
+    # Not registered with CTest: drives the real WingShot.exe through UIA and
     # reports hardware-sensitive first/second-capture timing for explicit
     # Windows performance sessions.
     add_executable(snow-shot-capture-startup-performance-benchmark
@@ -6940,9 +6944,9 @@ endif()
 include(GNUInstallDirs)
 if(APPLE)
     set(CMAKE_INSTALL_DEFAULT_COMPONENT_NAME SnowShot)
-    set(CMAKE_INSTALL_BINDIR "snow_shot.app/Contents/MacOS")
-    set(CMAKE_INSTALL_LIBDIR "snow_shot.app/Contents/Frameworks")
-    set(CMAKE_INSTALL_DATADIR "snow_shot.app/Contents/Resources")
+    set(CMAKE_INSTALL_BINDIR "WingShot.app/Contents/MacOS")
+    set(CMAKE_INSTALL_LIBDIR "WingShot.app/Contents/Frameworks")
+    set(CMAKE_INSTALL_DATADIR "WingShot.app/Contents/Resources")
 endif()
 install(TARGETS snow_shot
     BUNDLE DESTINATION .

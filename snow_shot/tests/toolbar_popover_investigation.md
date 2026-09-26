@@ -243,7 +243,7 @@ previous Snow Shot instance, then launch the Debug executable with the logging r
 $previousLoggingRules = $env:QT_LOGGING_RULES
 try {
     $env:QT_LOGGING_RULES = 'adqt.popup.debug=true'
-    & './build/windows-msvc-debug/snow_shot/Debug/snow_shot.exe'
+    & './build/windows-msvc-debug/snow_shot/Debug/WingShot.exe'
 } finally {
     $env:QT_LOGGING_RULES = $previousLoggingRules
 }

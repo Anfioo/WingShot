@@ -50,7 +50,7 @@ Deploy with the normal bundle installer, then use the diagnostic entry point:
 ```sh
 cmake --install build/snow-shot-macos-arm64-debug --component SnowShot \
   --prefix "$PWD/build/snow-shot-macos-arm64-debug/run"
-build/snow-shot-macos-arm64-debug/run/snow_shot.app/Contents/MacOS/snow_shot \
+build/snow-shot-macos-arm64-debug/run/WingShot.app/Contents/MacOS/snow_shot \
   --recording-macos-probe "$PWD/build/recording.mp4" system-audio effects
 ```
 

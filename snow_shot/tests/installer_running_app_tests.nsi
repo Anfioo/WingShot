@@ -14,11 +14,11 @@ RequestExecutionLevel user
 Section
   StrCpy $INSTDIR "${DESTINATION}"
 !ifdef GUARD
-  Push "$INSTDIR\snow_shot.exe"
+  Push "$INSTDIR\WingShot.exe"
   Call SnowShotEnsureAppClosed
 !endif
   SetOutPath "$INSTDIR"
-  File /oname=snow_shot.exe "${PAYLOAD}"
+  File /oname=WingShot.exe "${PAYLOAD}"
   IfErrors 0 +2
     SetErrorLevel 20
 !ifdef GUARD
@@ -27,8 +27,8 @@ Section
 SectionEnd
 !ifdef GUARD
 Section "Uninstall"
-  Push "$INSTDIR\snow_shot.exe"
+  Push "$INSTDIR\WingShot.exe"
   Call un.SnowShotEnsureAppClosed
-  Delete "$INSTDIR\snow_shot.exe"
+  Delete "$INSTDIR\WingShot.exe"
 SectionEnd
 !endif

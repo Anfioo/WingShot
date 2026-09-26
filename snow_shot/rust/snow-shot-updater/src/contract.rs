@@ -364,7 +364,7 @@ pub fn verify_release(envelope: &[u8], trusted_keys: Option<&[u8]>) -> Result<Up
         };
         if kind != "installer" {
             for required in [
-                "bin/snow_shot.exe",
+                "bin/WingShot.exe",
                 "bin/snow-shot-updater.exe",
                 "snow-shot-installation.json",
             ] {
@@ -413,7 +413,7 @@ mod tests {
 
     fn inventory() -> Vec<Value> {
         vec![
-            file("bin/snow_shot.exe"),
+            file("bin/WingShot.exe"),
             file("bin/snow-shot-updater.exe"),
             file("snow-shot-installation.json"),
         ]

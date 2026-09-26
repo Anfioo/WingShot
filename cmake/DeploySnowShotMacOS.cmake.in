@@ -1,4 +1,4 @@
-set(_app "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/snow_shot.app")
+set(_app "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/WingShot.app")
 # Remove the obsolete helper from reused install/package staging directories.
 file(REMOVE "${_app}/Contents/MacOS/snow-shot-updater")
 set(_snow_codesign_identity [==[@SNOW_MACOS_CODESIGN_IDENTITY@]==])
