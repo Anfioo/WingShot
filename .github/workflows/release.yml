@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - "v*_snow-shot"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "版本号，必须与 CMakeLists.txt 中的 SNOW_SHOT_VERSION 一致，例如 1.1.2-beta"
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -23,6 +29,25 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Resolve release tag
+        id: release_tag
+        shell: pwsh
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          $version = [regex]::Match((Get-Content -Raw CMakeLists.txt), 'set\(SNOW_SHOT_VERSION "([^"]+)"\)').Groups[1].Value
+          if ($env:GITHUB_EVENT_NAME -eq 'workflow_dispatch') {
+            $requested = ($env:INPUT_VERSION).Trim()
+            if ($requested -cne $version) {
+              throw "输入的版本 $requested 与 CMakeLists.txt 中的 SNOW_SHOT_VERSION ($version) 不一致。"
+            }
+            $tag = "v${version}_snow-shot"
+          } else {
+            $tag = $env:GITHUB_REF_NAME
+          }
+          "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "RELEASE_TAG=$tag" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Select MSVC x64 tools
         uses: ilammy/msvc-dev-cmd@v1
@@ -110,8 +135,8 @@ jobs:
         shell: pwsh
         run: |
           $version = [regex]::Match((Get-Content -Raw CMakeLists.txt), 'set\(SNOW_SHOT_VERSION "([^"]+)"\)').Groups[1].Value
-          if ($env:GITHUB_REF_NAME -cne "v${version}_snow-shot") {
-            throw "Unexpected release tag: $env:GITHUB_REF_NAME"
+          if ($env:RELEASE_TAG -cne "v${version}_snow-shot") {
+            throw "Unexpected release tag: $env:RELEASE_TAG"
           }
           $names = @()
           foreach ($variant in @('online', 'offline')) {
@@ -133,7 +158,7 @@ jobs:
       - name: Preserve matching release symbols separately
         uses: actions/upload-artifact@v4
         with:
-          name: snow-shot-symbols-${{ github.ref_name }}
+          name: snow-shot-symbols-${{ steps.release_tag.outputs.tag }}
           path: |
             build/snow-shot-msvc-release/snow-shot-symbols-windows-x64.zip
             build/snow-shot-msvc-release/snow-shot-symbols-windows-x64.zip.sha256
@@ -149,8 +174,12 @@ jobs:
           $version = [regex]::Match((Get-Content -Raw CMakeLists.txt), 'set\(SNOW_SHOT_VERSION "([^"]+)"\)').Groups[1].Value
           $releaseFlags = @()
           if (($version -split '\+')[0].Contains('-')) { $releaseFlags += '--prerelease' }
-          gh release create $env:GITHUB_REF_NAME @assets `
+          # 手动触发时标签尚不存在，显式指向本次运行的提交，避免 gh 把标签打到默认分支上。
+          $targetFlags = @()
+          if ($env:GITHUB_EVENT_NAME -eq 'workflow_dispatch') { $targetFlags += @('--target', $env:GITHUB_SHA) }
+          gh release create $env:RELEASE_TAG @assets `
             --draft `
             @releaseFlags `
+            @targetFlags `
             --generate-notes `
-            --title "Snow Shot $env:GITHUB_REF_NAME"
+            --title "Snow Shot $env:RELEASE_TAG"
