@@ -1613,7 +1613,7 @@ bool ScreenshotPinnedWindow::event(QEvent* event) {
     if (nativeGeometryMayHaveSettled) {
         if (m_nativeGeometryController != nullptr &&
             m_nativeGeometryController->hasInteractiveTransaction() && !m_windowDragActive &&
-            m_platform->systemInteractionReleased()) {
+            !m_interactionPlacement && m_platform->systemInteractionReleased()) {
             static_cast<void>(finishNativeGeometryInteraction());
         }
 
@@ -2092,8 +2092,8 @@ bool ScreenshotPinnedWindow::eventFilter(QObject* watched, QEvent* event) {
     if (event->type() == QEvent::Enter || event->type() == QEvent::MouseMove ||
         event->type() == QEvent::DragEnter || event->type() == QEvent::DragMove)
         setControlsPointerInside(true);
-    if (m_platform->usesControlledInteraction() &&
-        (handlePinnedGesture(watched, event) || handleControlledPointer(watched, event)))
+    if ((m_platform->usesControlledInteraction() && handlePinnedGesture(watched, event)) ||
+        handleControlledPointer(watched, event))
         return true;
     if (event->type() == QEvent::Wheel &&
         (handleOpacityWheel(watched, static_cast<QWheelEvent*>(event)) ||

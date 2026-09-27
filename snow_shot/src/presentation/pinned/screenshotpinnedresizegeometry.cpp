@@ -1,4 +1,5 @@
 #include "screenshotpinnedresizegeometry.h"
+#include "../resizegeometry.h"
 
 #include <QtGlobal>
 
@@ -165,5 +166,33 @@ bool screenshot_pinned_resize_geometry::proportionalResizeRect(
     QRect resized(proposed.topLeft(), size);
     attachToFixedAnchor(&resized, reference, handle);
     *result = resized;
+    return true;
+}
+
+bool screenshot_pinned_resize_geometry::dragResizeRect(const QRect& reference, const QPoint& delta,
+                                                       const QSize& baseline, DragHandle pressed,
+                                                       double minimumScale, double maximumScale,
+                                                       DragHandle* effective, QRect* result) {
+    if (!reference.isValid() || baseline.isEmpty() || !effective || !result ||
+        !std::isfinite(minimumScale) || !std::isfinite(maximumScale) || minimumScale <= 0 ||
+        maximumScale < minimumScale)
+        return false;
+    constexpr Qt::Edges edges[] = {Qt::LeftEdge | Qt::TopEdge,     Qt::TopEdge,
+                                   Qt::RightEdge | Qt::TopEdge,    Qt::RightEdge,
+                                   Qt::RightEdge | Qt::BottomEdge, Qt::BottomEdge,
+                                   Qt::LeftEdge | Qt::BottomEdge,  Qt::LeftEdge};
+    namespace geometry = snow_shot::presentation::resize_geometry;
+    const auto drag =
+        geometry::dragGeometry(reference, edges[int(pressed)], delta, edges[int(*effective)]);
+    const double scale = std::clamp(requestedScale(drag.requestedSize, baseline, pressed),
+                                    minimumScale, maximumScale);
+    *result = geometry::anchoredRect(reference, edges[int(pressed)], drag.edges,
+                                     scaledSize(baseline, scale));
+    for (int index = 0; index < 8; ++index) {
+        if (edges[index] == drag.edges) {
+            *effective = static_cast<DragHandle>(index);
+            break;
+        }
+    }
     return true;
 }

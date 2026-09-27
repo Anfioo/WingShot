@@ -429,6 +429,8 @@ class ScreenshotPinnedWindow final : public QWidget {
     QPointF m_interactionPointer;
     QPointF m_interactionAnchor;
     std::optional<int> m_interactionResizeHandle;
+    int m_interactionEffectiveResizeHandle = 0;
+    std::optional<QPoint> m_interactionNativePointer;
     QPointer<QWidget> m_interactionGrabber;
     int m_scrollWheelRemainder = 0;
     int m_scrollWheelDirection = 0;

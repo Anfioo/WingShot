@@ -6521,6 +6521,74 @@ void pinnedScalingAndAspectLockedResizing(SnowCanvasRuntime&) {
 }
 
 #if defined(Q_OS_WIN) || defined(_WIN32)
+void pinnedNativeBordersCrossWithoutSystemSizing() {
+    const CursorPositionRestorer restoreCursor;
+    for (QScreen* display : QGuiApplication::screens()) {
+        ScreenshotPinnedWindow window;
+        window.setAttribute(Qt::WA_DeleteOnClose, false);
+        QImage image(240, 120, QImage::Format_ARGB32_Premultiplied);
+        image.fill(Qt::blue);
+        ScreenshotPinnedWindow::Config config;
+        config.screen = display;
+        config.nativeGeometry = physicalPinGeometry(*display, QPoint(250, 200), image.size());
+        config.canvasSourceRect = QRectF(QPointF(), QSizeF(image.size()));
+        config.initialWindowSize = image.size();
+        config.imageSource = ScreenshotImageSource::fromImage(image, config.canvasSourceRect);
+        config.automaticTextRecognition = false;
+        require(window.present(config), "native crossing pin must present");
+        waitForUi(60);
+        const QRect original = window.currentNativeGeometry();
+        const HWND hwnd = toNativeHwnd(window.winId());
+        const QPoint pressed = original.topLeft() + QPoint(original.width(), original.height());
+        setSystemCursorPosition(pressed);
+        SendMessage(hwnd, WM_NCLBUTTONDOWN, HTBOTTOMRIGHT, MAKELPARAM(pressed.x(), pressed.y()));
+        require(ScreenshotPinnedWindowTestAccess::interactionActive(window) && GetCapture() == hwnd,
+                "native border must start captured application resizing");
+        setSystemCursorPosition(original.topLeft() - QPoint(120, 60));
+        QMouseEvent move(QEvent::MouseMove, QPointF(), QPointF(QCursor::pos()), Qt::NoButton,
+                         Qt::LeftButton, Qt::NoModifier);
+        QCoreApplication::sendEvent(&window, &move);
+        require(window.currentNativeGeometry() ==
+                    QRect(original.topLeft() - QPoint(120, 60), QSize(120, 60)),
+                "native crossing must use physical pointer distances at every display scale");
+        setSystemCursorPosition(original.topLeft() - QPoint(60, 30));
+        QMouseEvent release(QEvent::MouseButtonRelease, QPointF(), QPointF(QCursor::pos()),
+                            Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+        QCoreApplication::sendEvent(&window, &release);
+        waitForUi(30);
+        require(window.currentNativeGeometry() ==
+                        QRect(original.topLeft() - QPoint(60, 30), QSize(60, 30)) &&
+                    !ScreenshotPinnedWindowTestAccess::interactionActive(window) &&
+                    GetCapture() != hwnd &&
+                    ScreenshotPinnedWindowTestAccess::geometrySettled(window),
+                "native release must apply its final pointer and settle the geometry");
+        require(window.persistenceSnapshot().imageTransform.isIdentity(),
+                "native crossing must never mirror the image");
+        for (QScreen* destination : QGuiApplication::screens()) {
+            const QRect before = window.currentNativeGeometry();
+            const QPoint start = before.topLeft() + QPoint(before.width(), before.height());
+            setSystemCursorPosition(start);
+            SendMessage(hwnd, WM_NCLBUTTONDOWN, HTBOTTOMRIGHT, MAKELPARAM(start.x(), start.y()));
+            const QPoint end =
+                ScreenshotGeometryMapper::physicalRectForScreen(*destination).center();
+            setSystemCursorPosition(end);
+            QCoreApplication::sendEvent(&window, &move);
+            auto effective = screenshot_pinned_resize_geometry::DragHandle::BottomRight;
+            QRect expected;
+            require(screenshot_pinned_resize_geometry::dragResizeRect(before, end - start,
+                                                                      image.size(), effective, .1,
+                                                                      5., &effective, &expected) &&
+                        window.currentNativeGeometry() == expected,
+                    "cross-display pointer resize must retain the physical anchor and scale");
+            SendMessage(hwnd, WM_CANCELMODE, 0, 0);
+            require(window.currentNativeGeometry() == before &&
+                        !ScreenshotPinnedWindowTestAccess::interactionActive(window),
+                    "native cancellation must restore the exact starting rectangle");
+        }
+        window.close();
+    }
+}
+
 void pinnedResizeWindowNativeInteractions() {
     QScreen* screen = QGuiApplication::primaryScreen();
     require(screen != nullptr, "Resize window native test requires a primary screen");
@@ -11563,7 +11631,11 @@ void pinnedControlledInteractionAndGestures() {
     ScreenshotPinnedWindow window;
     window.setAttribute(Qt::WA_DeleteOnClose, false);
     QImage image(240, 120, QImage::Format_ARGB32_Premultiplied);
-    image.fill(Qt::white);
+    image.fill(Qt::blue);
+    {
+        QPainter painter(&image);
+        painter.fillRect(0, 0, 120, 120, Qt::red);
+    }
     ScreenshotPinnedWindow::Config config;
     config.screen = screen;
     config.nativeGeometry = physicalPinGeometry(*screen, QPoint(40, 40), image.size());
@@ -11613,6 +11685,32 @@ void pinnedControlledInteractionAndGestures() {
         ScreenshotPinnedWindowTestAccess::endControlled(window, true);
         require(window.currentNativeGeometry() == original,
                 "resize cancellation must restore the exact extent");
+    }
+    for (const QPoint displacement : {QPoint(-360, 0), QPoint(0, -180), QPoint(-360, -180)}) {
+        require(ScreenshotPinnedWindowTestAccess::beginControlled(window, cursor, 4),
+                "crossing pin fixture could not begin");
+        ScreenshotPinnedWindowTestAccess::updateControlled(window, cursor + displacement);
+        const QRect crossed = window.currentNativeGeometry();
+        require((displacement.x() == 0 || crossed.x() < original.x()) &&
+                    (displacement.y() == 0 || crossed.y() < original.y()) &&
+                    std::abs(crossed.width() - 2 * crossed.height()) <= 1,
+                "controlled pin resize must cross either or both axes proportionally");
+        require(window.persistenceSnapshot().imageTransform.isIdentity() &&
+                    ScreenshotPinnedWindowTestAccess::originalImage(window) == image,
+                "crossing must preserve image orientation and source pixels");
+        auto* canvas = window.findChild<SnowCanvasWidget*>();
+        require(canvas != nullptr, "crossed pin must retain its canvas");
+        QImage rendered(canvas->size(), QImage::Format_ARGB32_Premultiplied);
+        rendered.fill(Qt::transparent);
+        canvas->render(&rendered);
+        const QColor left = rendered.pixelColor(rendered.width() / 4, rendered.height() / 2);
+        const QColor right = rendered.pixelColor(3 * rendered.width() / 4, rendered.height() / 2);
+        require(
+            left.red() > left.blue() && right.blue() > right.red(),
+            "asymmetric pinned content must still render red on the left and blue on the right");
+        ScreenshotPinnedWindowTestAccess::endControlled(window, true);
+        require(window.currentNativeGeometry() == original,
+                "crossed pin cancellation must restore its origin");
     }
     for (const auto reason : {QEvent::UngrabMouse, QEvent::WindowDeactivate, QEvent::Hide}) {
         require(ScreenshotPinnedWindowTestAccess::beginControlled(window, cursor),
@@ -12280,6 +12378,7 @@ int main(int argc, char* argv[]) {
         }
 #if defined(Q_OS_WIN) || defined(_WIN32)
         if (app.arguments().contains(QStringLiteral("--resize-window-native-only"))) {
+            pinnedNativeBordersCrossWithoutSystemSizing();
             pinnedResizeWindowNativeInteractions();
             return 0;
         }

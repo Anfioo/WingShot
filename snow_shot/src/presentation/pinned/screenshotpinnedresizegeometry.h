@@ -45,6 +45,10 @@ struct TrackSizeLimits {
 [[nodiscard]] bool proportionalResizeRect(const QRect& proposed, const QRect& reference,
                                           const QSize& baseline, DragHandle handle,
                                           double minimumScale, double maximumScale, QRect* result);
+
+[[nodiscard]] bool dragResizeRect(const QRect& reference, const QPoint& delta,
+                                  const QSize& baseline, DragHandle pressed, double minimumScale,
+                                  double maximumScale, DragHandle* effective, QRect* result);
 } // namespace screenshot_pinned_resize_geometry
 
 #endif // SNOW_SHOT_PRESENTATION_SCREENSHOTPINNEDRESIZEGEOMETRY_H

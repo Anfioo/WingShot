@@ -329,8 +329,10 @@ struct ScreenRecordingController::Impl {
         destroyUi();
     }
 
-    void open(const QRect& region) {
-        if (region.width() < 2 || region.height() < 2 || sessionStatus.busy() ||
+    void open(const QRect& requestedRegion) {
+        const QRect region =
+            snow_shot::presentation::recording::screenRecordingNormalizedRegion(requestedRegion);
+        if (!region.isValid() || region.isEmpty() || sessionStatus.busy() ||
             sessionStatus.state() != ScreenshotToolPalette::RecordingState::Idle) {
             return;
         }

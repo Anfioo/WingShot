@@ -29,6 +29,7 @@
 #include "widgets/dpi_stable_window_controller.h"
 
 #include <QApplication>
+#include <QtMath>
 #include <QDir>
 #include <QFileInfo>
 #include <QTemporaryDir>
@@ -334,6 +335,36 @@ void requireToolbarAboveArea(ScreenRecordingAreaWindow* area) {
     require(toolbar->windowHandle()->transientParent() == area->windowHandle(),
             "recording toolbar must retain the area as its transient owner");
     area->setInputMode(previousInputMode);
+}
+
+void recordingExpandsSmallSelectionsOnOpenAndReopen() {
+    ScreenRecordingController controller(testEffectsSource);
+    for (const QSize size :
+         {QSize(1, 1), QSize(1, 100), QSize(9, 9), QSize(10, 10), QSize(320, 240)}) {
+        controller.open(QRect(QPoint(40, 40), size));
+        QCoreApplication::processEvents();
+        ScreenRecordingAreaWindow* area = nullptr;
+        for (QWidget* widget : QApplication::topLevelWidgets()) {
+            if (auto* candidate = qobject_cast<ScreenRecordingAreaWindow*>(widget))
+                area = candidate;
+        }
+        require(area != nullptr, "even a one-pixel selection must open recording");
+#ifdef Q_OS_MACOS
+        const int minimum = qCeil(10.0 / area->devicePixelRatioF());
+#else
+        const int minimum = 10;
+#endif
+        const QSize expected = size.expandedTo(QSize(minimum, minimum));
+        require(area->recordingRegion().topLeft() == QPoint(40, 40) &&
+                    area->recordingRegion().size() == expected,
+                "open and reopen must expand only the undersized dimensions");
+        const QJsonArray state =
+            controller.automationState().value(QStringLiteral("region")).toArray();
+        require(state == QJsonArray{40, 40, expected.width(), expected.height()},
+                "controller and visible area must agree on the expanded region");
+    }
+    palette()->recordingCloseRequested();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
 }
 
 void recordingAreaOwnsFocusAcrossPresentation() {
@@ -1863,6 +1894,7 @@ int main(int argc, char** argv) {
         ApplicationStorage::instance().shutdown();
         return 0;
     }
+    recordingExpandsSmallSelectionsOnOpenAndReopen();
     recordingAreaOwnsFocusAcrossPresentation();
     recordingToolbarReconcilesFrameBeforeShowing();
     recordingToolbarPlacementAcrossDisplays();
