@@ -3313,6 +3313,19 @@ if(SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-screenshot-canvas-renderer-tests --scrolling-overlay -platform offscreen)
     add_test(NAME snow-shot-overlay-safe-area-tests
         COMMAND snow-shot-screenshot-canvas-renderer-tests --overlay-safe-area -platform offscreen)
+    add_test(NAME snow-shot-overlay-boundary-input-tests
+        COMMAND snow-shot-screenshot-canvas-renderer-tests --overlay-boundary-input -platform offscreen)
+    set_tests_properties(snow-shot-overlay-boundary-input-tests PROPERTIES LABELS "unit")
+    if(APPLE)
+        target_sources(snow-shot-screenshot-canvas-renderer-tests PRIVATE
+            ../cmake/test-support/macos_native_input.mm)
+        target_include_directories(snow-shot-screenshot-canvas-renderer-tests PRIVATE
+            ../cmake/test-support)
+        add_test(NAME snow-shot-macos-overlay-boundary-input-native-tests
+            COMMAND snow-shot-screenshot-canvas-renderer-tests --overlay-boundary-input -platform cocoa)
+        set_tests_properties(snow-shot-macos-overlay-boundary-input-native-tests PROPERTIES
+            LABELS "interactive;macos" RUN_SERIAL TRUE SKIP_RETURN_CODE 77 TIMEOUT 30)
+    endif()
     set_tests_properties(snow-shot-scrolling-overlay-tests PROPERTIES LABELS "unit")
     add_test(NAME snow-shot-overlay-close-release-tests
         COMMAND snow-shot-screenshot-canvas-renderer-tests --close-release-only -platform offscreen)

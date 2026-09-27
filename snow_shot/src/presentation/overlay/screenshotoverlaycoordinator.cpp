@@ -125,9 +125,7 @@ bool ScreenshotOverlayCoordinator::preparePreCaptureOverlayWindows(
         if (overlay->screen() != screen) {
             overlay->setScreen(screen);
         }
-        if (overlay->geometry() != display.logicalRect) {
-            overlay->setGeometry(display.logicalRect);
-        }
+        overlay->setCaptureGeometry(display.logicalRect);
         overlay->setCanvasClearBackgroundEnabled(false);
         overlay->setScreenshotMaskVisible(true);
     }

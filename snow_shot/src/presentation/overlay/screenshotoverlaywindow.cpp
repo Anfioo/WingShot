@@ -105,6 +105,28 @@ SnowCanvasWidget* ScreenshotOverlayWindow::canvas() const {
     return m_canvas;
 }
 
+void ScreenshotOverlayWindow::setCaptureGeometry(const QRect& displayGeometry) {
+#ifdef Q_OS_MACOS
+    // Cocoa's upward Y axis excludes NSMaxY(frame) from WindowServer hit testing.
+    // Put the display's top row inside the native frame, while the canvas still
+    // covers exactly the captured display. This is a logical point, not a pixel.
+    m_captureFrameMargins = QMargins(0, 1, 0, 0);
+#endif
+    layout()->setContentsMargins(m_captureFrameMargins);
+    const QRect frame = displayGeometry.marginsAdded(m_captureFrameMargins);
+    if (geometry() != frame)
+        setGeometry(frame);
+    layout()->activate();
+}
+
+QRect ScreenshotOverlayWindow::captureGeometry() const {
+    return geometry().marginsRemoved(m_captureFrameMargins);
+}
+
+QPoint ScreenshotOverlayWindow::canvasLocalPosition(const QPoint& globalPosition) const {
+    return globalPosition - captureGeometry().topLeft();
+}
+
 void ScreenshotOverlayWindow::setScreenshotImage(QImage image, const QRectF& canvasRect) {
     if (m_screenshotRenderer != nullptr) {
         m_screenshotRenderer->setImage(std::move(image), canvasRect);
@@ -289,10 +311,13 @@ void ScreenshotOverlayWindow::setCanvasClearBackgroundEnabled(bool enabled) {
 
 QJsonObject ScreenshotOverlayWindow::scrollingDiagnostics() const {
     using snow_shot::capture_detail::scrollingRect;
-    const QRect hole = m_inputPassThroughRect.intersected(rect());
+    const QRect hole =
+        m_inputPassThroughRect.translated(m_captureFrameMargins.left(), m_captureFrameMargins.top())
+            .intersected(rect());
     QJsonObject fields{{QStringLiteral("overlay_rect"), scrollingRect(geometry())},
                        {QStringLiteral("hole_rect"), scrollingRect(hole)},
-                       {QStringLiteral("full_hole"), !hole.isEmpty() && hole == rect()},
+                       {QStringLiteral("full_hole"),
+                        !hole.isEmpty() && hole == rect().marginsRemoved(m_captureFrameMargins)},
                        {QStringLiteral("mask_empty"), mask().isEmpty()},
                        {QStringLiteral("dpr"), devicePixelRatioF()},
                        {QStringLiteral("thumbnail_visible"),
@@ -638,7 +663,8 @@ void ScreenshotOverlayWindow::layoutScrollingThumbnail() {
         return;
     }
 
-    const QRect bounds = rect();
+    const QRect bounds(QPoint(), captureGeometry().size());
+    const QPoint frameOffset(m_captureFrameMargins.left(), m_captureFrameMargins.top());
     if (m_scrollingThumbnailMode == ScreenshotScrollingRecognitionMode::Horizontal) {
         const int availableWidth = std::max(1, bounds.width() - kScrollingThumbnailMargin * 2);
         m_scrollingThumbnail->setMaximumPreviewExtent(availableWidth);
@@ -656,7 +682,7 @@ void ScreenshotOverlayWindow::layoutScrollingThumbnail() {
                                       bounds.width() - thumbnailWidth - kScrollingThumbnailMargin);
         const int x =
             std::clamp(m_scrollingThumbnailAnchor.x(), kScrollingThumbnailMargin, maximumX);
-        m_scrollingThumbnail->move(x, y);
+        m_scrollingThumbnail->move(QPoint(x, y) + frameOffset);
         m_scrollingThumbnail->raise();
         updateWindowMask();
         return;
@@ -682,13 +708,15 @@ void ScreenshotOverlayWindow::layoutScrollingThumbnail() {
     const int maximumY = std::max(kScrollingThumbnailMargin,
                                   bounds.height() - thumbnailHeight - kScrollingThumbnailMargin);
     const int y = std::clamp(m_scrollingThumbnailAnchor.y(), bounds.top(), maximumY);
-    m_scrollingThumbnail->move(x, y);
+    m_scrollingThumbnail->move(QPoint(x, y) + frameOffset);
     m_scrollingThumbnail->raise();
     updateWindowMask();
 }
 
 void ScreenshotOverlayWindow::updateWindowMask() {
-    const QRect hole = m_inputPassThroughRect.intersected(rect());
+    const QRect hole =
+        m_inputPassThroughRect.translated(m_captureFrameMargins.left(), m_captureFrameMargins.top())
+            .intersected(rect());
     QRegion interactiveRegion;
     if (hole.isEmpty()) {
         interactiveRegion = {};

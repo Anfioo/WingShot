@@ -52,7 +52,12 @@
 #include <QTextBoundaryFinder>
 #include <QWheelEvent>
 #include <private/qwindow_p.h>
+#include <private/qhighdpiscaling_p.h>
 #include <qpa/qplatformwindow.h>
+#include <QScreen>
+#ifdef Q_OS_MACOS
+#include "macos_native_input.h"
+#endif
 
 #include <algorithm>
 #include <array>
@@ -452,7 +457,8 @@ void overlayCanvasCoversDisplaySafeAreas() {
     NoopOverlayEventSink eventSink;
     auto* canvas = new SnowCanvasWidget;
     ScreenshotOverlayWindow overlay(eventSink, canvas);
-    overlay.setGeometry(-640, -480, 640, 480);
+    const QRect displayGeometry(-640, -480, 640, 480);
+    overlay.setCaptureGeometry(displayGeometry);
     for (int surface = 0; surface < 2; ++surface) {
         overlay.restoreNativeSurface();
         for (int reveal = 0; reveal < 2; ++reveal) {
@@ -461,29 +467,170 @@ void overlayCanvasCoversDisplaySafeAreas() {
             {
                 QWindow* window = overlay.windowHandle();
                 SafeAreaWindow platform(window);
-                platform.setGeometry(window->geometry());
+                platform.setGeometry(QHighDpi::toNativePixels(window->geometry(), window));
                 const QScopedValueRollback handle(QWindowPrivate::get(window)->platformWindow,
                                                   static_cast<QPlatformWindow*>(&platform));
                 for (const QMargins margins :
                      {QMargins(0, 38, 0, 0), QMargins(), QMargins(0, 24, 0, 0)}) {
-                    platform.margins = margins;
+                    // QPA supplies native pixels; QWindow exposes logical margins.
+                    platform.margins = QHighDpi::toNativePixels(margins, window);
                     require(window->safeAreaMargins() == margins,
                             "the fixture must expose the display safe area through QPA");
                     QEvent changed(QEvent::SafeAreaMarginsChange);
                     QCoreApplication::sendEvent(window, &changed);
                     overlay.layout()->invalidate();
                     overlay.layout()->activate();
-                    require(canvas->geometry() == overlay.rect(),
+                    require(canvas->size() == displayGeometry.size(),
                             "display safe areas must not inset or shrink the screenshot canvas");
-                    require(canvas->mapTo(&overlay, QPoint(0, 0)) == QPoint(0, 0) &&
-                                canvas->mapTo(&overlay, canvas->rect().bottomRight()) ==
-                                    overlay.rect().bottomRight(),
+                    require(canvas->mapToGlobal(QPoint()) == displayGeometry.topLeft() &&
+                                canvas->mapToGlobal(canvas->rect().bottomRight()) ==
+                                    displayGeometry.bottomRight(),
                             "canvas coordinates must stay aligned with both display corners");
                 }
             }
             overlay.hide();
         }
         overlay.releaseNativeSurface();
+    }
+}
+
+void overlayReceivesDisplayBoundaryInput(bool native) {
+    class Sink final : public NoopOverlayEventSink {
+      public:
+        QVector<QPointF> presses;
+        QVector<QPointF> releases;
+        QPointF lastMove;
+        bool shouldHandleOverlayMouseEvent(const ScreenshotOverlayWindow*, const QPointF&,
+                                           bool) const override {
+            return true;
+        }
+        void handleOverlayMousePress(ScreenshotOverlayWindow*, const QPointF& point) override {
+            presses.append(point);
+        }
+        bool handleRegionDoubleClick(ScreenshotOverlayWindow* overlay,
+                                     const QPointF& point) override {
+            handleOverlayMousePress(overlay, point);
+            return true;
+        }
+        void handleOverlayMouseRelease(ScreenshotOverlayWindow*, const QPointF& point) override {
+            releases.append(point);
+        }
+        void handleOverlayMouseMove(ScreenshotOverlayWindow*, const QPointF& point) override {
+            lastMove = point;
+        }
+    } sink;
+    auto* canvas = new SnowCanvasWidget;
+    ScreenshotOverlayWindow overlay(sink, canvas);
+    const QList<QRect> displays =
+        native ? QList<QRect>{QGuiApplication::primaryScreen()->geometry()}
+               : QList<QRect>{QRect(0, 0, 320, 240), QRect(-320, -240, 320, 240)};
+    for (const QRect& display : displays) {
+        for (int surface = 0; surface != 2; ++surface) {
+            overlay.setCaptureGeometry(display);
+            overlay.restoreNativeSurface();
+            QImage image(display.size(), QImage::Format_RGB32);
+            image.fill(QColor(40, 80, 120));
+            overlay.setScreenshotImage(image, QRectF(QPointF(), display.size()));
+            overlay.setScreenshotMaskVisible(false);
+            canvas->setViewportCamera(display.width() / 2.0, display.height() / 2.0, 1.0);
+            for (int reveal = 0; reveal != 2; ++reveal) {
+                overlay.show();
+                QApplication::processEvents();
+#ifdef Q_OS_MACOS
+                if (native) {
+                    macActivateApplication();
+                    overlay.activateWindow();
+                    QElapsedTimer timer;
+                    timer.start();
+                    while (!macWindowReceivesPoint(&overlay, display.center()) &&
+                           timer.elapsed() < 1000) {
+                        QApplication::processEvents();
+                        QThread::msleep(1);
+                    }
+                }
+#endif
+                require(overlay.captureGeometry() == display && canvas->size() == display.size() &&
+                            canvas->mapToGlobal(QPoint()) == display.topLeft(),
+                        "native frame padding must preserve the captured viewport");
+                const QImage rendered = canvas->grab().toImage();
+                require(rendered.pixelColor(0, 0) == image.pixelColor(0, 0) &&
+                            rendered.pixelColor(rendered.width() - 1, rendered.height() - 1) ==
+                                image.pixelColor(image.width() - 1, image.height() - 1),
+                        "frame padding must not leave a blank strip in the captured canvas");
+                const QList<QPoint> points{QPoint(0, 0),
+                                           QPoint(display.width() / 2, 0),
+                                           QPoint(display.width() - 1, 0),
+                                           QPoint(0, display.height() - 1),
+                                           QPoint(display.width() - 1, display.height() - 1),
+                                           QPoint(1, 1)};
+                for (const QPoint& point : points) {
+                    const QPoint global = display.topLeft() + point;
+                    require(canvas->mapToGlobal(point) == global &&
+                                overlay.canvasLocalPosition(global) == point,
+                            "boundary coordinates must round-trip without a pixel offset");
+                    sink.presses.clear();
+                    sink.releases.clear();
+#ifdef Q_OS_MACOS
+                    if (native) {
+                        require(macWindowReceivesPoint(&overlay, global),
+                                "WindowServer must route the exact display boundary to capture");
+                        macPostClick(global);
+                    } else
+#endif
+                    {
+                        for (QEvent::Type type :
+                             {QEvent::MouseButtonPress, QEvent::MouseButtonRelease}) {
+                            QMouseEvent event(type, point, global, Qt::LeftButton,
+                                              type == QEvent::MouseButtonPress ? Qt::LeftButton
+                                                                               : Qt::NoButton,
+                                              Qt::NoModifier);
+                            QApplication::sendEvent(canvas, &event);
+                        }
+                    }
+                    require(sink.presses == QVector<QPointF>{point} &&
+                                sink.releases == QVector<QPointF>{point},
+                            "each boundary click must reach the canvas exactly once");
+                }
+                sink.presses.clear();
+                sink.releases.clear();
+                const QPoint end(100, 80);
+#ifdef Q_OS_MACOS
+                if (native) {
+                    MacMouseDrag drag(display.topLeft());
+                    drag.moveTo(display.topLeft() + end);
+                    drag.finish();
+                } else
+#endif
+                {
+                    QMouseEvent press(QEvent::MouseButtonPress, QPoint(), display.topLeft(),
+                                      Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+                    QMouseEvent move(QEvent::MouseMove, end, display.topLeft() + end, Qt::NoButton,
+                                     Qt::LeftButton, Qt::NoModifier);
+                    QMouseEvent release(QEvent::MouseButtonRelease, end, display.topLeft() + end,
+                                        Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+                    QApplication::sendEvent(canvas, &press);
+                    QApplication::sendEvent(canvas, &move);
+                    QApplication::sendEvent(canvas, &release);
+                }
+                require(
+                    sink.presses == QVector<QPointF>{QPointF()} &&
+                        sink.releases == QVector<QPointF>{end} && sink.lastMove == end &&
+                        overlay.captureGeometry() == display,
+                    "a drag from the screen corner must reach selection without resizing capture");
+                overlay.setInputPassThroughRect(QRect(0, 0, 40, 30));
+                require(
+                    !overlay.mask().contains(overlay.mapFromGlobal(display.topLeft())) &&
+                        overlay.mask().contains(
+                            overlay.mapFromGlobal(display.topLeft() + QPoint(40, 30))),
+                    "scrolling input holes must align with canvas coordinates inside the frame");
+                overlay.setInputPassThroughRect(QRect(QPoint(), display.size()));
+                require(overlay.scrollingDiagnostics().value(QStringLiteral("full_hole")).toBool(),
+                        "scrolling must recognize a full display hole with native frame padding");
+                overlay.clearInputPassThroughRect();
+                overlay.hide();
+            }
+            overlay.releaseNativeSurface();
+        }
     }
 }
 
@@ -4915,6 +5062,19 @@ void nonRectangularSelectionDraftLeavesInteriorUnchanged() {
 
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
+    if (application.arguments().contains(QStringLiteral("--overlay-boundary-input"))) {
+#ifdef Q_OS_MACOS
+        if (QGuiApplication::platformName() == QStringLiteral("cocoa")) {
+            if (!macCanPostMouseEvents())
+                return 77;
+            MacCursorRestore restore;
+            overlayReceivesDisplayBoundaryInput(true);
+            return 0;
+        }
+#endif
+        overlayReceivesDisplayBoundaryInput(false);
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--overlay-safe-area"))) {
         overlayCanvasCoversDisplaySafeAreas();
         return 0;

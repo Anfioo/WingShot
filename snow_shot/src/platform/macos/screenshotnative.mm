@@ -344,6 +344,10 @@ class ControlledWindowDragging final : public QObject {
   public:
     explicit ControlledWindowDragging(QWidget* widget) : QObject(widget), m_widget(widget) {
         widget->installEventFilter(this);
+    }
+
+    void configure(bool controlResizing) {
+        m_controlResizing |= controlResizing;
         apply();
     }
 
@@ -359,10 +363,16 @@ class ControlledWindowDragging final : public QObject {
         if (!m_widget->internalWinId())
             return;
         NSWindow* window = reinterpret_cast<NSView*>(m_widget->internalWinId()).window;
+        // Frameless Qt windows are still resizable NSPanels. AppKit's resize
+        // hit zones consume corner presses before Qt can deliver them to the
+        // canvas. Capture owns its geometry and all selection resize gestures.
+        if (m_controlResizing)
+            window.styleMask &= ~NSWindowStyleMaskResizable;
         window.movable = NO;
         window.movableByWindowBackground = NO;
     }
     QWidget* m_widget;
+    bool m_controlResizing = false;
 };
 
 // AppKit's per-window ignoresMouseEvents controls WindowServer routing. A Qt
@@ -503,19 +513,22 @@ detail::WindowTarget windowTarget(pid_t owner, const QPoint* point) {
     return result;
 }
 } // namespace
-void configureControlledWindowDragging(QWidget* widget) {
+void configureControlledWindowDragging(QWidget* widget, bool controlResizing) {
     if (!widget || QGuiApplication::platformName() != QStringLiteral("cocoa"))
         return;
     for (QObject* child : widget->children()) {
-        if (dynamic_cast<ControlledWindowDragging*>(child))
+        if (auto* policy = dynamic_cast<ControlledWindowDragging*>(child)) {
+            policy->configure(controlResizing);
             return;
+        }
     }
-    new ControlledWindowDragging(widget);
+    auto* policy = new ControlledWindowDragging(widget);
+    policy->configure(controlResizing);
 }
 
 void configureScreenshotOverlayWindow(QWidget* widget) {
-    configureControlledWindowDragging(widget);
     registerScreenshotLayer(widget, kOverlayLayer);
+    configureControlledWindowDragging(widget, true);
 }
 
 void configureScreenRecordingAreaWindow(QWidget* widget) {

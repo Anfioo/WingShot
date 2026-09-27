@@ -155,7 +155,7 @@ void ScreenshotToolbarPresenter::moveToolbar(const ScreenshotToolbarPresentation
     ScreenshotOverlayWindow* overlay = m_displaySession.overlayForDisplay(display);
     const ScreenshotDisplayPlacementGeometry placementGeometry =
         ScreenshotGeometryMapper::displayPlacementGeometry(
-            display, overlay != nullptr ? overlay->geometry() : QRect());
+            display, overlay != nullptr ? overlay->captureGeometry() : QRect());
     if (!placementGeometry.valid) {
         return;
     }
@@ -204,7 +204,7 @@ void ScreenshotToolbarPresenter::moveSelectionToolbar(
         m_overlayCoordinator.attachSelectionToolbarToOverlay(overlay);
     }
     const ScreenshotDisplayPlacementGeometry placementGeometry =
-        ScreenshotGeometryMapper::displayPlacementGeometry(display, overlay->geometry());
+        ScreenshotGeometryMapper::displayPlacementGeometry(display, overlay->captureGeometry());
     if (!placementGeometry.valid) {
         m_overlayCoordinator.hideSelectionToolbar();
         return;

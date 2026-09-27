@@ -769,8 +769,8 @@ void ScreenshotController::Impl::applyUiPreferences(const ScreenshotUiPreference
         if (m_interaction.selecting()) {
             if (ScreenshotOverlayWindow* overlay = overlayUnderCursor()) {
                 m_overlayCoordinator->updateGuideLines(m_displaySession, overlay,
-                                                       overlay->mapFromGlobal(QCursor::pos()), true,
-                                                       m_uiPreferences.cursorGuideLineColor,
+                                                       overlay->canvasLocalPosition(QCursor::pos()),
+                                                       true, m_uiPreferences.cursorGuideLineColor,
                                                        m_uiPreferences.monitorCenterGuideLineColor);
             }
         }
@@ -4738,7 +4738,7 @@ void ScreenshotController::Impl::beginCanvasColorSampling(adqt::widgets::AdColor
             updateCanvasColorSamplingPreviewAtPhysicalPoint(overlay, *physicalPosition);
         }
     } else if (ScreenshotOverlayWindow* overlay = overlayUnderCursor()) {
-        updateCanvasColorSamplingPreview(overlay, overlay->mapFromGlobal(QCursor::pos()));
+        updateCanvasColorSamplingPreview(overlay, overlay->canvasLocalPosition(QCursor::pos()));
     }
 }
 

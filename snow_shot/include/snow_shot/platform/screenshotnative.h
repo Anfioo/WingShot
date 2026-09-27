@@ -7,7 +7,7 @@ namespace snow_shot::platform {
 using ScrollInputResult = windows::ScrollInputResult;
 #ifdef Q_OS_MACOS
 // Give Qt exclusive drag ownership, including after native surface recreation.
-void configureControlledWindowDragging(QWidget* widget);
+void configureControlledWindowDragging(QWidget* widget, bool controlResizing = false);
 void configureScreenshotOverlayWindow(QWidget* widget);
 void configureScreenRecordingAreaWindow(QWidget* widget);
 void configureScreenRecordingToolbarWindow(QWidget* widget);
