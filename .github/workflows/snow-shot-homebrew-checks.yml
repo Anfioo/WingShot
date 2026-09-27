@@ -1,6 +1,7 @@
 name: Check Snow Shot Homebrew support
 
 on:
+  workflow_dispatch:
   pull_request:
     paths:
       - .github/workflows/snow-shot-homebrew*.yml
@@ -54,3 +55,16 @@ jobs:
           # The official-tap declarative-only rule excludes supported third-party Ruby hooks.
           brew style --cask --except Cask/InstallSteps mg-chao/preflight/snow-shot
           brew audit --cask mg-chao/preflight/snow-shot
+
+  verify-tap-access:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify configured tap credential
+        uses: actions/checkout@v4
+        with:
+          repository: mg-chao/homebrew-tap
+          ref: main
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+      - name: Verify tap push authentication without changing the repository
+        run: git push --dry-run origin HEAD:main

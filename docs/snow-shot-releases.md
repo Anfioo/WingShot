@@ -459,3 +459,8 @@ and offline audits run normally; no runtime security settings are changed.
 Use `brew style --cask --except Cask/InstallSteps mg-chao/tap/snow-shot` for this
 third-party cask. The release's `prepare-snow-shot-homebrew.sh` wrapper handles
 rollback without requiring the unavailable signing key again.
+
+After saving or rotating the tap token, run **Check Snow Shot Homebrew support**
+manually. In addition to the focused tests, its manual-only job checks out the
+existing tap using `HOMEBREW_TAP_TOKEN` and performs `git push --dry-run` to verify
+push authentication without changing the tap or publishing release assets.
