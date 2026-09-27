@@ -4169,6 +4169,43 @@ void overlayPoolPrewarmRestoresRetainedNativeSurfaces() {
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
 }
 
+void clearingDisplaysReleasesRestoredHistoryImages() {
+    NoopOverlayEventSink eventSink;
+    SnowCanvasRuntime canvasRuntime;
+    snow_shot::presentation::WindowShortcutManager shortcutManager;
+    ScreenshotOverlayPool pool(eventSink, canvasRuntime, shortcutManager, {});
+    ScreenshotDisplaySession displaySession;
+    int releasedImages = 0;
+
+    for (int capture = 0; capture < 2; ++capture) {
+        auto* pixels = new uchar[128 * 128 * 4]{};
+        auto* cleanupInfo = new std::pair<int*, uchar*>(&releasedImages, pixels);
+        QImage image(
+            pixels, 128, 128, 128 * 4, QImage::Format_RGBA8888,
+            [](void* info) {
+                const auto* state = static_cast<std::pair<int*, uchar*>*>(info);
+                ++*state->first;
+                delete[] state->second;
+                delete state;
+            },
+            cleanupInfo);
+        require(!image.isNull(), "history image fixture must own its pixels");
+        CapturedDisplayModel source;
+        source.canvasUsesPoints = true;
+        source.active = true;
+        source.image = std::move(image);
+        QVector<CapturedDisplayModel> sources;
+        sources.push_back(std::move(source));
+        displaySession.setImageSources(std::move(sources));
+        require(displaySession.hasImageSources() && releasedImages == capture,
+                "restored history image must remain owned during capture");
+
+        pool.clearDisplays(displaySession);
+        require(!displaySession.hasImageSources() && releasedImages == capture + 1,
+                "capture cleanup must release every restored history image");
+    }
+}
+
 void sessionTeardownClearsThreadCachesWithoutOverlays() {
     NoopOverlayEventSink eventSink;
     SnowCanvasRuntime canvasRuntime;
@@ -4889,6 +4926,7 @@ int main(int argc, char** argv) {
     }
     if (application.arguments().contains(QStringLiteral("--overlay-pool-prewarm"))) {
         overlayPoolPrewarmRestoresRetainedNativeSurfaces();
+        clearingDisplaysReleasesRestoredHistoryImages();
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--large-image-slice-rendering"))) {

@@ -48,6 +48,9 @@ void ScreenshotOverlayPool::clearOverlayCanvases(
 }
 
 void ScreenshotOverlayPool::clearDisplays(ScreenshotDisplaySession& displaySession) const {
+    // Restored history sources are owned separately from the display slots.
+    // Releasing only the attached display images keeps those full-size frames alive.
+    displaySession.setImageSources({});
     displaySession.forEachMutableDisplayWithOverlay(
         [](qsizetype, CapturedDisplayModel& display, ScreenshotOverlayWindow*) {
             ScreenshotCaptureDisplayModelReconciler::clearCaptureMetadata(display);

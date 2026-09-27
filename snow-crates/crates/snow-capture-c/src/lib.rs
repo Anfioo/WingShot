@@ -640,6 +640,16 @@ fn build_monitor_entries(system: &CaptureSystem) -> Result<Vec<MonitorEntry>, St
         .collect())
 }
 
+#[cfg(target_os = "macos")]
+fn with_capture_autoreleasepool<T>(work: impl FnOnce() -> T + objc2::rc::AutoreleaseSafe) -> T {
+    objc2::rc::autoreleasepool(|_| work())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn with_capture_autoreleasepool<T>(work: impl FnOnce() -> T) -> T {
+    work()
+}
+
 impl MonitorWorker {
     fn start(
         system: CaptureSystem,
@@ -651,12 +661,19 @@ impl MonitorWorker {
         let join = thread::Builder::new()
             .name("snow-capture-monitor".to_owned())
             .spawn(move || {
-                let mut session = system
-                    .open_session(CaptureTarget::Monitor(worker_entry.id), options)
-                    .map_err(|err| err.to_string());
+                let mut session = with_capture_autoreleasepool(|| {
+                    system
+                        .open_session(CaptureTarget::Monitor(worker_entry.id), options)
+                        .map_err(|err| err.to_string())
+                });
 
                 while let Ok(command) = rx.recv() {
-                    match command {
+                    if matches!(command, WorkerCommand::Stop) {
+                        break;
+                    }
+                    // These threads outlive individual screenshots. Drain Cocoa's
+                    // temporary objects after each request, including error paths.
+                    with_capture_autoreleasepool(|| match command {
                         WorkerCommand::Prepare(reply) => {
                             let result = match session.as_mut() {
                                 Ok(capture_session) => capture_session
@@ -709,8 +726,8 @@ impl MonitorWorker {
                             };
                             let _ = reply.send(result);
                         }
-                        WorkerCommand::Stop => break,
-                    }
+                        WorkerCommand::Stop => unreachable!(),
+                    });
                 }
             })
             .map_err(|err| format!("failed to spawn capture monitor worker: {err}"))?;
@@ -2499,6 +2516,33 @@ mod tests {
 
     use super::*;
 
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn capture_worker_drains_autoreleased_objects_after_each_request() {
+        thread::spawn(|| {
+            use objc2::{
+                rc::{Retained, Weak},
+                runtime::NSObject,
+            };
+
+            for _ in 0..3 {
+                let weak = with_capture_autoreleasepool(|| {
+                    let object = NSObject::new();
+                    let weak = Weak::from_retained(&object);
+                    let _borrowed = Retained::autorelease_ptr(object);
+                    assert!(weak.load().is_some());
+                    weak
+                });
+                assert!(
+                    weak.load().is_none(),
+                    "worker request must drain its autorelease pool"
+                );
+            }
+        })
+        .join()
+        .expect("capture worker must finish");
+    }
+
     fn test_entry() -> MonitorEntry {
         MonitorEntry {
             id: MonitorId::from_parts(1, 2, 3, "unit-monitor", true),
@@ -3317,7 +3361,10 @@ mod tests {
                 pixel_width: 6,
                 pixel_height: 8,
             });
-        assert!(!same_monitor_layout(&[first.clone()], &[moved.clone()]));
+        assert!(!same_monitor_layout(
+            std::slice::from_ref(&first),
+            &[moved.clone()]
+        ));
         assert!(same_monitor_layout(&[moved.clone()], &[moved]));
     }
 }

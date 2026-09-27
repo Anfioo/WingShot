@@ -3201,6 +3201,7 @@ name = "snow-capture-c"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "objc2",
  "snow-capture",
  "snow-core",
  "snow-macos",
