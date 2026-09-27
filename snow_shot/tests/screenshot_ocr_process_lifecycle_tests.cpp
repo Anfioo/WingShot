@@ -78,7 +78,7 @@ int runOcrLifecycleChild() {
         QByteArray frame;
         QDataStream stream(&frame, QIODevice::WriteOnly);
         stream.setByteOrder(QDataStream::LittleEndian);
-        stream << quint32(0x52434f53) << quint16(3) << kind << token << quint32(payload.size());
+        stream << quint32(0x52434f53) << quint16(4) << kind << token << quint32(payload.size());
         frame.append(payload);
         std::fwrite(frame.constData(), 1, static_cast<std::size_t>(frame.size()), stdout);
         std::fflush(stdout);
@@ -106,7 +106,7 @@ int runOcrLifecycleChild() {
         quint16 version = 0, kind = 0;
         quint64 token = 0;
         input >> magic >> version >> kind >> token >> size;
-        if (magic != 0x52434f53 || version != 3 || size > 1024 * 1024)
+        if (magic != 0x52434f53 || version != 4 || size > 1024 * 1024)
             return 2;
         QByteArray payload(size, '\0');
         if (std::fread(payload.data(), 1, size, stdin) != size)
@@ -131,8 +131,8 @@ int runOcrLifecycleChild() {
             QDataStream output(&ready, QIODevice::WriteOnly);
             output.setByteOrder(QDataStream::LittleEndian);
             output << quint8(1) << quint8(0) << quint32(0) << quint32(5);
-            output.writeRawData("1.0.7", 5);
-            output << quint32(3);
+            output.writeRawData("1.0.8", 5);
+            output << quint32(4);
             reply(2, 0, ready);
         } else if (kind == 8) {
             event("prepare " + payload.toHex());
@@ -498,11 +498,24 @@ void ocrProcessLifecycleTests() {
         }
         require(releaseIndex >= 0 && releaseIndex < lastPrepare,
                 "the old engine must be released before the next warm session is created");
+        require(before.at(lastPrepare).startsWith("prepare 0000"),
+                "default warm session must request the max-side detector policy");
         configuration.backend = ScreenshotOcrBackendPreference::DirectMl;
         service.setRuntimeConfiguration(configuration);
         require(waitUntil([&] { return countEvent("prepare ") == initialLoads + 3; }),
                 "backend change must rebuild idle warm-up");
         require(service.processId() == warmedPid, "backend changes must not restart the process");
+        configuration.detectorResizePolicy = ScreenshotOcrDetectorResizePolicy::Min;
+        service.setRuntimeConfiguration(configuration);
+        require(waitUntil([&] { return countEvent("prepare ") == initialLoads + 4; }),
+                "detector scaling change must rebuild idle warm-up");
+        QByteArray latestPrepare;
+        for (const auto& event : events()) {
+            if (event.startsWith("prepare "))
+                latestPrepare = event;
+        }
+        require(latestPrepare.startsWith("prepare 0101") && service.processId() == warmedPid,
+                "the min-side detector policy must reach the existing worker process");
         configuration.modelHotStart = false;
         const int released = countEvent("release");
         service.setRuntimeConfiguration(configuration);

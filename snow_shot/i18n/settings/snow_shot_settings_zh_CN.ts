@@ -1033,6 +1033,10 @@
             <translation>选择应用程序获得的执行时间</translation>
         </message>
         <message>
+            <source>Choose how text detection resizes images. Limiting the long side is faster; enlarging the short side may find smaller text.</source>
+            <translation>选择文字检测时的图像缩放方式。限制长边可提高速度；放大短边可能识别出更小的文字。</translation>
+        </message>
+        <message>
             <source>Choose how the area behind recognized text is filled</source>
             <translation>选择识别文字后方区域的填充方式</translation>
         </message>
@@ -1545,6 +1549,10 @@
             <translation>结束录屏</translation>
         </message>
         <message>
+            <source>Enlarge short side (more detail)</source>
+            <translation>放大短边（更多细节）</translation>
+        </message>
+        <message>
             <source>Enter or browse to a PNG or ICO file; invalid files use the selected bundled icon</source>
             <translation>输入或浏览选择 PNG 或 ICO 文件；无效文件将使用所选内置图标</translation>
         </message>
@@ -1863,6 +1871,10 @@
         <message>
             <source>Limit how much disk space screenshot history can use</source>
             <translation>限制截图历史可使用的磁盘空间</translation>
+        </message>
+        <message>
+            <source>Limit long side (faster)</source>
+            <translation>限制长边（更快）</translation>
         </message>
         <message>
             <source>Line</source>
@@ -2879,6 +2891,10 @@
         <message>
             <source>Text Recognition</source>
             <translation>文字识别</translation>
+        </message>
+        <message>
+            <source>Text detection scaling</source>
+            <translation>文字检测缩放</translation>
         </message>
         <message>
             <source>Text recognition</source>

@@ -1033,6 +1033,10 @@
             <translation>Choose how much execution time the application receives</translation>
         </message>
         <message>
+            <source>Choose how text detection resizes images. Limiting the long side is faster; enlarging the short side may find smaller text.</source>
+            <translation>Choose how text detection resizes images. Limiting the long side is faster; enlarging the short side may find smaller text.</translation>
+        </message>
+        <message>
             <source>Choose how the area behind recognized text is filled</source>
             <translation>Choose how the area behind recognized text is filled</translation>
         </message>
@@ -1545,6 +1549,10 @@
             <translation>End recording</translation>
         </message>
         <message>
+            <source>Enlarge short side (more detail)</source>
+            <translation>Enlarge short side (more detail)</translation>
+        </message>
+        <message>
             <source>Enter or browse to a PNG or ICO file; invalid files use the selected bundled icon</source>
             <translation>Enter or browse to a PNG or ICO file; invalid files use the selected bundled icon</translation>
         </message>
@@ -1863,6 +1871,10 @@
         <message>
             <source>Limit how much disk space screenshot history can use</source>
             <translation>Limit how much disk space screenshot history can use</translation>
+        </message>
+        <message>
+            <source>Limit long side (faster)</source>
+            <translation>Limit long side (faster)</translation>
         </message>
         <message>
             <source>Line</source>
@@ -2879,6 +2891,10 @@
         <message>
             <source>Text Recognition</source>
             <translation>Text Recognition</translation>
+        </message>
+        <message>
+            <source>Text detection scaling</source>
+            <translation>Text detection scaling</translation>
         </message>
         <message>
             <source>Text recognition</source>

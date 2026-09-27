@@ -96,6 +96,7 @@ class ScreenshotOcrRecognitionService::Impl final {
           m_modelType(options.modelType), m_backendPreference(preference) {
         m_configuration.modelType = options.modelType;
         m_configuration.backend = preference;
+        m_configuration.detectorResizePolicy = options.detectorResizePolicy;
         m_queueClock.start();
         m_transportThread.setObjectName(QStringLiteral("snow-ocr-transport"));
         m_localPool->setMaxThreadCount(1);
@@ -329,11 +330,19 @@ class ScreenshotOcrRecognitionService::Impl final {
         setRuntimeConfiguration(configuration);
     }
 
+    void setDetectorResizePolicy(ScreenshotOcrDetectorResizePolicy policy) {
+        auto configuration = m_configuration;
+        configuration.detectorResizePolicy = policy;
+        setRuntimeConfiguration(configuration);
+    }
+
     void setRuntimeConfiguration(const ScreenshotOcrRuntimeConfiguration& configuration) {
         if (m_configuration == configuration)
             return;
         const bool modelChanged = m_modelType != configuration.modelType;
-        const bool sessionChanged = modelChanged || m_backendPreference != configuration.backend;
+        const bool sessionChanged =
+            modelChanged || m_backendPreference != configuration.backend ||
+            m_configuration.detectorResizePolicy != configuration.detectorResizePolicy;
         if (sessionChanged)
             ++m_configurationGeneration;
         if (m_configuration.modelHotStart &&
@@ -662,6 +671,9 @@ class ScreenshotOcrRecognitionService::Impl final {
         m_invalidateWarmSession = false;
         QByteArray payload;
         appendU8(payload, m_backendPreference == ScreenshotOcrBackendPreference::DirectMl ? 1 : 0);
+        appendU8(
+            payload,
+            m_configuration.detectorResizePolicy == ScreenshotOcrDetectorResizePolicy::Min ? 1 : 0);
         appendString(payload, m_assets.detectorModelPath);
         appendString(payload, m_assets.recognizerModelPath);
         appendString(payload, m_assets.dictionaryPath);
@@ -1342,6 +1354,11 @@ void ScreenshotOcrRecognitionService::setProxyUrl(const QString& proxyUrl) {
 void ScreenshotOcrRecognitionService::setModelType(ScreenshotOcrModelType modelType) {
     if (m_impl != nullptr)
         m_impl->setModelType(modelType);
+}
+void ScreenshotOcrRecognitionService::setDetectorResizePolicy(
+    ScreenshotOcrDetectorResizePolicy policy) {
+    if (m_impl != nullptr)
+        m_impl->setDetectorResizePolicy(policy);
 }
 int ScreenshotOcrRecognitionService::liveWorkerCount() const {
     return m_impl != nullptr ? m_impl->liveWorkerCount() : 0;

@@ -277,6 +277,11 @@ QVariant BuiltInSettingsBackend::selectValue(SettingsSelectBinding binding) cons
             .configuration()
             .value(QStringLiteral("text_recognition/model_type"))
             .toString();
+    case SettingsSelectBinding::OcrDetectorResizePolicy:
+        return storage::ApplicationStorage::instance()
+            .configuration()
+            .value(QStringLiteral("text_recognition/detector_resize_policy"))
+            .toString();
     case SettingsSelectBinding::ScreenshotApiMode:
         return storage::ScreenshotSettings().apiMode();
     case SettingsSelectBinding::WindowElementApi:
@@ -403,6 +408,9 @@ bool BuiltInSettingsBackend::applySelectValue(SettingsSelectBinding binding,
     case SettingsSelectBinding::OcrModelType:
         return storage::ApplicationStorage::instance().configuration().setValue(
             QStringLiteral("text_recognition/model_type"), value.toString());
+    case SettingsSelectBinding::OcrDetectorResizePolicy:
+        return storage::ApplicationStorage::instance().configuration().setValue(
+            QStringLiteral("text_recognition/detector_resize_policy"), value.toString());
     case SettingsSelectBinding::ScreenshotApiMode:
         return storage::ScreenshotSettings().setApiMode(value.toString());
     case SettingsSelectBinding::WindowElementApi:
@@ -2015,6 +2023,9 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
             {QStringLiteral("text_recognition/model_type"),
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("text_recognition/model_type"))},
+            {QStringLiteral("text_recognition/detector_resize_policy"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("text_recognition/detector_resize_policy"))},
             {QStringLiteral("text_recognition/direct_ml_acceleration"),
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("text_recognition/direct_ml_acceleration"))},

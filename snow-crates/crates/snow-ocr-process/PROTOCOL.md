@@ -1,7 +1,7 @@
-# OCR protocol 3
+# OCR protocol 4
 
-Runtime 1.0.7 uses a binary stdin/stdout command channel. Diagnostics use stderr.
-The application and runtime are released together; protocol 2 is incompatible.
+Runtime 1.0.8 uses a binary stdin/stdout command channel. Diagnostics use stderr.
+The application and runtime are released together; earlier protocols are incompatible.
 All integers and IEEE-754 floats are little-endian. A string is a `u32` byte
 length followed by UTF-8. Frames have a 20-byte header: `SOCR`, version `u16`,
 kind `u16`, operation ID `u64`, payload size `u32`. Payloads are capped at 1 MiB.
@@ -15,7 +15,7 @@ kind `u16`, operation ID `u64`, payload size `u32`. Payloads are capped at 1 MiB
 | 5 | Complete | Recognition token | Recognition result, described below |
 | 6 | Shutdown | 0 | Empty |
 | 7 | ShutdownAck | 0 | Empty |
-| 8 | PrepareSession | Session operation | DirectML requested `u8`, detector/recognizer/dictionary path strings |
+| 8 | PrepareSession | Session operation | DirectML requested `u8`, detector resize policy `u8` (0 = max, 1 = min), detector/recognizer/dictionary path strings |
 | 9 | SessionReady | Session operation | Success `u8` |
 | 10 | ReleaseSession | Session operation | Empty |
 | 11 | SessionReleased | Session operation | Empty |

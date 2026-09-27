@@ -75,6 +75,7 @@ enum class SettingsSelectBinding {
     Proxy,
     UpdateMode,
     OcrModelType,
+    OcrDetectorResizePolicy,
     ScreenshotApiMode,
     WindowElementApi,
     ScreenshotToolbarSize,

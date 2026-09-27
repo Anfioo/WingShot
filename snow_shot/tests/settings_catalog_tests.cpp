@@ -235,11 +235,11 @@ void builtInCatalogIsCompleteAndValid() {
     }
 #ifdef Q_OS_MACOS
     require(sectionCount == 42, "macOS adds one permissions section");
-    require(itemCount == 184, "macOS adds login settings and omits administrator controls "
+    require(itemCount == 185, "macOS adds login settings and omits administrator controls "
                               "and Windows-only choices");
 #else
     require(sectionCount == 41, "catalog must contain forty-one sections");
-    require(itemCount == 186, "catalog must contain one hundred eighty-six items");
+    require(itemCount == 187, "catalog must contain one hundred eighty-seven items");
 #endif
     require(foundUpdates, "catalog must contain the update mode item");
     const auto* pinnedEditor =
@@ -781,6 +781,13 @@ void builtInCatalogIsCompleteAndValid() {
     const auto* modelTypeSelect =
         modelType != nullptr ? std::get_if<settings::SettingsSelectDefinition>(&modelType->payload)
                              : nullptr;
+    const auto* resizePolicy =
+        catalog.item({QStringLiteral("system-settings"), QStringLiteral("text-recognition"),
+                      QStringLiteral("text-recognition.detector-resize-policy")});
+    const auto* resizePolicySelect =
+        resizePolicy != nullptr
+            ? std::get_if<settings::SettingsSelectDefinition>(&resizePolicy->payload)
+            : nullptr;
     require(
         systemPage != nullptr && systemPage->sections.size() == 7 &&
             systemPage->sections.at(0).id == QStringLiteral("system-general") &&
@@ -799,15 +806,26 @@ void builtInCatalogIsCompleteAndValid() {
             textRecognition != nullptr &&
             textRecognition->reset == settings::SettingsSectionReset::TextRecognition &&
 #ifdef Q_OS_MACOS
-            textRecognition->items.size() == 3 &&
+            textRecognition->items.size() == 4 &&
             catalog.item({QStringLiteral("system-settings"), QStringLiteral("text-recognition"),
                           QStringLiteral("text-recognition.direct-ml-acceleration")}) == nullptr &&
 #else
-            textRecognition->items.size() == 4 &&
-            textRecognition->items.at(1).id ==
+            textRecognition->items.size() == 5 &&
+            textRecognition->items.at(2).id ==
                 QStringLiteral("text-recognition.direct-ml-acceleration") &&
 #endif
             textRecognition->items.at(0).id == QStringLiteral("text-recognition.model-type") &&
+            textRecognition->items.at(1).id ==
+                QStringLiteral("text-recognition.detector-resize-policy") &&
+            resizePolicy != nullptr &&
+            resizePolicy->configurationKey ==
+                QStringLiteral("text_recognition/detector_resize_policy") &&
+            resizePolicySelect != nullptr &&
+            resizePolicySelect->binding ==
+                settings::SettingsSelectBinding::OcrDetectorResizePolicy &&
+            resizePolicySelect->options.size() == 2 &&
+            resizePolicySelect->options.at(0).value == QStringLiteral("max") &&
+            resizePolicySelect->options.at(1).value == QStringLiteral("min") &&
             modelType != nullptr &&
             modelType->configurationKey == QStringLiteral("text_recognition/model_type") &&
             modelTypeSelect != nullptr &&

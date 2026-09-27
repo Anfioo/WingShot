@@ -228,6 +228,8 @@ void settingsSchemaDefaultsAndValidationAreComplete() {
         defaultValue("system/auto_start_at_boot").toBool() &&
             defaultValue("network/proxy").toString() == QStringLiteral("none") &&
             defaultValue("text_recognition/model_type").toString() == QStringLiteral("small") &&
+            defaultValue("text_recognition/detector_resize_policy").toString() ==
+                QStringLiteral("max") &&
             !defaultValue("text_recognition/resident_process").toBool() &&
             !defaultValue("text_recognition/model_hot_start").toBool() &&
             !defaultValue("global_shortcuts/disable_on_focused_fullscreen_window").toBool() &&
@@ -505,6 +507,8 @@ void settingsSchemaDefaultsAndValidationAreComplete() {
          {QStringLiteral("extra_small"), QStringLiteral("small"), QStringLiteral("medium"),
           QStringLiteral("small_v5"), QStringLiteral("medium_v5"), QStringLiteral("small_v4"),
           QStringLiteral("medium_v4")}},
+        {QStringLiteral("text_recognition/detector_resize_policy"),
+         {QStringLiteral("max"), QStringLiteral("min")}},
         {QStringLiteral("screenshot/auto_execute_after_text_recognition"),
          {QStringLiteral("no_action"), QStringLiteral("copy_text"),
           QStringLiteral("copy_text_and_end_screenshot"), QStringLiteral("quick_copy_text"),

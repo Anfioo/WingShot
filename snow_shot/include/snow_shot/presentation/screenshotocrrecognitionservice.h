@@ -37,14 +37,23 @@ struct ScreenshotOcrRecognitionResult {
 enum class ScreenshotOcrRequestPriority { Interactive, Prefetch };
 
 enum class ScreenshotOcrBackendPreference { Cpu, DirectMl };
+enum class ScreenshotOcrDetectorResizePolicy { Max, Min };
+
+[[nodiscard]] inline ScreenshotOcrDetectorResizePolicy
+screenshotOcrDetectorResizePolicyFromValue(const QString& value) {
+    return value == QStringLiteral("min") ? ScreenshotOcrDetectorResizePolicy::Min
+                                          : ScreenshotOcrDetectorResizePolicy::Max;
+}
 
 struct ScreenshotOcrRuntimeConfiguration {
     ScreenshotOcrModelType modelType = ScreenshotOcrModelType::Small;
     ScreenshotOcrBackendPreference backend = ScreenshotOcrBackendPreference::Cpu;
+    ScreenshotOcrDetectorResizePolicy detectorResizePolicy = ScreenshotOcrDetectorResizePolicy::Max;
     bool residentProcess = false;
     bool modelHotStart = false;
     bool operator==(const ScreenshotOcrRuntimeConfiguration& other) const {
         return modelType == other.modelType && backend == other.backend &&
+               detectorResizePolicy == other.detectorResizePolicy &&
                residentProcess == other.residentProcess && modelHotStart == other.modelHotStart;
     }
 };
@@ -112,6 +121,8 @@ class ScreenshotOcrRecognitionService final : public ScreenshotOcrRecognitionPor
         // Resolved HTTP(S) proxy URL for component downloads. Empty means direct access.
         QString proxyUrl;
         ScreenshotOcrModelType modelType = ScreenshotOcrModelType::Small;
+        ScreenshotOcrDetectorResizePolicy detectorResizePolicy =
+            ScreenshotOcrDetectorResizePolicy::Max;
         // Explicit local assets, primarily for tests and development builds.
         QString processPath;
         QString detectorModelPath;
@@ -147,6 +158,7 @@ class ScreenshotOcrRecognitionService final : public ScreenshotOcrRecognitionPor
     void setBackendPreference(ScreenshotOcrBackendPreference preference);
     void setProxyUrl(const QString& proxyUrl);
     void setModelType(ScreenshotOcrModelType modelType);
+    void setDetectorResizePolicy(ScreenshotOcrDetectorResizePolicy policy);
     void setRuntimeConfiguration(const ScreenshotOcrRuntimeConfiguration& configuration);
     [[nodiscard]] int liveWorkerCount() const;
     // Application-thread snapshots; the QProcess itself belongs to the transport thread.

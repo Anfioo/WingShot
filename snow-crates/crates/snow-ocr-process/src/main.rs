@@ -29,11 +29,38 @@ use std::{
 #[derive(Clone)]
 struct Config {
     directml: bool,
+    detector_resize_policy: DetectorResizePolicy,
     directml_enabled: Arc<AtomicBool>,
     directml_cache: Arc<DirectMlCapabilityCache>,
     detector_model: PathBuf,
     recognizer_model: PathBuf,
     dictionary: PathBuf,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DetectorResizePolicy {
+    Max,
+    Min,
+}
+
+impl DetectorResizePolicy {
+    fn from_wire(value: u8) -> io::Result<Self> {
+        match value {
+            0 => Ok(Self::Max),
+            1 => Ok(Self::Min),
+            _ => Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "invalid OCR detector resize policy",
+            )),
+        }
+    }
+
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Max => "max",
+            Self::Min => "min",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -208,6 +235,7 @@ fn make_engine(
         &config.dictionary,
         directml,
         thread_budget,
+        config.detector_resize_policy,
     )
 }
 
@@ -217,11 +245,13 @@ fn make_engine_for_models(
     dictionary: &Path,
     directml: bool,
     thread_budget: usize,
+    detector_resize_policy: DetectorResizePolicy,
 ) -> rapid_ocr_rs::Result<RapidOcr> {
     let mut engine = EngineConfig::default();
     engine.global.use_det = true;
     engine.global.use_cls = false;
     engine.global.use_rec = true;
+    engine.det.limit_type = detector_resize_policy.as_str().to_string();
     engine.det.lang = LangDet::Multi;
     engine.det.ocr_version = rapid_ocr_rs::OcrVersion::PPocrV6;
     engine.det.model_type = ModelType::Small;
@@ -407,6 +437,7 @@ fn initialize_engine(
 fn session_config(payload: &[u8], state: &str) -> io::Result<Config> {
     let mut d = Decoder::new(payload);
     let directml = d.u8()? != 0;
+    let detector_resize_policy = DetectorResizePolicy::from_wire(d.u8()?)?;
     let detector_model = PathBuf::from(d.string()?);
     let recognizer_model = PathBuf::from(d.string()?);
     let dictionary = PathBuf::from(d.string()?);
@@ -416,6 +447,7 @@ fn session_config(payload: &[u8], state: &str) -> io::Result<Config> {
     let state_dir = (!state.is_empty()).then(|| PathBuf::from(state));
     Ok(Config {
         directml,
+        detector_resize_policy,
         directml_enabled: Arc::new(AtomicBool::new(false)),
         directml_cache: Arc::new(DirectMlCapabilityCache::new(state_dir.as_deref())),
         detector_model,
@@ -534,8 +566,15 @@ fn main() -> io::Result<()> {
     } = startup_mode
     {
         initialize_onnx_runtime().map_err(|error| io::Error::other(error.to_string()))?;
-        make_engine_for_models(&detector, &recognizer, &dictionary, false, 1)
-            .map_err(|error| io::Error::other(error.to_string()))?;
+        make_engine_for_models(
+            &detector,
+            &recognizer,
+            &dictionary,
+            false,
+            1,
+            DetectorResizePolicy::Max,
+        )
+        .map_err(|error| io::Error::other(error.to_string()))?;
         return Ok(());
     }
     diagnostics::initialize();
@@ -731,6 +770,28 @@ fn main() -> io::Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use super::{DetectorResizePolicy, session_config};
+    use crate::protocol::{put_string, put_u8};
+
+    #[test]
+    fn session_config_selects_and_validates_detector_resize_policy() {
+        for (wire, expected) in [
+            (0, DetectorResizePolicy::Max),
+            (1, DetectorResizePolicy::Min),
+        ] {
+            let mut payload = Vec::new();
+            put_u8(&mut payload, 0);
+            put_u8(&mut payload, wire);
+            for path in ["det.onnx", "rec.onnx", "dict.txt"] {
+                put_string(&mut payload, path);
+            }
+            let config = session_config(&payload, "").unwrap();
+            assert_eq!(config.detector_resize_policy, expected);
+            payload[1] = 2;
+            assert!(session_config(&payload, "").is_err());
+        }
+    }
+
     #[test]
     fn cancellation_checkpoint_skips_expensive_work_and_preserves_results() {
         let cancelled = std::sync::atomic::AtomicBool::new(true);
