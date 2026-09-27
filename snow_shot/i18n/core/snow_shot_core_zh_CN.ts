@@ -633,6 +633,10 @@ so every moment on screen can be expressed clearly and shared easily.</source>
             <translation>更新已准备就绪。请打开“关于”页面，重启并更新 Snow Shot。</translation>
         </message>
         <message>
+            <source>Cancel</source>
+            <translation>取消</translation>
+        </message>
+        <message>
             <source>Could not pin selected files</source>
             <translation>无法将选中的文件固定到屏幕</translation>
         </message>

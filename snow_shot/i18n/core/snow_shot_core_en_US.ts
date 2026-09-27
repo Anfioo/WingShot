@@ -633,6 +633,10 @@ so every moment on screen can be expressed clearly and shared easily.</translati
             <translation>An update is ready. Open About to restart and update Snow Shot.</translation>
         </message>
         <message>
+            <source>Cancel</source>
+            <translation>Cancel</translation>
+        </message>
+        <message>
             <source>Could not pin selected files</source>
             <translation>Could not pin selected files</translation>
         </message>

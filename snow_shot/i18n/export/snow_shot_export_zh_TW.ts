@@ -116,6 +116,10 @@
             <translation>輸出檔案已存在</translation>
         </message>
         <message>
+            <source>Cancel</source>
+            <translation>取消</translation>
+        </message>
+        <message>
             <source>HTML document (*.html)</source>
             <translation>HTML 文件 (*.html)</translation>
         </message>
@@ -134,6 +138,10 @@
         <message>
             <source>No recognition text is available to save</source>
             <translation>沒有可儲存的辨識文字</translation>
+        </message>
+        <message>
+            <source>Replace</source>
+            <translation>取代</translation>
         </message>
         <message>
             <source>Replace existing files?</source>

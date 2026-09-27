@@ -1,5 +1,6 @@
 #include "snow_shot/presentation/screenshotrecognitionfileexport.h"
 
+#include <QAbstractButton>
 #include <QCoreApplication>
 #include <QDir>
 #include <QFile>
@@ -91,14 +92,20 @@ bool ScreenshotRecognitionFileExport::confirmOverwrite(QWidget* owner, const QSt
     const QStringList existing = existingPaths(paths);
     if (existing.isEmpty())
         return true;
-    return QMessageBox::question(owner,
-                                 message(QT_TRANSLATE_NOOP("ScreenshotRecognitionFileExport",
-                                                           "Replace existing files?")),
-                                 message(QT_TRANSLATE_NOOP("ScreenshotRecognitionFileExport",
-                                                           "Replace the existing file(s)?\n%1"))
-                                     .arg(existing.join(QLatin1Char('\n'))),
-                                 QMessageBox::Yes | QMessageBox::No,
-                                 QMessageBox::No) == QMessageBox::Yes;
+    QMessageBox dialog(
+        QMessageBox::Question,
+        message(QT_TRANSLATE_NOOP("ScreenshotRecognitionFileExport", "Replace existing files?")),
+        message(QT_TRANSLATE_NOOP("ScreenshotRecognitionFileExport",
+                                  "Replace the existing file(s)?\n%1"))
+            .arg(existing.join(QLatin1Char('\n'))),
+        QMessageBox::Yes | QMessageBox::No, owner);
+    dialog.setOption(QMessageBox::Option::DontUseNativeDialog);
+    dialog.button(QMessageBox::Yes)
+        ->setText(message(QT_TRANSLATE_NOOP("ScreenshotRecognitionFileExport", "Replace")));
+    dialog.button(QMessageBox::No)
+        ->setText(message(QT_TRANSLATE_NOOP("ScreenshotRecognitionFileExport", "Cancel")));
+    dialog.setDefaultButton(QMessageBox::No);
+    return dialog.exec() == QMessageBox::Yes;
 }
 
 ScreenshotRecognitionFileSaveResult

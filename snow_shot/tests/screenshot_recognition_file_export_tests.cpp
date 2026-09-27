@@ -2,12 +2,15 @@
 
 #include <QApplication>
 #include <QAbstractButton>
+#include <QCoreApplication>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
 #include <QMessageBox>
+#include <QPushButton>
 #include <QTemporaryDir>
 #include <QTimer>
+#include <QTranslator>
 
 #include <stdexcept>
 #include <iostream>
@@ -136,6 +139,47 @@ void manualOverwriteConfirmsAndReplacesBothFiles() {
                 read(companion) == QByteArrayLiteral("# new"),
             "confirmed overwrite must replace both members from one source snapshot");
 }
+
+void overwriteButtonsFollowSelectedLanguage() {
+    QTemporaryDir directory;
+    require(directory.isValid(), "overwrite translation directory unavailable");
+    const QString existing = directory.filePath(QStringLiteral("result.txt"));
+    write(existing, QByteArrayLiteral("old"));
+    struct Case {
+        const char* locale;
+        const char* replace;
+        const char* cancel;
+    };
+    for (const Case& test : {Case{"en_US", "Replace", "Cancel"}, Case{"zh_CN", "替换", "取消"},
+                             Case{"zh_TW", "取代", "取消"}}) {
+        QTranslator translator;
+        require(translator.load(
+                    QStringLiteral(":/i18n/snow_shot_%1.qm").arg(QString::fromLatin1(test.locale))),
+                "overwrite confirmation catalog did not load");
+        QCoreApplication::installTranslator(&translator);
+        bool inspected = false;
+        bool labelsMatch = false;
+        QTimer::singleShot(0, qApp, [&] {
+            for (QWidget* widget : QApplication::topLevelWidgets()) {
+                auto* dialog = qobject_cast<QMessageBox*>(widget);
+                if (dialog == nullptr || !dialog->isVisible())
+                    continue;
+                inspected = true;
+                labelsMatch =
+                    dialog->testOption(QMessageBox::Option::DontUseNativeDialog) &&
+                    dialog->button(QMessageBox::Yes)->text() == QString::fromUtf8(test.replace) &&
+                    dialog->button(QMessageBox::No)->text() == QString::fromUtf8(test.cancel) &&
+                    dialog->defaultButton() == dialog->button(QMessageBox::No);
+                dialog->button(QMessageBox::No)->click();
+                return;
+            }
+        });
+        require(!ScreenshotRecognitionFileExport::confirmOverwrite(nullptr, {existing}),
+                "canceling overwrite must decline replacement");
+        require(inspected && labelsMatch, "overwrite buttons must use the selected app language");
+        QCoreApplication::removeTranslator(&translator);
+    }
+}
 } // namespace
 
 int main(int argc, char** argv) {
@@ -146,6 +190,7 @@ int main(int argc, char** argv) {
         quickSaveAvoidsEitherPairCollision();
         emptyAndFailedPairLeaveNoPartialOutput();
         manualOverwriteConfirmsAndReplacesBothFiles();
+        overwriteButtonsFollowSelectedLanguage();
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';
         return 1;

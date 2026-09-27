@@ -116,6 +116,10 @@
             <translation>An output file already exists</translation>
         </message>
         <message>
+            <source>Cancel</source>
+            <translation>Cancel</translation>
+        </message>
+        <message>
             <source>HTML document (*.html)</source>
             <translation>HTML document (*.html)</translation>
         </message>
@@ -134,6 +138,10 @@
         <message>
             <source>No recognition text is available to save</source>
             <translation>No recognition text is available to save</translation>
+        </message>
+        <message>
+            <source>Replace</source>
+            <translation>Replace</translation>
         </message>
         <message>
             <source>Replace existing files?</source>

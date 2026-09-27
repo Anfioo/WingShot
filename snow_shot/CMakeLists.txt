@@ -1056,6 +1056,7 @@ set(PROJECT_HEADERS
     include/snow_shot/presentation/screenshottableeditor.h
     include/snow_shot/app/applicationcontroller.h
     include/snow_shot/app/applicationrestart.h
+    include/snow_shot/app/updateconfirmationdialog.h
     include/snow_shot/app/singleinstancecoordinator.h
     include/snow_shot/platform/windows/autostartregistration.h
     include/snow_shot/platform/windows/focusedfullscreenwindow.h
@@ -1194,6 +1195,7 @@ set(PROJECT_CXX_SOURCES
     src/presentation/capture/directcapturehistory.cpp
     src/presentation/capture/camerashuttersound.cpp
     src/app/applicationcontroller.cpp
+    src/app/updateconfirmationdialog.cpp
     src/app/mcp/screenshotmcpsession.cpp
     src/app/mcp/screenshotmcpserver.cpp
     src/app/mcp/mcpapplicationservice.cpp
@@ -3739,10 +3741,26 @@ if(SNOW_SHOT_BUILD_TESTS)
     target_include_directories(snow-shot-recognition-file-export-tests PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/include")
     target_link_libraries(snow-shot-recognition-file-export-tests PRIVATE Qt6::Widgets)
+    snow_shot_add_translations(snow-shot-recognition-file-export-tests)
     snow_shot_import_offscreen_platform(snow-shot-recognition-file-export-tests)
     add_test(NAME snow-shot-recognition-file-export-tests
              COMMAND snow-shot-recognition-file-export-tests)
     set_tests_properties(snow-shot-recognition-file-export-tests PROPERTIES
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+
+    add_executable(snow-shot-update-confirmation-tests
+        tests/update_confirmation_dialog_tests.cpp
+        src/app/updateconfirmationdialog.cpp
+    )
+    target_include_directories(snow-shot-update-confirmation-tests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/include")
+    target_link_libraries(snow-shot-update-confirmation-tests PRIVATE Qt6::Widgets)
+    snow_shot_add_translations(snow-shot-update-confirmation-tests)
+    snow_shot_import_offscreen_platform(snow-shot-update-confirmation-tests)
+    add_test(NAME snow-shot-update-confirmation-tests
+             COMMAND snow-shot-update-confirmation-tests)
+    set_tests_properties(snow-shot-update-confirmation-tests PROPERTIES
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
 

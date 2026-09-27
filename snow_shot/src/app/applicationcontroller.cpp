@@ -1,5 +1,6 @@
 #include "snow_shot/app/applicationcontroller.h"
 #include "snow_shot/app/applicationrestart.h"
+#include "snow_shot/app/updateconfirmationdialog.h"
 #include "snow_shot/app/featureavailability.h"
 #include "snow_shot/presentation/apppermissionservice.h"
 #ifdef Q_OS_MACOS
@@ -14,7 +15,6 @@
 #include "snow_shot/presentation/screenshotexportartifact.h"
 #include <QStandardPaths>
 #include <QCryptographicHash>
-#include <QMessageBox>
 
 #include "snow_shot/presentation/globalshortcutmanager.h"
 #include "snow_shot/presentation/globalmousemanager.h"
@@ -303,12 +303,7 @@ class ApplicationController::Impl {
                     "Finish capturing, recording, or exporting before updating."));
                 return;
             }
-            const auto answer = QMessageBox::question(
-                mainWindow, ApplicationController::tr("Restart and update"),
-                ApplicationController::tr(
-                    "Snow Shot will close and restart to install the update. Continue?"),
-                QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel);
-            if (answer != QMessageBox::Yes) {
+            if (!confirmRestartAndUpdate(mainWindow)) {
                 return;
             }
             if (!storage::ApplicationStorage::instance().flushNow().success) {
