@@ -1031,6 +1031,17 @@ SettingsItemDefinition screenshotShutterSoundNotificationItem() {
         SettingsSwitchBinding::ScreenshotShutterSoundNotification);
 }
 
+SettingsItemDefinition screenshotAutoRecognizeQrCodeItem() {
+    return switchItem(
+        QStringLiteral("screenshot.auto-recognize-qr-code"),
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Auto-recognize QR Code"),
+        QT_TRANSLATE_NOOP(
+            "SettingsCatalog",
+            "Recognize QR codes automatically after confirming the screenshot selection area."),
+        QStringLiteral("screenshot/auto_recognize_qr_code"),
+        SettingsSwitchBinding::ScreenshotAutoRecognizeQrCode);
+}
+
 SettingsItemDefinition screenshotConfirmBeforeExitingViaShortcutItem() {
     return switchItem(
         QStringLiteral("screenshot.confirm-before-exiting-via-shortcut"),
@@ -2154,7 +2165,8 @@ QVector<SettingsPageDefinition> builtInPages() {
                      screenshotDoubleClickActionItem(), screenshotMiddleClickActionItem(),
                      screenshotAutoSaveAfterCopyItem(), screenshotCopyFileItem(),
                      screenshotSaveAsFileDialogItem(), screenshotShutterSoundNotificationItem(),
-                     screenshotConfirmBeforeExitingViaShortcutItem()},
+                     screenshotConfirmBeforeExitingViaShortcutItem(),
+                     screenshotAutoRecognizeQrCodeItem()},
                 },
                 {
                     QStringLiteral("pin-to-screen-settings"),
@@ -3572,6 +3584,9 @@ QStringList SettingsCatalog::validationErrors() const {
                     case SettingsSwitchBinding::ScreenshotConfirmBeforeExitingViaShortcut:
                         expectedKey =
                             QStringLiteral("screenshot/confirm_before_exiting_via_shortcut");
+                        break;
+                    case SettingsSwitchBinding::ScreenshotAutoRecognizeQrCode:
+                        expectedKey = QStringLiteral("screenshot/auto_recognize_qr_code");
                         break;
                     case SettingsSwitchBinding::ScreenshotRestoreOriginalScreenColors:
                         expectedKey = QStringLiteral("screenshot/restore_original_screen_colors");

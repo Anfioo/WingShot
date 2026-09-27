@@ -176,7 +176,7 @@ void builtInCatalogIsCompleteAndValid() {
                         .toString() == QStringLiteral("follow_mouse_movement"),
             "selection resize mode must offer both follow styles and default to mouse movement");
     qsizetype sectionCount = 0;
-    qsizetype itemCount = 0;
+    QSet<QString> itemIds;
     bool foundUpdates = false;
     QSet<QString> objectNames;
     for (const auto& page : catalog.pages()) {
@@ -188,13 +188,13 @@ void builtInCatalogIsCompleteAndValid() {
                                                QStringLiteral("settings-page"), page.id)),
                 "generated page object names must be unique");
         for (const auto& section : page.sections) {
-            itemCount += section.items.size();
             require(
                 insertUnique(&objectNames, settings::generatedObjectName(
                                                QStringLiteral("settings-section"),
                                                QStringLiteral("%1-%2").arg(page.id, section.id))),
                 "generated section object names must be unique");
             for (const auto& item : section.items) {
+                require(insertUnique(&itemIds, item.id), "catalog item IDs must be unique");
                 require(insertUnique(&objectNames, settings::generatedObjectName(
                                                        QStringLiteral("settings-item"), item.id)),
                         "generated item object names must be unique");
@@ -235,12 +235,38 @@ void builtInCatalogIsCompleteAndValid() {
     }
 #ifdef Q_OS_MACOS
     require(sectionCount == 42, "macOS adds one permissions section");
-    require(itemCount == 185, "macOS adds login settings and omits administrator controls "
-                              "and Windows-only choices");
 #else
     require(sectionCount == 41, "catalog must contain forty-one sections");
-    require(itemCount == 187, "catalog must contain one hundred eighty-seven items");
 #endif
+    // Keep the shared total in one place: adding a shared setting must update both platforms.
+    // Explicit platform membership also catches substitutions that a total alone would miss.
+    const QSet<QString> windowsOnlyItems{
+        QStringLiteral("system.launch-as-administrator"),
+        QStringLiteral("system.restart-as-administrator"),
+        QStringLiteral("screenshot.api-mode"),
+        QStringLiteral("screenshot.window-element-api"),
+        QStringLiteral("screenshot.restore-original-screen-colors"),
+        QStringLiteral("text-recognition.direct-ml-acceleration"),
+    };
+    const QSet<QString> macOnlyItems{
+        QStringLiteral("system.login-item-settings"),
+        QStringLiteral("screen-recording"),
+        QStringLiteral("accessibility"),
+        QStringLiteral("input-monitoring"),
+        QStringLiteral("microphone"),
+    };
+#ifdef Q_OS_MACOS
+    const auto& expectedPlatformItems = macOnlyItems;
+    const auto& excludedPlatformItems = windowsOnlyItems;
+#else
+    const auto& expectedPlatformItems = windowsOnlyItems;
+    const auto& excludedPlatformItems = macOnlyItems;
+#endif
+    for (const auto& id : expectedPlatformItems)
+        require(itemIds.remove(id), "catalog must contain each platform-specific setting");
+    for (const auto& id : excludedPlatformItems)
+        require(!itemIds.contains(id), "catalog must omit settings exclusive to another platform");
+    require(itemIds.size() == 182, "catalog must contain 182 shared settings on every platform");
     require(foundUpdates, "catalog must contain the update mode item");
     const auto* pinnedEditor =
         catalog.item({QStringLiteral("interface-settings"), QStringLiteral("pin-to-screen"),
@@ -458,6 +484,14 @@ void builtInCatalogIsCompleteAndValid() {
                 std::next(shutterItem)->id ==
                     QStringLiteral("screenshot.confirm-before-exiting-via-shortcut"),
             "shortcut exit confirmation must immediately follow the shutter notification");
+    const auto qrItem = std::next(shutterItem, 2);
+    require(qrItem != screenshotSettings->items.cend() &&
+                qrItem->id == QStringLiteral("screenshot.auto-recognize-qr-code") &&
+                qrItem->title.translated() == QStringLiteral("Auto-recognize QR Code") &&
+                storage::ConfigurationSchema::defaultValue(qrItem->configurationKey).toBool() &&
+                std::get<settings::SettingsSwitchDefinition>(qrItem->payload).binding ==
+                    settings::SettingsSwitchBinding::ScreenshotAutoRecognizeQrCode,
+            "enabled automatic QR recognition must immediately follow shortcut exit confirmation");
     require(shutterSound != nullptr &&
                 shutterSound->title.translated() == QStringLiteral("Shutter Sound Notification") &&
                 shutterSound->configurationKey ==

@@ -188,6 +188,37 @@
         </message>
     </context>
     <context>
+        <name>ScreenshotQrController</name>
+        <message>
+            <source>Copy Text</source>
+            <translation>复制文本</translation>
+        </message>
+        <message>
+            <source>Open URL</source>
+            <translation>打开链接</translation>
+        </message>
+        <message>
+            <source>QR Code</source>
+            <translation>二维码</translation>
+        </message>
+        <message>
+            <source>QR Code %1</source>
+            <translation>二维码 %1</translation>
+        </message>
+        <message>
+            <source>QR code recognition failed</source>
+            <translation>二维码识别失败</translation>
+        </message>
+        <message>
+            <source>QR code text</source>
+            <translation>二维码文本</translation>
+        </message>
+        <message>
+            <source>Unable to open the recognized link</source>
+            <translation>无法打开识别出的链接</translation>
+        </message>
+    </context>
+    <context>
         <name>ScreenshotRegionTypeControl</name>
         <message>
             <source>%1 to switch region type</source>

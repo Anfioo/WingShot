@@ -811,7 +811,9 @@ class ImmediateQrRecognition final : public ScreenshotQrRecognitionPort {
   public:
     explicit ImmediateQrRecognition(QStringList contents) : m_contents(std::move(contents)) {}
 
-    RequestToken recognize(QImage, QObject*, Completion completion) override {
+    RequestToken
+    recognize(QImage, QObject*, Completion completion,
+              ScreenshotQrRecognitionMode = ScreenshotQrRecognitionMode::QrAndBarcode) override {
         if (completion) {
             completion(ScreenshotQrRecognitionResult{m_contents, {}});
         }

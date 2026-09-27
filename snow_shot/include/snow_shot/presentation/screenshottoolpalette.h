@@ -321,6 +321,7 @@ class ScreenshotToolPalette final : public QWidget,
     void setSelectionToolbarHidden(bool hidden);
     [[nodiscard]] bool selectionToolbarHidden() const;
     void setRecaptureBusy(bool busy);
+    void setQrCodeState(bool available, bool visible, const QString& error = {});
     [[nodiscard]] bool recaptureBusy() const;
     void clearActiveTool();
     [[nodiscard]] std::optional<Tool> activeTool() const;
@@ -425,6 +426,7 @@ class ScreenshotToolPalette final : public QWidget,
     void moveRequested();
     void captureCursorToggled(bool enabled);
     void recaptureRequested();
+    void qrCodeVisibilityRequested(bool visible);
     void screenshotRegionTypeRequested(int type);
     void addScreenshotRegionRequested();
     void subtractScreenshotRegionRequested();
@@ -974,6 +976,10 @@ class ScreenshotToolPalette final : public QWidget,
     ScreenshotSelectionDisplayUnit m_selectionDisplayUnit = kDefaultScreenshotSelectionDisplayUnit;
     bool m_selectionToolbarHidden = false;
     bool m_recaptureBusy = false;
+    bool m_qrCodeAvailable = false;
+    bool m_qrCodeVisible = true;
+    QString m_qrCodeError;
+    adqt::widgets::AdButton* m_showQrCodeButton = nullptr;
     bool m_ocrEnabled = true;
     bool m_ocrBusy = false;
     bool m_tableEnabled = true;

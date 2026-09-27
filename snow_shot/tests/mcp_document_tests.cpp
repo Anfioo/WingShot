@@ -159,7 +159,9 @@ class FixtureOcr final : public ScreenshotOcrRecognitionPort {
 };
 class FixtureQr final : public ScreenshotQrRecognitionPort {
   public:
-    RequestToken recognize(QImage, QObject* receiver, Completion completion) override {
+    RequestToken
+    recognize(QImage, QObject* receiver, Completion completion,
+              ScreenshotQrRecognitionMode = ScreenshotQrRecognitionMode::QrAndBarcode) override {
         const auto token = ++m_next;
         QTimer::singleShot(100, receiver, [this, token, completion = std::move(completion)] {
             if (!m_canceled.remove(token))

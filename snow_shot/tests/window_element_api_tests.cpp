@@ -163,6 +163,30 @@ void shortcutExitConfirmationSettingsPersistAndReset(const QString& configuratio
     require(!invalid.valid, "shortcut exit confirmation preference must reject nonboolean values");
 }
 
+void autoRecognizeQrCodeSettingsPersistAndReset(const QString& configurationPath) {
+    snow_shot::presentation::GlobalShortcutManager shortcuts;
+    settings::BuiltInSettingsBackend backend(shortcuts);
+    constexpr auto binding = settings::SettingsSwitchBinding::ScreenshotAutoRecognizeQrCode;
+    require(backend.switchValue(binding), "automatic QR recognition must default to enabled");
+    require(backend.applySwitchValue(binding, false) && !backend.switchValue(binding) &&
+                !storage::ScreenshotSettings().autoRecognizeQrCode(),
+            "automatic QR recognition must be disabled through the settings backend");
+    require(storage::ApplicationStorage::instance().configuration().flushNow().success,
+            "automatic QR recognition preference must be flushable");
+    storage::ConfigurationStore reloaded(configurationPath, true, true, 60000);
+    require(!reloaded.value(QStringLiteral("screenshot/auto_recognize_qr_code")).toBool(),
+            "disabled automatic QR recognition must survive a configuration reload");
+    require(backend.resetSection(settings::SettingsSectionReset::ScreenshotCapture) &&
+                !backend.switchValue(binding),
+            "system screenshot reset must preserve automatic QR recognition");
+    require(backend.resetSection(settings::SettingsSectionReset::ScreenshotSettings) &&
+                backend.switchValue(binding),
+            "function screenshot reset must enable automatic QR recognition");
+    const auto invalid = storage::ConfigurationSchema::normalize(
+        QStringLiteral("screenshot/auto_recognize_qr_code"), QStringLiteral("enabled"));
+    require(!invalid.valid, "automatic QR recognition preference must reject nonboolean values");
+}
+
 void ownUiCapturePreferencesPersistAndReset() {
     snow_shot::presentation::GlobalShortcutManager shortcuts;
     settings::BuiltInSettingsBackend backend(shortcuts);
@@ -669,10 +693,18 @@ int main(int argc, char** argv) {
         applicationStorage.shutdown();
         return 0;
     }
+    if (application.arguments().contains(QStringLiteral("--auto-qr-settings-only"))) {
+        autoRecognizeQrCodeSettingsPersistAndReset(
+            temporary.filePath(QStringLiteral("data/config.json")));
+        applicationStorage.shutdown();
+        return 0;
+    }
     if (!selectorOnly) {
         settingsPersistAndResetToUia(temporary.filePath(QStringLiteral("data/config.json")));
         shutterSoundSettingsPersistAndReset(temporary.filePath(QStringLiteral("data/config.json")));
         shortcutExitConfirmationSettingsPersistAndReset(
+            temporary.filePath(QStringLiteral("data/config.json")));
+        autoRecognizeQrCodeSettingsPersistAndReset(
             temporary.filePath(QStringLiteral("data/config.json")));
         ownUiCapturePreferencesPersistAndReset();
         toolbarLayoutSectionResetsRemainIndependent();

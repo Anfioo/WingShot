@@ -836,6 +836,10 @@
             <translation>Shape</translation>
         </message>
         <message>
+            <source>Show QR Code</source>
+            <translation>Show QR Code</translation>
+        </message>
+        <message>
             <source>Show cursor in recording</source>
             <translation>Show cursor in recording</translation>
         </message>

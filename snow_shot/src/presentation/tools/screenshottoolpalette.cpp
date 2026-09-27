@@ -2255,11 +2255,28 @@ bool ScreenshotToolPalette::selectionToolbarHidden() const {
 
 void ScreenshotToolPalette::setRecaptureBusy(bool busy) {
     m_recaptureBusy = busy;
+    setQrCodeState(m_qrCodeAvailable, m_qrCodeVisible, m_qrCodeError);
     for (auto* button : {m_addRegionButton, m_subtractRegionButton})
         if (button)
             button->setEnabled(!busy);
     if (m_recaptureButton != nullptr) {
         m_recaptureButton->setEnabled(!busy);
+    }
+}
+
+void ScreenshotToolPalette::setQrCodeState(bool available, bool visible, const QString& error) {
+    m_qrCodeAvailable = available;
+    m_qrCodeVisible = visible;
+    m_qrCodeError = error;
+    if (m_showQrCodeButton) {
+        m_showQrCodeButton->setEnabled(available && !m_recaptureBusy);
+        m_showQrCodeButton->setCheckable(true);
+        m_showQrCodeButton->setCheckedUsesActiveStyle(false);
+        const QSignalBlocker blocker(m_showQrCodeButton);
+        m_showQrCodeButton->setChecked(available && visible);
+        setScreenshotToolPaletteButtonActive(m_showQrCodeButton, available && visible);
+        m_showQrCodeButton->setAccessibleName(tr("Show QR Code"));
+        m_showQrCodeButton->setToolTip(error.isEmpty() ? tr("Show QR Code") : error);
     }
 }
 
@@ -3763,6 +3780,7 @@ void ScreenshotToolPalette::retranslateUi() {
     if (m_captureCursorButton != nullptr) {
         configureScreenshotToolPaletteTooltip(m_captureCursorButton, "Capture cursor");
     }
+    setQrCodeState(m_qrCodeAvailable, m_qrCodeVisible, m_qrCodeError);
 }
 
 void ScreenshotToolPalette::refreshShortcutTooltips() {
@@ -6483,6 +6501,7 @@ void ScreenshotToolPalette::clearSecondaryResourceBindings() {
     m_selectionDisplayUnitGroup = nullptr;
     m_captureCursorButton = nullptr;
     m_recaptureButton = nullptr;
+    m_showQrCodeButton = nullptr;
     m_addRegionButton = nullptr;
     m_subtractRegionButton = nullptr;
     m_lineStyleControlsWidget = nullptr;
@@ -7505,6 +7524,16 @@ void ScreenshotToolPalette::createMoveActionFamily() {
     applyScreenshotShortcutTooltip(m_recaptureButton, QStringLiteral("Recapture"),
                                    QStringLiteral("recapture"));
     layout->addWidget(m_recaptureButton);
+    addStyleToolbarSpacing(layout, STYLE_ITEM_SPACING);
+    m_showQrCodeButton = createScreenshotToolPaletteStyleActionButton(
+        m_moveActionControls, "Show QR Code", custom_outlined_icons::ScanQrcode(),
+        actionButtonMetrics(m_physicalScale));
+    m_showQrCodeButton->setObjectName(QStringLiteral("screenshotShowQrCodeButton"));
+    layout->addWidget(m_showQrCodeButton);
+    connect(m_showQrCodeButton, &adqt::widgets::AdButton::clicked, this, [this]() {
+        setQrCodeState(m_qrCodeAvailable, !m_qrCodeVisible, m_qrCodeError);
+        emit qrCodeVisibilityRequested(m_qrCodeVisible);
+    });
     addStyleToolbarSpacing(layout, STYLE_GROUP_SPACING * 2);
     layout->addWidget(createStyleToolbarSeparator(m_moveActionControls));
     addStyleToolbarSpacing(layout, STYLE_GROUP_SPACING * 2);
@@ -7549,10 +7578,10 @@ void ScreenshotToolPalette::createMoveActionFamily() {
     });
     m_selectActionLayout->addWidget(m_moveActionControls);
     stampScreenshotToolbarReferenceWidth(
-        m_moveActionControls, actionButtonMetrics(1.0).buttonSize * 5 +
+        m_moveActionControls, actionButtonMetrics(1.0).buttonSize * 6 +
                                   screenshotToolbarReferenceWidth(regionTypes.container) +
                                   screenshotToolbarReferenceWidth(units.container) +
-                                  STYLE_ITEM_SPACING * 2 + STYLE_GROUP_SPACING * 10 + 6 +
+                                  STYLE_ITEM_SPACING * 3 + STYLE_GROUP_SPACING * 10 + 6 +
                                   TOOLBAR_SEPARATOR_WIDTH * 2);
     setCaptureCursorEnabled(m_captureCursorEnabled);
     setSelectionToolbarHidden(m_selectionToolbarHidden);

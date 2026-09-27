@@ -909,6 +909,10 @@
             <translation>Auto start at boot</translation>
         </message>
         <message>
+            <source>Auto-recognize QR Code</source>
+            <translation>Auto-recognize QR Code</translation>
+        </message>
+        <message>
             <source>Auto-save screenshot filename format</source>
             <translation>Auto-save screenshot filename format</translation>
         </message>
@@ -2279,6 +2283,10 @@
         <message>
             <source>Recapture</source>
             <translation>Recapture</translation>
+        </message>
+        <message>
+            <source>Recognize QR codes automatically after confirming the screenshot selection area.</source>
+            <translation>Recognize QR codes automatically after confirming the screenshot selection area.</translation>
         </message>
         <message>
             <source>Recognize global mouse gestures while you use other apps.</source>

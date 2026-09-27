@@ -188,6 +188,37 @@
         </message>
     </context>
     <context>
+        <name>ScreenshotQrController</name>
+        <message>
+            <source>Copy Text</source>
+            <translation>複製文字</translation>
+        </message>
+        <message>
+            <source>Open URL</source>
+            <translation>開啟連結</translation>
+        </message>
+        <message>
+            <source>QR Code</source>
+            <translation>二維碼</translation>
+        </message>
+        <message>
+            <source>QR Code %1</source>
+            <translation>二維碼 %1</translation>
+        </message>
+        <message>
+            <source>QR code recognition failed</source>
+            <translation>二維碼辨識失敗</translation>
+        </message>
+        <message>
+            <source>QR code text</source>
+            <translation>二維碼文字</translation>
+        </message>
+        <message>
+            <source>Unable to open the recognized link</source>
+            <translation>無法開啟辨識出的連結</translation>
+        </message>
+    </context>
+    <context>
         <name>ScreenshotRegionTypeControl</name>
         <message>
             <source>%1 to switch region type</source>

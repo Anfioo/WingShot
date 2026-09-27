@@ -836,6 +836,10 @@
             <translation>圖形</translation>
         </message>
         <message>
+            <source>Show QR Code</source>
+            <translation>顯示二維碼</translation>
+        </message>
+        <message>
             <source>Show cursor in recording</source>
             <translation>在錄製中顯示游標</translation>
         </message>

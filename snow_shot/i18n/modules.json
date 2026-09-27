@@ -39,6 +39,7 @@
   "capture": [
     "DirectCaptureController",
     "ScreenshotAutoFilterController",
+    "ScreenshotQrController",
     "ScreenshotCaptureCoordinator",
     "ScreenshotController",
     "ScreenshotMcpServer",

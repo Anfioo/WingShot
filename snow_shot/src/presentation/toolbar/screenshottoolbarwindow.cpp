@@ -487,6 +487,7 @@ void ScreenshotToolbarWindow::resetForNewCapture() {
     m_rememberedDrawingToolRestorePending = true;
     if (ScreenshotToolPalette* toolPalette = palette()) {
         toolPalette->setSelectionToolbarHidden(false);
+        toolPalette->setQrCodeState(false, true);
     }
     prepareForDisplay();
 }

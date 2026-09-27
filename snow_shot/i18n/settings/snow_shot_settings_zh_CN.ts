@@ -909,6 +909,10 @@
             <translation>开机时自动启动</translation>
         </message>
         <message>
+            <source>Auto-recognize QR Code</source>
+            <translation>自动识别二维码</translation>
+        </message>
+        <message>
             <source>Auto-save screenshot filename format</source>
             <translation>自动保存截图文件名格式</translation>
         </message>
@@ -2279,6 +2283,10 @@
         <message>
             <source>Recapture</source>
             <translation>重新截图</translation>
+        </message>
+        <message>
+            <source>Recognize QR codes automatically after confirming the screenshot selection area.</source>
+            <translation>确认截图选区后自动识别二维码。</translation>
         </message>
         <message>
             <source>Recognize global mouse gestures while you use other apps.</source>

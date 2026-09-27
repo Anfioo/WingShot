@@ -12255,6 +12255,28 @@ void moveToolExposesCaptureCursorAndRecaptureOptions() {
             qobject_cast<QFrame*>(
                 layout->itemAt(layout->indexOf(hideSelectionToolbar) - 4)->widget()) != nullptr,
         "Move options must group region actions at the far left, before capture actions and hide");
+    auto* qr =
+        palette.findChild<adqt::widgets::AdButton*>(QStringLiteral("screenshotShowQrCodeButton"));
+    require(qr && layout->indexOf(qr) == layout->indexOf(recapture) + 2 && !qr->isEnabled(),
+            "QR toggle follows Recapture and starts disabled");
+    int qrCommands = 0;
+    QObject::connect(&palette, &ScreenshotToolPalette::qrCodeVisibilityRequested,
+                     [&qrCommands](bool) { ++qrCommands; });
+    palette.setQrCodeState(true, true);
+    require(qr->isEnabled() && qr->isChecked(), "detected codes enable and check QR toggle");
+    require(!qr->checkedUsesActiveStyle() &&
+                qr->buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Solid &&
+                qr->accentRole() == adqt::widgets::AdButton::AccentRole::Primary,
+            "QR checked state uses shared toolbar active background");
+    qr->click();
+    require(!qr->isChecked() && qrCommands == 1, "QR click hides markers with one command");
+
+    palette.setRecaptureBusy(true);
+    require(!qr->isEnabled(), "recapture temporarily disables QR toggle");
+    palette.setRecaptureBusy(false);
+    require(qr->isEnabled(), "failed recapture restores QR toggle");
+    palette.setQrCodeState(false, true);
+    require(!qr->isEnabled() && !qr->isChecked(), "invalidated results disable QR toggle");
     require(!cursor->isCheckable() && !cursor->isChecked() && !palette.captureCursorEnabled(),
             "Capture cursor must use the same state-driven action button as scrolling screenshot");
 

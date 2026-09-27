@@ -1269,6 +1269,8 @@ set(PROJECT_CXX_SOURCES
     src/presentation/ocr/screenshotocrtexttransform.cpp
     src/presentation/ocr/screenshotocrrecognitionservice.cpp
     src/presentation/ocr/screenshotocrassets.cpp
+    src/presentation/ocr/screenshotqrcontroller.cpp
+    include/snow_shot/presentation/screenshotqrcontroller.h
     src/presentation/ocr/screenshotqrrecognitionservice.cpp
     src/presentation/ocr/screenshotocrpresentation.cpp
     src/presentation/ocr/screenshotocrvisuals.cpp
@@ -2372,11 +2374,14 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_test(NAME snow-shot-shortcut-exit-confirmation-settings-tests
              COMMAND snow-shot-window-element-api-tests
                      --shortcut-exit-confirmation-settings-only)
+    add_test(NAME snow-shot-auto-qr-settings-tests
+             COMMAND snow-shot-window-element-api-tests --auto-qr-settings-only)
     snow_shot_import_offscreen_platform(snow-shot-window-element-api-tests)
     set_tests_properties(
         snow-shot-window-element-api-tests
         snow-shot-selector-phased-tests
         snow-shot-shortcut-exit-confirmation-settings-tests
+        snow-shot-auto-qr-settings-tests
         PROPERTIES
         ENVIRONMENT
             "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
@@ -6897,9 +6902,27 @@ foreach(_ocr_process_host_target IN ITEMS snow_shot snow-shot-ocr-recognition-se
 endforeach()
 unset(_ocr_process_host_target)
 
+if(SNOW_SHOT_BUILD_BENCHMARKS)
+    add_executable(snow-shot-qr-performance-benchmark
+        tests/screenshot_qr_performance_benchmark.cpp
+        src/presentation/ocr/screenshotqrcontroller.cpp
+        include/snow_shot/presentation/screenshotqrcontroller.h
+        src/presentation/ocr/screenshotqrrecognitionservice.cpp
+        include/snow_shot/presentation/screenshotqrrecognitionservice.h
+        src/presentation/components/icons/snowshoticons.cpp)
+    target_include_directories(snow-shot-qr-performance-benchmark PRIVATE include)
+    target_link_libraries(snow-shot-qr-performance-benchmark PRIVATE snow_draw_engine_qt_canvas
+        ant_design_qt opencv_wechat_qrcode opencv_objdetect Qt6::Widgets)
+    if(WIN32)
+        target_link_libraries(snow-shot-qr-performance-benchmark PRIVATE psapi)
+    endif()
+    snow_shot_import_offscreen_platform(snow-shot-qr-performance-benchmark)
+endif()
+
 # The in-process barcode recognition service loads the pinned WeChat QR
 # models at runtime; stage them next to every host that links the service.
-foreach(_qr_host_target IN ITEMS snow_shot snow-shot-qr-recognition-service-tests)
+foreach(_qr_host_target IN ITEMS snow_shot snow-shot-qr-recognition-service-tests
+        snow-shot-qr-performance-benchmark)
     if(TARGET ${_qr_host_target})
         add_custom_command(TARGET ${_qr_host_target} POST_BUILD
             COMMAND "${CMAKE_COMMAND}" -E make_directory
@@ -7767,4 +7790,19 @@ if(APPLE AND SNOW_SHOT_BUILD_TESTS)
     target_link_libraries(snow-shot-login-item-native-tests PRIVATE snow_shot_login_item)
     add_test(NAME snow-shot-login-item-native-tests COMMAND snow-shot-login-item-native-tests)
     set_tests_properties(snow-shot-login-item-native-tests PROPERTIES LABELS "unit;macos")
+endif()
+
+if(SNOW_SHOT_BUILD_TESTS)
+    add_executable(snow-shot-qr-controller-tests
+        tests/screenshot_qr_controller_tests.cpp
+        src/presentation/ocr/screenshotqrcontroller.cpp
+        include/snow_shot/presentation/screenshotqrcontroller.h
+        src/presentation/components/icons/snowshoticons.cpp)
+    target_include_directories(snow-shot-qr-controller-tests PRIVATE include)
+    target_link_libraries(snow-shot-qr-controller-tests PRIVATE snow_draw_engine_qt_canvas
+        ant_design_qt Qt6::Widgets)
+    snow_shot_import_offscreen_platform(snow-shot-qr-controller-tests)
+    add_test(NAME snow-shot-qr-controller-tests COMMAND snow-shot-qr-controller-tests)
+    set_tests_properties(snow-shot-qr-controller-tests PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen" LABELS "unit")
 endif()

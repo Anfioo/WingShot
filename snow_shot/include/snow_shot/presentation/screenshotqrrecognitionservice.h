@@ -5,13 +5,23 @@
 #include <QObject>
 #include <QString>
 #include <QStringList>
+#include <QPolygonF>
 
 #include <functional>
 #include <memory>
 
+struct ScreenshotQrDetection {
+    QString text;
+    // Four ordered corners in the original input image's pixel coordinates.
+    QPolygonF corners;
+};
+
+enum class ScreenshotQrRecognitionMode { QrAndBarcode, QrOnly };
+
 struct ScreenshotQrRecognitionResult {
     QStringList contents;
     QString error;
+    QList<ScreenshotQrDetection> detections;
 };
 
 class ScreenshotQrRecognitionPort : public QObject {
@@ -21,7 +31,9 @@ class ScreenshotQrRecognitionPort : public QObject {
     using Completion = std::function<void(ScreenshotQrRecognitionResult)>;
 
     ~ScreenshotQrRecognitionPort() override = default;
-    virtual RequestToken recognize(QImage image, QObject* receiver, Completion completion) = 0;
+    virtual RequestToken
+    recognize(QImage image, QObject* receiver, Completion completion,
+              ScreenshotQrRecognitionMode mode = ScreenshotQrRecognitionMode::QrAndBarcode) = 0;
     virtual void cancel(RequestToken token) = 0;
 };
 
@@ -36,7 +48,9 @@ class ScreenshotQrRecognitionService final : public ScreenshotQrRecognitionPort 
                                             const QString& modelsDirectory = QString());
     ~ScreenshotQrRecognitionService() override;
 
-    RequestToken recognize(QImage image, QObject* receiver, Completion completion) override;
+    RequestToken recognize(
+        QImage image, QObject* receiver, Completion completion,
+        ScreenshotQrRecognitionMode mode = ScreenshotQrRecognitionMode::QrAndBarcode) override;
     void cancel(RequestToken token) override;
 
   private:

@@ -188,6 +188,37 @@
         </message>
     </context>
     <context>
+        <name>ScreenshotQrController</name>
+        <message>
+            <source>Copy Text</source>
+            <translation>Copy Text</translation>
+        </message>
+        <message>
+            <source>Open URL</source>
+            <translation>Open URL</translation>
+        </message>
+        <message>
+            <source>QR Code</source>
+            <translation>QR Code</translation>
+        </message>
+        <message>
+            <source>QR Code %1</source>
+            <translation>QR Code %1</translation>
+        </message>
+        <message>
+            <source>QR code recognition failed</source>
+            <translation>QR code recognition failed</translation>
+        </message>
+        <message>
+            <source>QR code text</source>
+            <translation>QR code text</translation>
+        </message>
+        <message>
+            <source>Unable to open the recognized link</source>
+            <translation>Unable to open the recognized link</translation>
+        </message>
+    </context>
+    <context>
         <name>ScreenshotRegionTypeControl</name>
         <message>
             <source>%1 to switch region type</source>
