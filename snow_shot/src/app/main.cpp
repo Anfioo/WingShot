@@ -98,9 +98,9 @@ int main(int argc, char* argv[]) {
                 argument.mid(static_cast<int>(std::char_traits<char>::length(e2eInstancePrefix)));
         }
     }
-    if (e2eCaptureEnabled && QRegularExpression(QStringLiteral("^[A-Za-z0-9_-]{1,64}$"))
-                                 .match(e2eInstanceId)
-                                 .hasMatch()) {
+    if (QRegularExpression(QStringLiteral("^[A-Za-z0-9_-]{1,64}$"))
+            .match(e2eInstanceId)
+            .hasMatch()) {
         applicationName += QStringLiteral("-e2e-") + e2eInstanceId;
     }
     QCoreApplication::setApplicationName(applicationName);

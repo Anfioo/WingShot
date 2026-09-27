@@ -557,8 +557,14 @@ void ScreenshotPinnedEditController::setEditMode(bool enabled) {
         if (m_toolbarWindow != nullptr) {
             m_toolbarWindow->cancelDrag();
             ScreenshotToolPalette* toolbarPalette = m_toolbarWindow->palette();
-            if (toolbarPalette == nullptr || !toolbarPalette->activateRememberedDrawingTool()) {
-                activateResizeWindowTool();
+            // Opening the toolbar reflects the current mode. Only an explicit tool
+            // command may replace active recognition with a drawing tool.
+            if (m_pinnedWindow.m_ocrMode) {
+                prepareRecognitionToolActivation();
+                m_pinnedWindow.updateRecognitionToolbarState();
+            } else if (toolbarPalette == nullptr ||
+                       !toolbarPalette->activateRememberedDrawingTool()) {
+                applyResizeWindowTool();
             }
             updatePlacement();
             m_toolbarWindow->prepareForDisplay();

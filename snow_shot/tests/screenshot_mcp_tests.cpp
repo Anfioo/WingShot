@@ -699,8 +699,9 @@ void completeToolStyleContract() {
             properties = flags;
             ++updates;
         }
-        void setTextStyleFromToolbar(const SnowCanvasTextStyle& value) {
+        void setTextStyleFromToolbar(const SnowCanvasTextStyle& value, quint32 flags) {
             state.textStyle = value;
+            properties = flags;
             ++updates;
         }
         void setSerialNumberStyleFromToolbar(const SnowCanvasSerialNumberStyle& value) {
@@ -735,7 +736,10 @@ void completeToolStyleContract() {
                    {QStringLiteral("corner_radii"), QJsonArray{1, 2, 3, 4}}}) &&
                 styles.state.textStyle.horizontalAlign == SnowCanvasTextHorizontalAlign::Right &&
                 styles.state.textStyle.verticalAlign == SnowCanvasTextVerticalAlign::Bottom &&
-                styles.state.textStyle.cornerRadii == SnowCanvasCornerRadii{1, 2, 3, 4},
+                styles.state.textStyle.cornerRadii == SnowCanvasCornerRadii{1, 2, 3, 4} &&
+                styles.properties ==
+                    (SnowCanvasTextStyleMixedHorizontalAlign |
+                     SnowCanvasTextStyleMixedVerticalAlign | SnowCanvasTextStyleMixedCornerRadii),
             "text alignment and independent corner radii must preserve their ordering");
     require(apply(QStringLiteral("serial_number"),
                   {{QStringLiteral("number"), 42},

@@ -459,10 +459,11 @@ bool SnowCanvasRuntimeEditor::setShapeStyleFromToolbar(const SnowCanvasShapeStyl
             r, v, &value, properties, snow_canvas_types::toEngineShapeKind(kind), changed);
     });
 }
-bool SnowCanvasRuntimeEditor::setTextStyleFromToolbar(const SnowCanvasTextStyle& style) {
+bool SnowCanvasRuntimeEditor::setTextStyleFromToolbar(const SnowCanvasTextStyle& style,
+                                                      quint32 properties) {
     const auto value = snow_canvas_types::toEngineTextStyle(style);
     return m_impl->mutate([&](auto r, auto v, auto changed) {
-        return snow_viewport_set_text_style_ex(r, v, &value, nullptr, 0, changed);
+        return snow_viewport_patch_text_style_ex(r, v, &value, properties, nullptr, 0, changed);
     });
 }
 bool SnowCanvasRuntimeEditor::setSerialNumberStyleFromToolbar(

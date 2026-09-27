@@ -243,7 +243,23 @@ inline bool mcpStylePatch(Commands& commands, Canvas& canvas, const QJsonObject&
             enumeration("vertical_align", static_cast<int>(style.verticalAlign)));
         style.fillStyle = static_cast<SnowCanvasFillStyle>(
             enumeration("fill_style", static_cast<int>(style.fillStyle)));
-        return dispatch([&] { return commands.setTextStyleFromToolbar(style); });
+        const QHash<QString, quint32> properties{
+            {QStringLiteral("color"), SnowCanvasTextStyleMixedColor},
+            {QStringLiteral("font_size"), SnowCanvasTextStyleMixedFontSize},
+            {QStringLiteral("font_family"), SnowCanvasTextStyleMixedFontFamily},
+            {QStringLiteral("fill"), SnowCanvasTextStyleMixedFill},
+            {QStringLiteral("fill_style"), SnowCanvasTextStyleMixedFillStyle},
+            {QStringLiteral("stroke"), SnowCanvasTextStyleMixedStroke},
+            {QStringLiteral("stroke_width"), SnowCanvasTextStyleMixedStrokeWidth},
+            {QStringLiteral("corner_radius"), SnowCanvasTextStyleMixedCornerRadii},
+            {QStringLiteral("corner_radii"), SnowCanvasTextStyleMixedCornerRadii},
+            {QStringLiteral("horizontal_align"), SnowCanvasTextStyleMixedHorizontalAlign},
+            {QStringLiteral("vertical_align"), SnowCanvasTextStyleMixedVerticalAlign},
+            {QStringLiteral("opacity"), SnowCanvasTextStyleMixedOpacity}};
+        quint32 flags = 0;
+        for (auto it = patch.begin(); it != patch.end(); ++it)
+            flags |= properties.value(it.key());
+        return dispatch([&] { return commands.setTextStyleFromToolbar(style, flags); });
     } else if (target == QStringLiteral("serial_number")) {
         auto style = state.serialNumberStyle;
         if (patch.contains(QStringLiteral("number")))

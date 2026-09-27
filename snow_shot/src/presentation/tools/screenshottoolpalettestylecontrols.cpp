@@ -2585,10 +2585,11 @@ QWidget* ScreenshotToolPaletteStyleControls::buildWatermarkFamily(
     m_watermarkTemplateSelect->setFocusPolicy(Qt::ClickFocus);
     m_watermarkTemplateSelect->setControlSize(adqt::widgets::AdSelect::ControlSize::Small);
     m_watermarkTemplateSelect->setVariant(adqt::widgets::AdSelect::Variant::Borderless);
-    m_watermarkTemplateSelect->setFixedSize(
-        qMax(1,
-             qRound(static_cast<qreal>(kScreenshotToolPaletteSelectWidth) * metrics.physicalScale)),
-        qMax(1, qRound(metrics.buttonSize * metrics.physicalScale)));
+    m_watermarkTemplateSelect->setFixedWidth(qMax(
+        1, qRound(static_cast<qreal>(kScreenshotToolPaletteSelectWidth) * metrics.physicalScale)));
+    auto selectTokens = m_watermarkTemplateSelect->componentTokens();
+    selectTokens.metrics.controlHeight = metrics.buttonSize;
+    m_watermarkTemplateSelect->setComponentTokens(selectTokens);
     stampScreenshotToolbarReferenceWidth(m_watermarkTemplateSelect,
                                          kScreenshotToolPaletteSelectWidth);
     setScreenshotToolPalettePlaceholderSource(m_watermarkTemplateSelect, "Template");
@@ -3998,10 +3999,12 @@ void ScreenshotToolPaletteStyleControls::refreshToolbarMetrics(
         stampScreenshotToolbarReferenceWidth(m_watermarkTextEdit, kWatermarkTextWidth);
     }
     if (applies(m_watermarkTemplateSelect)) {
-        m_watermarkTemplateSelect->setFixedSize(
-            qMax(1, qRound(static_cast<qreal>(kScreenshotToolPaletteSelectWidth) *
-                           metrics.physicalScale)),
-            qMax(1, qRound(metrics.buttonSize * metrics.physicalScale)));
+        m_watermarkTemplateSelect->setFixedWidth(qMax(
+            1,
+            qRound(static_cast<qreal>(kScreenshotToolPaletteSelectWidth) * metrics.physicalScale)));
+        auto selectTokens = m_watermarkTemplateSelect->componentTokens();
+        selectTokens.metrics.controlHeight = metrics.buttonSize;
+        m_watermarkTemplateSelect->setComponentTokens(selectTokens);
         stampScreenshotToolbarReferenceWidth(m_watermarkTemplateSelect,
                                              kScreenshotToolPaletteSelectWidth);
     }

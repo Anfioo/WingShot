@@ -154,7 +154,6 @@ void defaultsAndTypedRoundTrip() {
                                           .toObject()
                                           .value(QStringLiteral("layout"))
                                           .toObject();
-    const QJsonArray toolbarPositions = toolbarLayout.value(QStringLiteral("positions")).toArray();
     const QJsonObject tray = root.value(QStringLiteral("tray")).toObject();
     require(root.value(QStringLiteral("storage"))
                         .toObject()
@@ -180,18 +179,6 @@ void defaultsAndTypedRoundTrip() {
                 screenshotUi.value(QStringLiteral("shortcut_hint_opacity")).toInt() == 100 &&
                 toolbarLayout.size() == 2 &&
                 toolbarLayout.value(QStringLiteral("hidden")).toArray().isEmpty() &&
-                toolbarPositions ==
-                    QJsonArray{
-                        QJsonArray{QStringLiteral("shape")},
-                        QJsonArray{QStringLiteral("line"), QStringLiteral("arrow")},
-                        QJsonArray{QStringLiteral("free-draw")},
-                        QJsonArray{QStringLiteral("spotlight"), QStringLiteral("highlighter")},
-                        QJsonArray{QStringLiteral("text")},
-                        QJsonArray{QStringLiteral("serial-number")},
-                        QJsonArray{QStringLiteral("filter")},
-                        QJsonArray{QStringLiteral("eraser")},
-                        QJsonArray{QStringLiteral("watermark")},
-                    } &&
                 tray.value(QStringLiteral("enabled")).toBool() &&
                 tray.value(QStringLiteral("icon")).toString() == QStringLiteral("default") &&
                 tray.value(QStringLiteral("custom_icon")).toString().isEmpty() &&

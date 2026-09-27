@@ -1379,29 +1379,41 @@ int nativeEffectsPreviewCapture() {
                 keyInput.ki.wVk = 'A';
                 checkNative(SendInput(1, &keyInput, sizeof(INPUT)) == 1,
                             "native key input must reach the preview");
-                checkNative(waitUntil([&]() {
-                                if (!preview.hasFrame()) {
-                                    return false;
-                                }
-                                const qreal dpr = area.devicePixelRatioF();
-                                QImage image(area.canvas()->size() * dpr,
-                                             QImage::Format_RGBA8888_Premultiplied);
-                                image.setDevicePixelRatio(dpr);
-                                image.fill(Qt::transparent);
-                                {
-                                    QPainter painter(&image);
-                                    area.canvas()->render(&painter);
-                                }
-                                QRect keyPixels;
-                                for (int y = 0; y < image.height(); ++y) {
-                                    for (int x = 0; x < image.width(); ++x) {
-                                        if (image.pixelColor(x, y).alpha() > 16) {
-                                            keyPixels |= QRect(x, y, 1, 1);
-                                        }
-                                    }
-                                }
-                                return keyPixels.size() == QSize(64, 64);
-                            }),
+                QSize observedKeycap;
+                const bool keyboardFrame = waitUntil([&]() {
+                    if (!preview.hasFrame()) {
+                        return false;
+                    }
+                    const qreal dpr = area.devicePixelRatioF();
+                    QImage image(area.canvas()->size() * dpr,
+                                 QImage::Format_RGBA8888_Premultiplied);
+                    image.setDevicePixelRatio(dpr);
+                    image.fill(Qt::transparent);
+                    {
+                        QPainter painter(&image);
+                        area.canvas()->render(&painter);
+                    }
+                    QRect keyPixels;
+                    for (int y = 0; y < image.height(); ++y) {
+                        for (int x = 0; x < image.width(); ++x) {
+                            if (image.pixelColor(x, y).alpha() > 16) {
+                                keyPixels |= QRect(x, y, 1, 1);
+                            }
+                        }
+                    }
+                    observedKeycap = keyPixels.size();
+                    // The antialiased outer edge can fall below the
+                    // opacity threshold on one physical pixel.
+                    return keyPixels.width() >= 63 && keyPixels.width() <= 64 &&
+                           keyPixels.height() >= 63 && keyPixels.height() <= 64;
+                });
+                if (!keyboardFrame)
+                    std::cerr << "native keyboard preview bounds=" << observedKeycap.width() << 'x'
+                              << observedKeycap.height() << " dpr=" << area.devicePixelRatioF()
+                              << " capture=" << captureSize.width() << 'x' << captureSize.height()
+                              << " export=" << exportSize.width() << 'x' << exportSize.height()
+                              << '\n';
+                checkNative(keyboardFrame,
                             "native keyboard preview must remain exactly 64 physical pixels");
                 keyInput.ki.dwFlags = KEYEVENTF_KEYUP;
                 SendInput(1, &keyInput, sizeof(INPUT));

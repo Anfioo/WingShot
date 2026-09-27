@@ -78,7 +78,8 @@ class SnowCanvasRuntimeEditor final {
     SnowCanvasWatermarkConfig canvasWatermarkConfig() const;
     SnowCanvasSpotlightConfig canvasSpotlightConfig() const;
     bool setShapeStyleFromToolbar(const SnowCanvasShapeStyle&, quint32, SnowCanvasShapeKind);
-    bool setTextStyleFromToolbar(const SnowCanvasTextStyle&);
+    bool setTextStyleFromToolbar(const SnowCanvasTextStyle&,
+                                 quint32 properties = SnowCanvasTextStyleAllProperties);
     bool setSerialNumberStyleFromToolbar(const SnowCanvasSerialNumberStyle&);
     bool setFilterStyleFromToolbar(const SnowCanvasFilterStyle&, quint32);
     bool setWatermarkConfigFromToolbar(const SnowCanvasWatermarkConfig&);

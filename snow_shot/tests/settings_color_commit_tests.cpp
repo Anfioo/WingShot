@@ -14,6 +14,7 @@
 
 #include <cstdlib>
 #include <iostream>
+#include <memory>
 
 namespace settings = snow_shot::presentation::settings;
 namespace styles = snow_shot::presentation::styles;
@@ -33,6 +34,8 @@ void settingsColorsCommitOnPopupClose(QApplication& application) {
     const auto registry = settings::buildBuiltInSettingsRegistry();
     settings::SettingsRuntimeSession session(registry, backend);
     auto& theme = styles::ThemeManager::instance();
+    std::unique_ptr<SettingsPageWidget> page;
+    QString colorPageId;
     int tested = 0;
     for (const auto& field : registry.fields()) {
         if (field.kind != settings::SettingsFieldKind::Color) {
@@ -41,11 +44,15 @@ void settingsColorsCommitOnPopupClose(QApplication& application) {
         std::cout << "Checking " << field.id.toStdString() << '\n';
         const auto& definition =
             std::get<settings::SettingsColorDefinition>(field.definition->payload);
-        SettingsPageWidget page(registry, field.pageId, session);
-        page.resize(880, 760);
-        page.show();
-        application.processEvents();
-        auto* row = page.findChild<QWidget*>(
+        if (!page) {
+            colorPageId = field.pageId;
+            page = std::make_unique<SettingsPageWidget>(registry, colorPageId, session);
+            page->resize(880, 760);
+            page->show();
+            application.processEvents();
+        }
+        require(field.pageId == colorPageId, "color settings use the same interface page");
+        auto* row = page->findChild<QWidget*>(
             settings::generatedObjectName(QStringLiteral("settings-item"), field.id));
         auto* picker = row ? row->findChild<adqt::widgets::AdColorPicker*>() : nullptr;
         require(picker != nullptr, "color setting creates a picker");
@@ -53,15 +60,17 @@ void settingsColorsCommitOnPopupClose(QApplication& application) {
         const QColor originalPrimary = adqt::theme::ThemeManager::instance().config().primary;
         int writes = 0;
         int themeChanges = 0;
-        QObject::connect(&storage::ApplicationStorage::instance().configuration(),
-                         &storage::ConfigurationStore::valueChanged, &page,
-                         [&writes, &field](const QString& key) {
-                             if (key == field.configurationKey) {
-                                 ++writes;
-                             }
-                         });
-        QObject::connect(&theme, &styles::ThemeManager::themeChanged, &page,
-                         [&themeChanges] { ++themeChanges; });
+        const auto writeConnection = QObject::connect(
+            &storage::ApplicationStorage::instance().configuration(),
+            &storage::ConfigurationStore::valueChanged, page.get(),
+            [&writes, configurationKey = field.configurationKey](const QString& key) {
+                if (key == configurationKey) {
+                    ++writes;
+                }
+            });
+        const auto themeConnection =
+            QObject::connect(&theme, &styles::ThemeManager::themeChanged, page.get(),
+                             [&themeChanges] { ++themeChanges; });
         picker->setPopupVisible(true);
         application.processEvents();
         require(picker->popupVisible(), "color popup opens offscreen");
@@ -96,6 +105,8 @@ void settingsColorsCommitOnPopupClose(QApplication& application) {
         application.processEvents();
         require(writes == 1 && themeChanges == (primary ? 1 : 0),
                 "opening and closing without editing does not apply another change");
+        QObject::disconnect(writeConnection);
+        QObject::disconnect(themeConnection);
         ++tested;
     }
     require(tested == 8, "cover all eight settings color pickers");

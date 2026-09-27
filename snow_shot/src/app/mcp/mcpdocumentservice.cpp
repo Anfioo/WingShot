@@ -40,6 +40,27 @@
 
 namespace snow_shot::app::mcp {
 namespace {
+class NativeDocumentClipboard final : public McpDocumentService::Clipboard {
+  public:
+    Cancel publishImage(QObject* receiver, ScreenshotClipboardPayload payload,
+                        Completion completion) override {
+        return cancellation(ScreenshotClipboardService::commit(
+            QApplication::clipboard(), receiver, std::move(payload), std::move(completion)));
+    }
+    Cancel publishMimeData(QObject* receiver, std::unique_ptr<QMimeData> data,
+                           Completion completion) override {
+        return cancellation(ScreenshotClipboardService::commitMimeData(
+            QApplication::clipboard(), receiver, data.release(), std::move(completion)));
+    }
+
+  private:
+    static Cancel cancellation(ScreenshotClipboardCommitHandle handle) {
+        if (!handle.isValid())
+            return {};
+        return [handle] { handle.cancel(); };
+    }
+};
+
 constexpr qint64 kMaximumPixels = 64000000;
 constexpr qint64 kMaximumSourceBytes = 512LL * 1024 * 1024;
 constexpr qint64 kMaximumCacheBytes = 64LL * 1024 * 1024;
@@ -1069,7 +1090,7 @@ struct McpDocumentService::Impl {
     qint64 pendingDiskBytes = 0;
     QHash<quint64, int> pendingFileCounts;
     int pendingFiles = 0;
-    QHash<QString, ScreenshotClipboardCommitHandle> clipboard;
+    QHash<QString, Clipboard::Cancel> clipboard;
     QHash<QString, QPointer<ScreenshotRecognitionSessionController>> recognition;
     struct RetainedRecognition {
         quint64 owner = 0;
@@ -1092,6 +1113,8 @@ struct McpDocumentService::Impl {
     qsizetype replayBytes = 0;
     bool stopped = false;
     Impl(McpDocumentService& owner, Ports options) : q(owner), ports(std::move(options)) {
+        if (!ports.clipboard)
+            ports.clipboard = std::make_shared<NativeDocumentClipboard>();
         if (!ports.jobs)
             ports.jobs = new McpJobRegistry(&q);
         for (std::size_t index = 0; index < laneCount; ++index) {
@@ -1247,6 +1270,28 @@ struct McpDocumentService::Impl {
                                                     request.requestId);
         return found == activeRequests.cend() ? std::make_shared<std::atomic_bool>(true)
                                               : found->canceled;
+    }
+    template <typename Start>
+    void publishClipboard(const ScreenshotMcpRequest& request, Start&& start,
+                          ScreenshotMcpResponse response, ScreenshotMcpServer::Completion done) {
+        const QString key = QString::number(request.connectionId) + u':' + request.requestId;
+        const auto canceled = requestToken(request);
+        auto cancel = start([this, key, request, canceled, response = std::move(response),
+                             done](ScreenshotClipboardCommitResult result) mutable {
+            clipboard.remove(key);
+            if (canceled->load())
+                return;
+            if (!result.succeeded()) {
+                done(failure(request, QStringLiteral("clipboard_failed")));
+                return;
+            }
+            response.result.insert(QStringLiteral("copied"), true);
+            done(std::move(response));
+        });
+        if (cancel)
+            clipboard.insert(key, std::move(cancel));
+        else
+            done(failure(request, QStringLiteral("clipboard_failed")));
     }
     void dispatch(ScreenshotMcpRequest request, ScreenshotMcpServer::Completion done,
                   std::optional<Source> source = std::nullopt,
@@ -1764,12 +1809,17 @@ struct McpDocumentService::Impl {
             return;
         }
         if (output == QStringLiteral("copy")) {
-            auto* mime = new QMimeData;
+            auto mime = std::make_unique<QMimeData>();
             mime->setText(QString::fromUtf8(bytes));
             if (format == QStringLiteral("html"))
                 mime->setHtml(QString::fromUtf8(bytes));
-            QApplication::clipboard()->setMimeData(mime);
-            done(success(request, {{QStringLiteral("copied"), true}}));
+            publishClipboard(
+                request,
+                [&](Clipboard::Completion completion) {
+                    return ports.clipboard->publishMimeData(&q, std::move(mime),
+                                                            std::move(completion));
+                },
+                success(request, {}), std::move(done));
             return;
         }
         QString path;
@@ -1902,7 +1952,7 @@ struct McpDocumentService::Impl {
         }
         if (request.method == QStringLiteral("snow_shot_document_copy")) {
             if (!artifact->requestClipboard(
-                    &q, [this, request, outputId, canceled, response = result.response,
+                    &q, [this, request, canceled, response = result.response,
                          finish](ScreenshotExportClipboardResult prepared) mutable {
                         if (canceled->load())
                             return;
@@ -1910,21 +1960,13 @@ struct McpDocumentService::Impl {
                             finish(failure(request, QStringLiteral("output_failed")));
                             return;
                         }
-                        const auto commit = ScreenshotClipboardService::commit(
-                            QApplication::clipboard(), &q, std::move(prepared.payload),
-                            [request, response,
-                             finish](ScreenshotClipboardCommitResult committed) mutable {
-                                if (!committed.succeeded()) {
-                                    finish(failure(request, QStringLiteral("clipboard_failed")));
-                                    return;
-                                }
-                                response.result.insert(QStringLiteral("copied"), true);
-                                finish(std::move(response));
-                            });
-                        if (commit.isValid())
-                            clipboard.insert(outputId, commit);
-                        else
-                            finish(failure(request, QStringLiteral("clipboard_failed")));
+                        publishClipboard(
+                            request,
+                            [&](Clipboard::Completion completion) {
+                                return ports.clipboard->publishImage(
+                                    &q, std::move(prepared.payload), std::move(completion));
+                            },
+                            std::move(response), finish);
                     }))
                 finish(failure(request, QStringLiteral("output_failed")));
             return;
@@ -2473,7 +2515,7 @@ void McpDocumentService::disconnected(quint64 owner) {
         }
         const auto commit = *it;
         it = s.clipboard.erase(it);
-        commit.cancel();
+        commit();
     }
     for (auto it = s.artifacts.begin(); it != s.artifacts.end();) {
         if (!it.key().startsWith(prefix)) {
@@ -2536,7 +2578,8 @@ bool McpDocumentService::cancelRequest(quint64 owner, const QString& requestId) 
         if (!shared)
             artifact->cancel();
     }
-    s.clipboard.take(key).cancel();
+    if (const auto cancel = s.clipboard.take(key))
+        cancel();
     s.textExports.take(key).cancel();
     active.completion(response);
     for (auto& waiter : waiters)

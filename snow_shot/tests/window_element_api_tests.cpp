@@ -230,12 +230,14 @@ void toolbarLayoutSectionResetsRemainIndependent() {
                 backend.applyToolbarLayout(storage::ScreenshotToolbarLayoutKind::ActionTools,
                                            actionLayout),
             "toolbar reset fixture must persist independent layouts");
+    const auto savedDrawingLayout =
+        backend.toolbarLayout(storage::ScreenshotToolbarLayoutKind::DrawingTools);
     const auto savedActionLayout =
         backend.toolbarLayout(storage::ScreenshotToolbarLayoutKind::ActionTools);
 
     require(backend.resetSection(settings::SettingsSectionReset::ScreenshotInterfaceSettings) &&
                 backend.toolbarLayout(storage::ScreenshotToolbarLayoutKind::DrawingTools) ==
-                    drawingLayout &&
+                    savedDrawingLayout &&
                 backend.toolbarLayout(storage::ScreenshotToolbarLayoutKind::ActionTools) ==
                     defaultActionLayout,
             "Screenshot Interface reset must restore only the screenshot action layout");

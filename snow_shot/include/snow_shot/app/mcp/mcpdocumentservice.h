@@ -3,6 +3,7 @@
 #include "snow_shot/app/mcp/screenshotmcpserver.h"
 #include "snow_shot/presentation/screenshotselectionparams.h"
 #include "snow_shot/presentation/screenshotclipboardcontent.h"
+#include "snow_shot/presentation/screenshotclipboardservice.h"
 #include "snow_shot/presentation/screenshotrecognitionresults.h"
 #include "snow_draw_engine_qt/snow_canvas_export_types.h"
 #include "snow_draw_engine_qt/snow_canvas_types.h"
@@ -18,6 +19,19 @@ class McpJobRegistry;
 class McpDocumentService final : public QObject {
     Q_OBJECT
   public:
+    class Clipboard {
+      public:
+        using Cancel = std::function<void()>;
+        using Completion = ScreenshotClipboardService::CommitCompletion;
+        virtual ~Clipboard() = default;
+        // GUI-thread calls. Return an empty cancellation function if not admitted.
+        // Accepted publications complete asynchronously on receiver's thread; cancellation
+        // prevents a pending publication. Destroying receiver suppresses completion.
+        virtual Cancel publishImage(QObject* receiver, ScreenshotClipboardPayload payload,
+                                    Completion completion) = 0;
+        virtual Cancel publishMimeData(QObject* receiver, std::unique_ptr<QMimeData> data,
+                                       Completion completion) = 0;
+    };
     struct Source {
         QImage image;
         QList<CanvasExportSource> images;
@@ -31,6 +45,8 @@ class McpDocumentService final : public QObject {
         QString tool = QStringLiteral("select");
     };
     struct Ports {
+        // Defaults to the native clipboard adapter.
+        std::shared_ptr<Clipboard> clipboard;
         McpJobRegistry* jobs = nullptr;
         ScreenshotOcrRecognitionPort* recognition = nullptr;
         ScreenshotQrRecognitionPort* qrRecognition = nullptr;

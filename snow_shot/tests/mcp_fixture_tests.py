@@ -927,6 +927,8 @@ def run(args, provider):
                 report["fixture_after"] = process_metrics(fixture)
                 metrics_file = directory / "metrics.json"
                 report["gui_thread"] = json.loads(metrics_file.read_text()) if metrics_file.is_file() else None
+                assert report["gui_thread"]["fixture_image_copies"] > 0, "image copy must reach the isolated clipboard"
+                assert report["gui_thread"]["fixture_mime_copies"] > 0, "recognition copy must reach the isolated clipboard"
                 report["gui_metric_limit"] = "cpu_ms/cpu_utilization use GUI thread kernel CPU counters; timer lateness independently measures responsiveness. Process RSS/private-byte retention may include allocator caches, not proof of a leak."
                 report["provider_calls"] = list(provider.calls)
                 assert {"table", "markdown", "html", "translation"} <= set(provider.calls), provider.calls
@@ -954,12 +956,8 @@ def main():
     if args.samples < 1 or args.samples > 10000:
         parser.error("samples must be between 1 and 10000")
     with RecognitionProvider() as provider:
-        if os.name == "nt":
-            from mcp_live_tests import ClipboardGuard
-            with ClipboardGuard():
-                run(args, provider)
-        else:
-            run(args, provider)
+        # The document fixture owns an in-memory clipboard for image and MIME copies.
+        run(args, provider)
 
 
 if __name__ == "__main__":

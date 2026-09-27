@@ -49,15 +49,49 @@ inline void pump(int milliseconds) {
 }
 
 inline void activate(HWND window) {
+    ShowWindow(window, SW_RESTORE);
     const DWORD current = GetCurrentThreadId();
     const DWORD foreground = GetWindowThreadProcessId(GetForegroundWindow(), nullptr);
     const bool attached = foreground && foreground != current &&
                           AttachThreadInput(current, foreground, TRUE) != FALSE;
-    SetForegroundWindow(window);
     BringWindowToTop(window);
+    SetForegroundWindow(window);
     if (attached) {
         AttachThreadInput(current, foreground, FALSE);
     }
+}
+
+inline bool waitForForeground(HWND window) {
+    QElapsedTimer elapsed;
+    elapsed.start();
+    do {
+        activate(window);
+        pump(20);
+        if (GetForegroundWindow() == window) {
+            return true;
+        }
+    } while (elapsed.elapsed() < 2000);
+    return false;
+}
+
+inline bool focusReceiverWithInput(HWND window) {
+    RECT bounds{};
+    if (GetWindowRect(window, &bounds) == FALSE ||
+        SetWindowPos(window, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE) ==
+            FALSE) {
+        return false;
+    }
+    pump(30);
+    const bool cursorMoved = SetCursorPos(bounds.left + 100, bounds.top + 12) != FALSE;
+    INPUT click[2]{};
+    click[0].type = INPUT_MOUSE;
+    click[0].mi.dwFlags = MOUSEEVENTF_LEFTDOWN;
+    click[1].type = INPUT_MOUSE;
+    click[1].mi.dwFlags = MOUSEEVENTF_LEFTUP;
+    const bool clicked = cursorMoved && SendInput(2, click, sizeof(INPUT)) == 2;
+    pump(30);
+    SetWindowPos(window, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+    return clicked && GetForegroundWindow() == window;
 }
 
 inline LRESULT CALLBACK receiverProcedure(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
@@ -202,14 +236,12 @@ class Receiver final {
                      bounds.right - bounds.left + 100, bounds.bottom - bounds.top + 100,
                      SWP_NOACTIVATE);
         AllowSetForegroundWindow(static_cast<DWORD>(process.processId()));
-        activate(window);
-        pump(30);
+        require(waitForForeground(window) || focusReceiverWithInput(window),
+                "input receiver must own foreground");
         SendMessageW(window, allowActivation, GetCurrentProcessId(), 0);
         target.activateWindow();
         target.raise();
-        activate(targetWindow);
-        pump(100);
-        require(GetForegroundWindow() == targetWindow, "dismissal target must own foreground");
+        require(waitForForeground(targetWindow), "dismissal target must own foreground");
         SendMessageW(window, resetInput, 0, 0);
         if (button == Qt::NoButton) {
             key(false);

@@ -86,6 +86,15 @@ class ScreenshotPinnedControlsPresence;
 class ScreenshotPinnedNativeGeometryController;
 class QTextDocument;
 
+// GUI-thread MIME access. Native snapshots retain platform-specific image formats.
+class ScreenshotPinnedClipboard {
+  public:
+    virtual ~ScreenshotPinnedClipboard() = default;
+    virtual const QMimeData* mimeData() const = 0;
+    virtual std::optional<ScreenshotClipboardContentSnapshot> snapshot(qreal devicePixelRatio) = 0;
+    virtual void setMimeData(std::unique_ptr<QMimeData> data) = 0;
+};
+
 struct ScreenshotPinnedRecognitionProviders {
     ScreenshotOcrRecognitionPort* recognition = nullptr;
     ScreenshotQrRecognitionPort* qrRecognition = nullptr;
@@ -410,6 +419,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     void updateControlledInteraction(const QPointF& desktopPosition);
     void endControlledInteraction(bool cancel);
     std::unique_ptr<snow_shot::presentation::PinnedWindowPlatform> m_platform;
+    std::unique_ptr<ScreenshotPinnedClipboard> m_clipboard;
     bool m_platformReconciliationPending = false;
     bool m_platformRecoveryPending = false;
     bool m_platformApplying = false;

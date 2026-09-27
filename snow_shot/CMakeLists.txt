@@ -1530,7 +1530,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         ${SNOW_SHOT_RECOGNITION_IMAGE_RENDER_SOURCES})
     target_include_directories(snow-shot-recognition-image-tests PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/include")
-    target_link_libraries(snow-shot-recognition-image-tests PRIVATE Qt6::Gui)
+    target_link_libraries(snow-shot-recognition-image-tests PRIVATE adqt::widgets Qt6::Gui)
     snow_shot_import_offscreen_platform(snow-shot-recognition-image-tests)
     qt_import_plugins(snow-shot-recognition-image-tests
         NO_DEFAULT INCLUDE Qt6::QOffscreenIntegrationPlugin)
@@ -3905,7 +3905,7 @@ if(SNOW_SHOT_BUILD_TESTS)
     set_tests_properties(snow-shot-pinned-content-replacement-tests PROPERTIES
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
-        LABELS "unit" TIMEOUT 90)
+        LABELS "unit" TIMEOUT 90 RUN_SERIAL TRUE)
     add_test(
         NAME snow-shot-pinned-window-pool-tests
         COMMAND snow-shot-pinned-window-tests --pooling-only
@@ -4136,7 +4136,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
     set_tests_properties(snow-shot-export-dialog-workflow-tests PROPERTIES
-        TIMEOUT 180
+        TIMEOUT 180 RUN_SERIAL TRUE
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
     set_tests_properties(snow-shot-export-dialog-pipeline-tests PROPERTIES
@@ -4170,6 +4170,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         snow_shot_image_codec
         snow_shot_storage
         snow_draw_engine_qt_canvas
+        adqt::widgets
         Qt6::Widgets
     )
     if(WIN32)
@@ -4814,6 +4815,7 @@ if(SNOW_SHOT_BUILD_TESTS)
             COMMAND snow-shot-floating-toolbar-drag-tests --capture-screen-switch-only)
         set_tests_properties(snow-shot-floating-toolbar-capture-screen-switch-tests PROPERTIES
             RUN_SERIAL TRUE
+            SKIP_RETURN_CODE 77
             LABELS "interactive;windows"
             ENVIRONMENT "QT_QPA_PLATFORM=windows"
             ENVIRONMENT_MODIFICATION
@@ -6178,7 +6180,8 @@ if(SNOW_SHOT_BUILD_BENCHMARKS)
         ${SNOW_SHOT_RECOGNITION_IMAGE_RENDER_SOURCES})
     target_include_directories(snow-shot-recognition-image-performance-benchmark PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/include")
-    target_link_libraries(snow-shot-recognition-image-performance-benchmark PRIVATE Qt6::Gui)
+    target_link_libraries(snow-shot-recognition-image-performance-benchmark PRIVATE
+        adqt::widgets Qt6::Gui)
     snow_shot_import_offscreen_platform(snow-shot-recognition-image-performance-benchmark)
     qt_import_plugins(snow-shot-recognition-image-performance-benchmark
         NO_DEFAULT INCLUDE Qt6::QOffscreenIntegrationPlugin)
@@ -7585,6 +7588,11 @@ if(SNOW_SHOT_BUILD_TESTS)
         tests/screenshot_selection_render_tests.cpp
         src/presentation/core/screenshotgeometry.cpp
         src/presentation/services/screenshotsourceimagecomposer.cpp)
+    if(WIN32)
+        target_sources(snow-shot-selection-render-tests PRIVATE
+            src/platform/windows/monitorgeometry.cpp)
+        target_link_libraries(snow-shot-selection-render-tests PRIVATE user32)
+    endif()
     target_include_directories(snow-shot-selection-render-tests PRIVATE include
         "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-capture-c/include")
     target_link_libraries(snow-shot-selection-render-tests PRIVATE Qt6::Widgets)

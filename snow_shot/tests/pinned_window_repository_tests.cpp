@@ -156,7 +156,9 @@ void allocationAdmissionPrecedesSourceDecode() {
     record.canvasSession = QByteArrayLiteral("retained editor session");
     record.originalText = QStringLiteral("retained source text");
     storage::PinnedWindowRepository repository(directory.path(), true, 30000);
-    require(repository.create(record).success && repository.flush().success,
+    const auto prepared = storage::PreparedPngImage::fromBytes(
+        image.size(), std::make_shared<const QByteArray>(pngBytes(image, 8)));
+    require(prepared && repository.create(record, *prepared).success && repository.flush().success,
             "publish pinned source admission fixture");
     int rejectedCalls = 0;
     require(!repository.loadRecord(

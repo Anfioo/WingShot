@@ -7,6 +7,7 @@
 #include <QObject>
 #include <QThread>
 #include <QTimer>
+#include <QScopeGuard>
 
 #include <algorithm>
 #include <atomic>
@@ -160,6 +161,77 @@ void queueAndWorkerBoundsAreEnforced() {
             "bounded coordinator jobs did not all complete");
     require(peak.load(std::memory_order_acquire) <= 2,
             "coordinator exceeded its two-worker concurrency bound");
+}
+
+void queuedCancellationImmediatelyReleasesCapacity() {
+    ScreenshotExportCoordinator coordinator;
+    QObject receiver;
+    const int workerCount = std::clamp(QThread::idealThreadCount(), 1, 2);
+    auto released = std::make_shared<std::atomic_bool>(false);
+    auto entered = std::make_shared<std::atomic_int>(0);
+    const auto unblock = qScopeGuard([released] { released->store(true); });
+    for (int index = 0; index < workerCount; ++index) {
+        require(coordinator
+                    .submit(
+                        &receiver, ScreenshotExportCoordinator::Priority::Foreground,
+                        [released, entered](const ScreenshotExportCancellation&) {
+                            ++*entered;
+                            while (!released->load())
+                                QThread::msleep(1);
+                            return ScreenshotExportTaskResult{};
+                        },
+                        [](ScreenshotExportTaskResult) {})
+                    .isValid(),
+                "queue cancellation workers must be admitted");
+    }
+    require(processUntil([&] { return entered->load() == workerCount; }),
+            "queue cancellation workers must be occupied");
+    int completions = 0;
+    int executions = 0;
+    QThread* const guiThread = QThread::currentThread();
+    for (int index = 0; index < 40; ++index) {
+        auto payload = std::make_shared<int>(index);
+        std::weak_ptr<int> retainedPayload = payload;
+        const auto job = coordinator.submit(
+            &receiver, ScreenshotExportCoordinator::Priority::Foreground,
+            [payload, &executions](const ScreenshotExportCancellation&) {
+                ++executions;
+                return ScreenshotExportTaskResult{};
+            },
+            [&](ScreenshotExportTaskResult result) {
+                require(result.failureStage == ScreenshotExportFailureStage::Cancelled &&
+                            QThread::currentThread() == guiThread,
+                        "queued cancellation must deliver one GUI-thread cancellation");
+                ++completions;
+            });
+        payload.reset();
+        require(job.isValid(), "superseded jobs must not exhaust queue capacity");
+        std::thread cancel([job] {
+            job.cancel();
+            job.cancel();
+        });
+        cancel.join();
+        require(job.isCancellationRequested() && coordinator.pendingJobCount() == workerCount &&
+                    retainedPayload.expired() && completions == index,
+                "cancellation must free the queued slot and work payload before returning");
+        require(processUntil([&] { return completions == index + 1; }),
+                "queued cancellation completion must remain asynchronous");
+    }
+    require(executions == 0, "cancelled queued work must never execute");
+    bool completed = false;
+    require(
+        coordinator
+            .submit(
+                &receiver, ScreenshotExportCoordinator::Priority::Foreground,
+                [](const ScreenshotExportCancellation&) { return ScreenshotExportTaskResult{}; },
+                [&](ScreenshotExportTaskResult result) { completed = result.succeeded(); })
+            .isValid(),
+        "the latest job must remain admissible after repeated cancellations");
+    released->store(true);
+    require(processUntil([&] { return completed && coordinator.pendingJobCount() == 0; }),
+            "latest work must complete after the workers are released");
+    QCoreApplication::processEvents();
+    require(completions == 40, "cancelled jobs must not complete again when workers resume");
 }
 
 void shutdownCancelsAndDrains() {
@@ -380,6 +452,7 @@ int main(int argc, char** argv) {
         cancellationPropagates();
         destroyedReceiverSuppressesCompletion();
         queueAndWorkerBoundsAreEnforced();
+        queuedCancellationImmediatelyReleasesCapacity();
         shutdownCancelsAndDrains();
         shutdownAbandonsAWorkerThatIgnoresCancellation();
         shutdownDropsQueuedWorkWhenAbandoned();

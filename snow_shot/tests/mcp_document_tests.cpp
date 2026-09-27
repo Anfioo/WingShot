@@ -25,6 +25,7 @@
 #include <QJsonDocument>
 #include <QSemaphore>
 #include <QBuffer>
+#include <QMimeData>
 #include <QtEndian>
 #include <atomic>
 #include <cstdlib>
@@ -56,6 +57,72 @@ void require(bool condition, const char* message) {
         std::exit(1);
     }
 }
+class MemoryClipboard final : public McpDocumentService::Clipboard {
+  public:
+    bool automatic = true;
+    bool reject = false;
+    ScreenshotClipboardCommitFailure failure = ScreenshotClipboardCommitFailure::None;
+    int imagePublications = 0;
+    int mimePublications = 0;
+    int cancellations = 0;
+    QByteArray png;
+    std::unique_ptr<QMimeData> mime;
+    struct Publication {
+        QPointer<QObject> receiver;
+        QByteArray png;
+        std::unique_ptr<QMimeData> mime;
+        Completion completion;
+        ScreenshotClipboardCommitFailure failure;
+        bool canceled = false;
+    };
+    QList<std::shared_ptr<Publication>> pending;
+
+    Cancel publishImage(QObject* receiver, ScreenshotClipboardPayload payload,
+                        Completion completion) override {
+        require(payload.isValid() && !QImage::fromData(payload.pngBytes(), "PNG").isNull(),
+                "clipboard receives a real encoded image");
+        return enqueue(receiver, payload.pngBytes(), {}, std::move(completion));
+    }
+    Cancel publishMimeData(QObject* receiver, std::unique_ptr<QMimeData> data,
+                           Completion completion) override {
+        require(data != nullptr, "clipboard owns the recognition MIME data");
+        return enqueue(receiver, {}, std::move(data), std::move(completion));
+    }
+    void complete(const std::shared_ptr<Publication>& publication) {
+        pending.removeOne(publication);
+        if (publication->canceled || !publication->receiver)
+            return;
+        if (publication->failure == ScreenshotClipboardCommitFailure::None) {
+            if (publication->mime) {
+                mime = std::move(publication->mime);
+                png.clear();
+                ++mimePublications;
+            } else {
+                png = std::move(publication->png);
+                mime.reset();
+                ++imagePublications;
+            }
+        }
+        publication->completion({publication->failure});
+    }
+
+  private:
+    Cancel enqueue(QObject* receiver, QByteArray bytes, std::unique_ptr<QMimeData> data,
+                   Completion completion) {
+        if (reject)
+            return {};
+        auto publication = std::make_shared<Publication>(Publication{
+            receiver, std::move(bytes), std::move(data), std::move(completion), failure});
+        pending.append(publication);
+        if (automatic)
+            QTimer::singleShot(0, receiver, [this, publication] { complete(publication); });
+        return [this, publication] {
+            if (!std::exchange(publication->canceled, true))
+                ++cancellations;
+        };
+    }
+};
+
 class FixtureOcr final : public ScreenshotOcrRecognitionPort {
   public:
     RequestToken recognize(ScreenshotOcrRequest request, QObject* receiver,
@@ -124,6 +191,8 @@ int serve(QApplication& application, const QString& directory) {
     }
     McpJobRegistry registry;
     McpDocumentService::Ports ports;
+    const auto clipboard = std::make_shared<MemoryClipboard>();
+    ports.clipboard = clipboard;
     ports.jobs = &registry;
     ports.recognition = &ocr;
     ports.qrRecognition = &qr;
@@ -243,6 +312,8 @@ int serve(QApplication& application, const QString& directory) {
                 {QStringLiteral("fixture_pins"), fixturePins},
                 {QStringLiteral("fixture_presentations"), fixturePresentations},
                 {QStringLiteral("fixture_auto_filter_requests"), fixtureDetections},
+                {QStringLiteral("fixture_image_copies"), clipboard->imagePublications},
+                {QStringLiteral("fixture_mime_copies"), clipboard->mimePublications},
                 {QStringLiteral("document_renders"), fixtureRenders.load()},
                 {QStringLiteral("png_encodes"), fixtureEncodes.load()}};
             if (const auto currentCpu = currentThreadCpuMilliseconds(); currentCpu && initialCpu) {
@@ -610,6 +681,8 @@ void documentWorkflows() {
     FixtureQr qr;
     McpJobRegistry registry;
     McpDocumentService::Ports ports;
+    const auto clipboard = std::make_shared<MemoryClipboard>();
+    ports.clipboard = clipboard;
     ports.jobs = &registry;
     ports.recognition = &ocr;
     ports.qrRecognition = &qr;
@@ -694,6 +767,10 @@ void documentWorkflows() {
                              {{QStringLiteral("source"), QStringLiteral("clipboard")}});
     require(opened.ok, "source resolver creates independent editable document");
     id = opened.result.value(QStringLiteral("document_id")).toString();
+    require(call(QStringLiteral("document_copy")).result.value(QStringLiteral("copied")).toBool() &&
+                clipboard->imagePublications == 1 &&
+                QImage::fromData(clipboard->png, "PNG").pixelColor(2, 2) == QColor(Qt::green),
+            "document copy publishes actual source pixels through the injected clipboard");
     require(
         call(QStringLiteral("document_sample_color"), {{QStringLiteral("point"), QJsonArray{2, 2}}})
                 .result.value(QStringLiteral("rgba"))
@@ -857,6 +934,60 @@ void documentWorkflows() {
                   {QStringLiteral("action"), QStringLiteral("reset_text")}})
                     .errorCode == QStringLiteral("stale_revision"),
             "stale recognition edit is rejected");
+    const QJsonObject copyText{{QStringLiteral("output"), QStringLiteral("copy")},
+                               {QStringLiteral("format"), QStringLiteral("text")}};
+    require(call(QStringLiteral("document_export_recognition"), copyText)
+                    .result.value(QStringLiteral("copied"))
+                    .toBool() &&
+                clipboard->mimePublications == 1 && clipboard->mime &&
+                clipboard->mime->text() == QStringLiteral("Edited result"),
+            "recognition copy publishes edited text through the same clipboard port");
+    for (const bool rejected : {false, true}) {
+        clipboard->reject = rejected;
+        clipboard->failure = ScreenshotClipboardCommitFailure::PublishFailed;
+        require(call(QStringLiteral("document_copy")).errorCode ==
+                        QStringLiteral("clipboard_failed") &&
+                    call(QStringLiteral("document_export_recognition"), copyText).errorCode ==
+                        QStringLiteral("clipboard_failed") &&
+                    clipboard->imagePublications == 1 && clipboard->mimePublications == 1,
+                "image and text copy report rejection and publication failure without success");
+    }
+    clipboard->reject = false;
+    clipboard->failure = ScreenshotClipboardCommitFailure::None;
+    clipboard->automatic = false;
+    for (const bool text : {false, true}) {
+        ScreenshotMcpRequest request;
+        request.connectionId = 8;
+        request.requestId = QString::number(++sequence);
+        request.idempotencyKey = request.requestId;
+        request.expectedRevision = revision;
+        request.method = text ? QStringLiteral("snow_shot_document_export_recognition")
+                              : QStringLiteral("snow_shot_document_copy");
+        request.params = text ? copyText : QJsonObject{};
+        request.params.insert(QStringLiteral("document_id"), id);
+        int completions = 0;
+        service.request(request, [&](ScreenshotMcpResponse response) {
+            require(!response.ok, "canceled clipboard requests must never report success");
+            ++completions;
+        });
+        timer.restart();
+        while (clipboard->pending.isEmpty() && timer.elapsed() < 5000) {
+            QCoreApplication::processEvents();
+            QThread::msleep(1);
+        }
+        require(clipboard->pending.size() == 1 && completions == 0,
+                "copy waits for clipboard publication before replying");
+        const auto publication = clipboard->pending.first();
+        const int cancellations = clipboard->cancellations;
+        require(service.cancelRequest(8, request.requestId) && publication->canceled &&
+                    clipboard->cancellations == cancellations + 1 && completions == 1,
+                "canceling image and text copies cancels the external publication exactly once");
+        clipboard->complete(publication);
+        require(completions == 1 && clipboard->imagePublications == 1 &&
+                    clipboard->mimePublications == 1,
+                "a canceled publication cannot write or complete twice");
+    }
+    clipboard->automatic = true;
     require(call(QStringLiteral("document_export_recognition"),
                  {{QStringLiteral("output"), QStringLiteral("return")},
                   {QStringLiteral("format"), QStringLiteral("text")}})
@@ -890,13 +1021,14 @@ void documentWorkflows() {
                      .toString()
                      .isEmpty(),
             "open job retains full resulting document identity");
+    const int cancellationsBeforeOpen = sourceCancellations;
     const auto delayed = call(QStringLiteral("document_open"),
                               {{QStringLiteral("source"), QStringLiteral("capture")},
                                {QStringLiteral("delay_seconds"), 1}});
     require(delayed.ok && delayed.result.contains(QStringLiteral("job_id")) && pendingSource,
             "delayed capture defaults to an owned asynchronous job");
     require(registry.cancel(8, delayed.result.value(QStringLiteral("job_id")).toString()) &&
-                sourceCancellations == 1,
+                sourceCancellations == cancellationsBeforeOpen + 1,
             "open job cancellation reaches the source acquisition port");
     McpDocumentService::Source lateSource;
     lateSource.image = image;
@@ -906,9 +1038,88 @@ void documentWorkflows() {
                     .toArray()
                     .size() == 2,
             "late canceled source cannot allocate an orphan document");
+    clipboard->automatic = false;
+    ScreenshotMcpRequest pendingCopy;
+    pendingCopy.connectionId = 8;
+    pendingCopy.requestId = QString::number(++sequence);
+    pendingCopy.idempotencyKey = pendingCopy.requestId;
+    pendingCopy.expectedRevision = revision;
+    pendingCopy.method = QStringLiteral("snow_shot_document_copy");
+    pendingCopy.params = {{QStringLiteral("document_id"), id}};
+    int copyCompletions = 0;
+    service.request(pendingCopy, [&](auto) { ++copyCompletions; });
+    timer.restart();
+    while (clipboard->pending.isEmpty() && timer.elapsed() < 5000) {
+        QCoreApplication::processEvents();
+        QThread::msleep(1);
+    }
+    require(clipboard->pending.size() == 1 && copyCompletions == 0,
+            "hold publication before disconnecting its owner");
+    const auto publication = clipboard->pending.first();
     service.disconnected(8);
+    require(publication->canceled, "disconnect cancels admitted clipboard work");
+    clipboard->complete(publication);
+    require(copyCompletions == 0 && clipboard->imagePublications == 1,
+            "disconnected clients cannot publish or receive late clipboard replies");
     service.shutdown();
 }
+void documentClipboardTeardown() {
+    for (const bool destroy : {false, true}) {
+        const auto clipboard = std::make_shared<MemoryClipboard>();
+        clipboard->automatic = false;
+        McpDocumentService::Ports ports;
+        ports.clipboard = clipboard;
+        ports.resolveSource = [](const ScreenshotMcpRequest&, auto completion, auto budget) {
+            QImage image(4, 4, QImage::Format_ARGB32_Premultiplied);
+            image.fill(Qt::red);
+            require(budget(image.sizeInBytes()), "teardown source fits the document budget");
+            McpDocumentService::Source source;
+            source.image = image;
+            completion(std::move(source), {});
+        };
+        auto service = std::make_unique<McpDocumentService>(std::move(ports));
+        const auto waitUntil = [](auto ready) {
+            QElapsedTimer timer;
+            timer.start();
+            while (!ready() && timer.elapsed() < 5000) {
+                QCoreApplication::processEvents();
+                QThread::msleep(1);
+            }
+            require(ready(), "clipboard teardown request must reach its expected state");
+        };
+        ScreenshotMcpRequest request;
+        request.connectionId = 11;
+        request.requestId = QStringLiteral("open");
+        request.idempotencyKey = request.requestId;
+        request.method = QStringLiteral("snow_shot_document_open");
+        request.params = {{QStringLiteral("source"), QStringLiteral("clipboard")}};
+        std::optional<ScreenshotMcpResponse> opened;
+        service->request(request, [&](auto response) { opened = std::move(response); });
+        waitUntil([&] { return opened.has_value(); });
+        require(opened->ok, "create the teardown document");
+        request.requestId = QStringLiteral("copy");
+        request.idempotencyKey = request.requestId;
+        request.expectedRevision = opened->revision;
+        request.method = QStringLiteral("snow_shot_document_copy");
+        request.params = {
+            {QStringLiteral("document_id"), opened->result.value(QStringLiteral("document_id"))}};
+        int completions = 0;
+        service->request(request, [&](auto) { ++completions; });
+        waitUntil([&] { return !clipboard->pending.isEmpty(); });
+        const auto publication = clipboard->pending.first();
+        require(completions == 0, "publication is pending at teardown");
+        if (destroy)
+            service.reset();
+        else
+            service->shutdown();
+        require(publication->canceled && clipboard->cancellations == 1,
+                "shutdown and destruction cancel outstanding publications");
+        clipboard->complete(publication);
+        require(completions == 0 && clipboard->imagePublications == 0,
+                "teardown prevents late clipboard writes and callbacks");
+    }
+}
+
 void jobs() {
     McpJobRegistry registry;
     QString id;
@@ -1375,6 +1586,7 @@ int main(int argc, char** argv) {
     documentConcurrency();
     documents(temporary.path());
     documentWorkflows();
+    documentClipboardTeardown();
     runMcpApplicationTests();
     snow_shot::storage::ApplicationStorage::instance().shutdown();
     return 0;

@@ -1,4 +1,4 @@
-#include "snow_shot/presentation/globalmousetypes.h"
+#include "snow_shot/globalmouseactivationkeys.h"
 #include "snow_shot/storage/configurationschema.h"
 #include "snow_shot/customaimodelconfiguration.h"
 
@@ -1648,7 +1648,7 @@ ConfigurationNormalization normalizeGlobalMouseCombination(const QJsonValue& val
         }
     }
     const QString mouseButton = object.value(QStringLiteral("mouse_button")).toString().trimmed();
-    static const QStringList activationKeys = presentation::globalMouseActivationKeys();
+    static const QStringList activationKeys = globalMouseActivationKeys();
     static const QSet<QString> mouseButtons{
         QStringLiteral("left_drag"), QStringLiteral("right_drag"), QStringLiteral("wheel_drag"),
         QStringLiteral("side_button_1_drag"), QStringLiteral("side_button_2_drag")};

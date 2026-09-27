@@ -1393,7 +1393,7 @@ void dpiCommitPresentsContentWhenUpdatesResume() {
 #endif
 }
 
-void reusedToolbarFitsOnFirstShowAcrossScreens() {
+bool reusedToolbarFitsOnFirstShowAcrossScreens() {
     QScreen* screenA = nullptr;
     QScreen* screenB = nullptr;
     for (QScreen* screen : QGuiApplication::screens()) {
@@ -1403,9 +1403,11 @@ void reusedToolbarFitsOnFirstShowAcrossScreens() {
             screenB = screen;
         }
     }
-    require(screenA != nullptr && screenB != nullptr, "requires 150% and 100% screens");
-    require(screenB->geometry().right() + 1 == screenA->geometry().left(),
-            "requires 100% monitor B immediately left of 150% monitor A");
+    if (screenA == nullptr || screenB == nullptr ||
+        screenB->geometry().right() + 1 != screenA->geometry().left()) {
+        std::cout << "requires adjacent 100% and 150% screens\n";
+        return false;
+    }
     class Owner : public QWidget {
       public:
         void retire() {
@@ -1463,6 +1465,7 @@ void reusedToolbarFitsOnFirstShowAcrossScreens() {
         require(monitor.painted && !monitor.clipped,
                 "reused toolbar must not paint a clipped frame on its first show");
     }
+    return true;
 }
 
 void dpiScaledSizeMessagePreservesThePhysicalWindowSize() {
@@ -3003,8 +3006,7 @@ int main(int argc, char* argv[]) {
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--capture-screen-switch-only"))) {
-            reusedToolbarFitsOnFirstShowAcrossScreens();
-            return 0;
+            return reusedToolbarFitsOnFirstShowAcrossScreens() ? 0 : 77;
         }
         if (app.arguments().contains(QStringLiteral("--quick-save-only"))) {
             NoOpToolbarCommands commands;

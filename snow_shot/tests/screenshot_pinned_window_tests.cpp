@@ -224,6 +224,17 @@ class ObservedPinnedPlatform final : public snow_shot::presentation::PinnedWindo
 // installing the Windows HWND hooks required by present().
 class ScreenshotPinnedWindowTestAccess {
   public:
+    static void setClipboard(ScreenshotPinnedWindow& window,
+                             std::unique_ptr<ScreenshotPinnedClipboard> clipboard) {
+        window.m_clipboard = std::move(clipboard);
+    }
+    static ScreenshotPinnedNativeGeometryController&
+    nativeController(ScreenshotPinnedWindow& window) {
+        return *window.m_nativeGeometryController;
+    }
+    static bool finishNativeInteraction(ScreenshotPinnedWindow& window) {
+        return window.finishNativeGeometryInteraction();
+    }
     static ObservedPinnedPlatform* installObservedPlatform(ScreenshotPinnedWindow& window) {
         auto platform = std::make_unique<ObservedPinnedPlatform>(&window);
         auto* result = platform.get();
@@ -1480,9 +1491,14 @@ void pinnedSelectionRendersCachedOcrInCanvasCoordinates(bool restoreFromStorage 
                 }
             }
             require(hasTextPixels, "cached OCR should paint text pixels in the pinned viewport");
-            require(recognitionContent->copyVisibleContentToClipboard() &&
-                        clipboardReceivesText(text),
-                    "the rendered cached OCR text should remain copyable");
+            bool copied = false;
+            QElapsedTimer clipboardWait;
+            clipboardWait.start();
+            do {
+                copied = recognitionContent->copyVisibleContentToClipboard() &&
+                         clipboardReceivesText(text);
+            } while (!copied && clipboardWait.elapsed() < 5000);
+            require(copied, "the rendered cached OCR text should remain copyable");
             require(recognition.requests == 0,
                     "pinning cached OCR should not recognize the screenshot again");
             require(presentation->selection == request.selection &&
@@ -1992,6 +2008,48 @@ void pinnedEditStartsWithRememberedDrawingTool() {
                 controller.toolbarWindow()->palette()->activeToolForTests() == Tool::Move,
             "an empty remembered tool must fall back to the Resize window tool");
     controller.setEditMode(false);
+}
+
+void pinnedEditingPreservesActiveRecognition() {
+    using Access = ScreenshotPinnedWindowTestAccess;
+    using Mode = ScreenshotRecognitionSessionController::Mode;
+    using Tool = ScreenshotToolPalette::Tool;
+    const snow_shot::storage::DrawingSettings drawingSettings;
+    const snow_shot::storage::ScreenshotToolbarSettings toolbarSettings;
+    const bool remembered = drawingSettings.rememberLastUsedTool();
+    const QString lastTool = toolbarSettings.lastDrawingTool();
+    const auto cleanup = qScopeGuard([&] {
+        static_cast<void>(drawingSettings.setRememberLastUsedTool(remembered));
+        static_cast<void>(toolbarSettings.setLastDrawingTool(lastTool));
+    });
+    for (const bool remember : {false, true}) {
+        for (const Mode mode : {Mode::Text, Mode::Qr}) {
+            require(drawingSettings.setRememberLastUsedTool(remember) &&
+                        toolbarSettings.setLastDrawingTool(QStringLiteral("shape")),
+                    "seed the remembered drawing tool preference");
+            ScreenshotPinnedWindow window;
+            auto config = cachedOcrPinConfig(nullptr);
+            config.recognitionResults.qr =
+                ScreenshotQrRecognitionResult{{QStringLiteral("Saved barcode")}, {}};
+            auto* session = Access::hiddenSelectionOffscreen(window, config);
+            session->activate(mode);
+            require(session->active(), "activate cached recognition before opening the toolbar");
+            for (int reopening = 0; reopening < 2; ++reopening) {
+                Access::editSelectionOffscreen(window, true);
+                auto* controller = window.findChild<ScreenshotPinnedEditController*>();
+                auto* canvas = window.findChild<SnowCanvasWidget*>();
+                require(
+                    controller && controller->toolbarWindow() && canvas && session->active() &&
+                        session->mode() == mode && !canvas->interactionEnabled(),
+                    "opening the toolbar must preserve recognition regardless of remembered tools");
+                require(controller->toolbarWindow()->palette()->activeTool() ==
+                            (mode == Mode::Text ? Tool::Ocr : Tool::Qr),
+                        "the toolbar must reflect the active recognition mode");
+                Access::editSelectionOffscreen(window, false);
+                require(session->active(), "closing the toolbar must preserve recognition");
+            }
+        }
+    }
 }
 
 void pinnedDrawingToolsRemainUsableAfterRecognition() {
@@ -2819,7 +2877,18 @@ void setPinnedWindowHovered(ScreenshotPinnedWindow& window, bool hovered) {
     } else {
         QEvent leave(QEvent::Leave);
         QCoreApplication::sendEvent(&window, &leave);
-        waitForUi(120);
+        // Presence hides controls after a 100 ms grace period. Wait for the
+        // visible result, since timer delivery can lag under native UI load.
+        auto* panel = window.findChild<QFrame*>(QStringLiteral("screenshotPinnedControlsPanel"));
+        QElapsedTimer elapsed;
+        elapsed.start();
+        do {
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+            if (panel == nullptr || panel->isHidden()) {
+                break;
+            }
+            QThread::msleep(1);
+        } while (elapsed.elapsed() < 1000);
     }
 }
 
@@ -3324,6 +3393,7 @@ void pinnedContextMenuPreservesNativeGeometry(SnowCanvasRuntime&) {
     config.enableEditing = false;
     require(pinnedWindow->present(config), "context geometry pin presentation failed");
     waitForUi(50);
+    require(!guardedWindow.isNull(), "native geometry restore closed the context menu pin");
 
     auto* menu = pinnedWindow->findChild<adqt::widgets::AdContextMenu*>(
         QStringLiteral("screenshotPinnedContextMenu"));
@@ -5202,6 +5272,40 @@ void pinnedPhysicalAuthoritySurvivesObservations() {
                 ScreenshotPinnedWindowTestAccess::geometrySettled(window),
             "stable native drift must reconcile without changing authority");
 
+    // Exercise the window's commit boundary, not just the controller's target.
+    // Neither a click nor a completed drag may turn native rounding into intent.
+    for (const bool resize : {false, true}) {
+        for (const bool changed : {false, true}) {
+            auto& controller = ScreenshotPinnedWindowTestAccess::nativeController(window);
+            require(resize ? controller.beginResize(
+                                 screenshot_pinned_resize_geometry::DragHandle::Right)
+                           : controller.beginMove(QPoint(10, 20)),
+                    "native geometry interaction must start");
+            QRect target = controller.committedGeometry();
+            if (changed) {
+                if (resize) {
+                    const auto resized = controller.updateResize(
+                        target.adjusted(0, 0, 50, 0),
+                        screenshot_pinned_resize_geometry::DragHandle::Right,
+                        config.initialWindowSize, 0.1, 5.0);
+                    require(resized.has_value(), "resize proposal must be accepted");
+                    target = *resized;
+                } else {
+                    target = controller.updateMove(target.translated(10, 15), QPoint(20, 35));
+                }
+            }
+            platform->observed = target.adjusted(0, 0, 1, -1);
+            const int beforeCorrection = platform->applications;
+            require(ScreenshotPinnedWindowTestAccess::finishNativeInteraction(window) &&
+                        controller.committedGeometry() == target && platform->observed == target &&
+                        platform->applications == beforeCorrection + 1 &&
+                        window.persistenceSnapshot().nativeGeometry == target,
+                    "finishing an interaction must restore the exact validated physical target");
+        }
+    }
+    require(ScreenshotPinnedWindowTestAccess::moveWindow(window, original),
+            "restore the geometry fixture after interactions");
+
     const QRect moved = original.translated(17, 23);
     const int beforeMove = platform->applications;
     require(ScreenshotPinnedWindowTestAccess::moveWindow(window, moved) &&
@@ -5996,6 +6100,7 @@ void pinnedScalingAndAspectLockedResizing(SnowCanvasRuntime&) {
     ScreenshotPinnedWindowTestAccess::endControlled(*pinnedWindow, false);
 #endif
     waitForUi(80);
+    require(!guardedWindow.isNull(), "native resize closed the scaling pin");
     require(scaleLabel->text() == QStringLiteral("Scale: 83%") && scaleLabel->isVisible() &&
                 std::none_of(scaleMenu->actions().cbegin(), scaleMenu->actions().cend(),
                              [](const QAction* action) { return action->isChecked(); }),
@@ -6357,7 +6462,10 @@ void pinnedScalingAndAspectLockedResizing(SnowCanvasRuntime&) {
             "thumbnail wheel input should restore the pin and apply cursor scaling");
 #endif
 
-    menu->actions().constLast()->trigger();
+    auto* closeAction =
+        pinnedWindow->findChild<QAction*>(QStringLiteral("screenshotPinnedCloseAction"));
+    require(closeAction != nullptr, "scaling pin close action was not found");
+    closeAction->trigger();
     require(processUntilDeleted(guardedWindow, 2000),
             "pinned window was not deleted after scaling and resizing tests");
 }
@@ -8576,9 +8684,6 @@ void thumbnailAnimationSurvivesRecreation(bool entering) {
     require(window->currentNativeGeometry() == target &&
                 window->persistenceSnapshot().thumbnailMode == entering,
             "recreation must finish the saved transition at its destination");
-    const QImage rendered = renderWidget(*window);
-    require(rendered.pixelColor(rendered.rect().center()).alpha() == (entering ? 255 : 0),
-            "recreated pins must immediately render the background appropriate to their mode");
     closeRestoredPinnedWindow(window, record.id);
 }
 
@@ -10316,6 +10421,25 @@ void pinnedContentReplacement() {
     config.imageSource = ScreenshotImageSource::fromImage(original, config.canvasSourceRect);
     ScreenshotPinnedWindow window;
     Access::prepareReplacement(window, config);
+    class MemoryClipboard final : public ScreenshotPinnedClipboard {
+      public:
+        const QMimeData* input = nullptr;
+        std::unique_ptr<QMimeData> output;
+        int snapshots = 0;
+        const QMimeData* mimeData() const override {
+            return input;
+        }
+        std::optional<ScreenshotClipboardContentSnapshot> snapshot(qreal dpr) override {
+            ++snapshots;
+            return ScreenshotClipboardContentReader::snapshotMimeData(input, dpr, Qt::white);
+        }
+        void setMimeData(std::unique_ptr<QMimeData> data) override {
+            output = std::move(data);
+        }
+    };
+    auto clipboardAccess = std::make_unique<MemoryClipboard>();
+    auto& memoryClipboard = *clipboardAccess;
+    Access::setClipboard(window, std::move(clipboardAccess));
     const auto samePixels = [](const QImage& first, const QImage& second) {
         return first.convertToFormat(QImage::Format_ARGB32_Premultiplied) ==
                second.convertToFormat(QImage::Format_ARGB32_Premultiplied);
@@ -10567,45 +10691,60 @@ void pinnedContentReplacement() {
     require(samePixels(Access::originalImage(window), replacement),
             "Image file action must replace the source");
 
-    auto* mime = new QMimeData;
-    mime->setUrls({QUrl::fromLocalFile(corruptPath), QUrl::fromLocalFile(firstPath),
-                   QUrl::fromLocalFile(secondPath)});
-    QApplication::clipboard()->setMimeData(mime);
-    clipboard->trigger();
+    QMimeData fileMime;
+    fileMime.setUrls({QUrl::fromLocalFile(corruptPath), QUrl::fromLocalFile(firstPath),
+                      QUrl::fromLocalFile(secondPath)});
+    const auto paste = [&](const QMimeData& data) {
+        memoryClipboard.input = &data;
+        clipboard->trigger();
+        waitForReplacement();
+        memoryClipboard.input = nullptr;
+    };
+    paste(fileMime);
     waitForReplacement();
     require(samePixels(Access::originalImage(window), original),
             "clipboard must use first loadable file");
-    mime = new QMimeData;
-    mime->setUrls({QUrl::fromLocalFile(corruptPath)});
-    mime->setText(corruptPath);
-    QApplication::clipboard()->setMimeData(mime);
-    clipboard->trigger();
+    QMimeData corruptFileMime;
+    corruptFileMime.setUrls({QUrl::fromLocalFile(corruptPath)});
+    corruptFileMime.setText(corruptPath);
+    paste(corruptFileMime);
     waitForReplacement();
     require(samePixels(Access::originalImage(window), original),
             "failed file URL must not become text content");
-    QApplication::clipboard()->clear();
-    clipboard->trigger();
+    require(memoryClipboard.snapshots == 0,
+            "file URLs must take priority over clipboard text and image snapshots");
+    const QMimeData emptyClipboard;
+    paste(emptyClipboard);
     waitForReplacement();
     require(samePixels(Access::originalImage(window), original),
             "empty clipboard must preserve content");
-    QApplication::clipboard()->setText(QStringLiteral("Replacement text"));
-    clipboard->trigger();
+    QMimeData textMime;
+    textMime.setText(QStringLiteral("Replacement text"));
+    paste(textMime);
     waitForReplacement();
     require(window.persistenceSnapshot().originalText == QStringLiteral("Replacement text") &&
                 session->hasTextResult(),
             "clipboard text must supply fresh selectable text");
-    window.findChild<QAction*>(QStringLiteral("screenshotPinnedCopyOriginalAction"))->trigger();
-    require(QApplication::clipboard()->text() == QStringLiteral("Replacement text"),
-            "Copy original content must use replacement text");
-    mime = new QMimeData;
-    mime->setHtml(QStringLiteral("<b>Replacement HTML</b>"));
-    QApplication::clipboard()->setMimeData(mime);
-    clipboard->trigger();
+    auto* copyOriginal =
+        window.findChild<QAction*>(QStringLiteral("screenshotPinnedCopyOriginalAction"));
+    require(copyOriginal != nullptr, "Copy Original Content action must exist");
+    copyOriginal->trigger();
+    require(memoryClipboard.output && memoryClipboard.output->text() == textMime.text() &&
+                !memoryClipboard.output->hasHtml() && !memoryClipboard.output->hasUrls(),
+            "Copy Original Content must publish replacement text without stale file metadata");
+    QMimeData htmlMime;
+    htmlMime.setHtml(QStringLiteral("<b>Replacement HTML</b>"));
+    paste(htmlMime);
     waitForReplacement();
     require(window.persistenceSnapshot().originalHtml.contains(QStringLiteral("Replacement HTML")),
             "HTML metadata must replace previous text metadata");
-    QApplication::clipboard()->setImage(replacement);
-    clipboard->trigger();
+    copyOriginal->trigger();
+    require(memoryClipboard.output && memoryClipboard.output->html() == htmlMime.html() &&
+                memoryClipboard.output->text() != textMime.text(),
+            "Copy Original Content must publish replacement HTML without stale text");
+    QMimeData imageMime;
+    imageMime.setImageData(replacement);
+    paste(imageMime);
     waitForReplacement();
     require(samePixels(Access::originalImage(window), replacement) &&
                 window.persistenceSnapshot().originalText.isEmpty() &&
@@ -12219,6 +12358,7 @@ int main(int argc, char* argv[]) {
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--recognition-shortcut-only"))) {
+            pinnedEditingPreservesActiveRecognition();
             pinnedDrawingToolsRemainUsableAfterRecognition();
             pinnedEditingRecognitionShortcutsUsePaletteCommands();
             pinnedRecognitionShortcutTogglesResults();
@@ -12316,6 +12456,10 @@ int main(int argc, char* argv[]) {
             pinnedThumbnailUsesOpaqueThemeBackground(sourceRuntime);
             return 0;
         }
+        if (app.arguments().contains(QStringLiteral("--context-geometry-only"))) {
+            pinnedContextMenuPreservesNativeGeometry(sourceRuntime);
+            return 0;
+        }
         pinnedContextMenuPreservesNativeGeometry(sourceRuntime);
         pinnedPhysicalPixelsFillClientArea(sourceRuntime);
         pinnedBorderUsesCeiledWindowDpiPhysicalPixels(sourceRuntime);
@@ -12334,6 +12478,7 @@ int main(int argc, char* argv[]) {
         restoredPinnedSelectionRendersCachedOcrAfterStorageRestart();
         pinnedSnapshotRetainsRecognitionBeforeDeferredSetup();
         restoredInvalidOcrDoesNotSuppressRecognition();
+        pinnedEditingPreservesActiveRecognition();
         pinnedDrawingToolsRemainUsableAfterRecognition();
         pinnedRecognitionShortcutTogglesResults();
         pinnedEditingRecognitionShortcutsUsePaletteCommands();

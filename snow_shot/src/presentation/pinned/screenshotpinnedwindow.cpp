@@ -818,10 +818,24 @@ QColor opaquePinnedBackground(const QWidget* widget) {
     return background;
 }
 
+class NativePinnedClipboard final : public ScreenshotPinnedClipboard {
+  public:
+    const QMimeData* mimeData() const override {
+        return QApplication::clipboard()->mimeData();
+    }
+    std::optional<ScreenshotClipboardContentSnapshot> snapshot(qreal devicePixelRatio) override {
+        return ScreenshotClipboardContentReader::snapshot(QApplication::clipboard(),
+                                                          devicePixelRatio);
+    }
+    void setMimeData(std::unique_ptr<QMimeData> data) override {
+        QApplication::clipboard()->setMimeData(data.release(), QClipboard::Clipboard);
+    }
+};
 } // namespace
 
 ScreenshotPinnedWindow::ScreenshotPinnedWindow(QWidget* parent)
     : QWidget(parent), m_platform(pinned_platform::createPinnedWindowPlatform(this)),
+      m_clipboard(std::make_unique<NativePinnedClipboard>()),
       m_runtime(
           SnowCanvasRuntimeConfig{snow_shot::presentation::screenshotCanvasToolStyleDefaults()}),
       m_shortcutManager(std::make_unique<snow_shot::presentation::WindowShortcutManager>()),
@@ -3119,6 +3133,14 @@ void ScreenshotPinnedWindow::updateCanvasViewport() {
             if (layout())
                 layout()->activate();
         }
+        if (coveringSize.isValid() && (m_canvas->width() < coveringSize.width() ||
+                                       m_canvas->height() < coveringSize.height())) {
+            // Windows can clamp the top-level logical size back to the exact
+            // native client. Keep the alien canvas one DIP larger where needed
+            // so its backing store still paints every client pixel.
+            const QScopedValueRollback<bool> guard(m_synchronizingViewportGeometry, true);
+            m_canvas->resize(m_canvas->size().expandedTo(coveringSize));
+        }
     }
     // A native resize can deliver a nested Qt resize while projecting the
     // covering extent. Refresh the rim from the final layout, not that event's
@@ -4518,7 +4540,7 @@ void ScreenshotPinnedWindow::activateTextTranslation() {
 void ScreenshotPinnedWindow::copyOriginalContent() {
     if (!m_originalClipboardContent.isEmpty()) {
         invalidatePendingCopy();
-        auto* mimeData = new QMimeData();
+        auto mimeData = std::make_unique<QMimeData>();
         if (!m_originalClipboardContent.html.isEmpty()) {
             mimeData->setHtml(m_originalClipboardContent.html);
         }
@@ -4528,13 +4550,13 @@ void ScreenshotPinnedWindow::copyOriginalContent() {
         if (!m_originalClipboardContent.localFilePath.isEmpty()) {
             mimeData->setUrls({QUrl::fromLocalFile(m_originalClipboardContent.localFilePath)});
         }
-        QApplication::clipboard()->setMimeData(mimeData, QClipboard::Clipboard);
+        m_clipboard->setMimeData(std::move(mimeData));
         return;
     }
     if (!m_originalClipboardContent.localFilePath.isEmpty()) {
-        auto* mimeData = new QMimeData();
+        auto mimeData = std::make_unique<QMimeData>();
         mimeData->setUrls({QUrl::fromLocalFile(m_originalClipboardContent.localFilePath)});
-        QApplication::clipboard()->setMimeData(mimeData, QClipboard::Clipboard);
+        m_clipboard->setMimeData(std::move(mimeData));
         return;
     }
     if (m_originalImage.isNull()) {
@@ -4754,14 +4776,12 @@ void ScreenshotPinnedWindow::loadClipboardContent() {
     if (!m_firstContentFramePublished || m_closing) {
         return;
     }
-    QClipboard* clipboard = QApplication::clipboard();
-    const QStringList paths = ScreenshotClipboardContentReader::localFilePaths(
-        clipboard != nullptr ? clipboard->mimeData() : nullptr);
+    const QStringList paths =
+        ScreenshotClipboardContentReader::localFilePaths(m_clipboard->mimeData());
     if (!paths.isEmpty()) {
         requestContentReplacement(paths);
     } else {
-        requestContentReplacement(
-            {}, ScreenshotClipboardContentReader::snapshot(clipboard, devicePixelRatioF()));
+        requestContentReplacement({}, m_clipboard->snapshot(devicePixelRatioF()));
     }
 }
 
@@ -6230,7 +6250,13 @@ bool ScreenshotPinnedWindow::restoreCommittedNativeGeometry(bool closeOnFailure)
         return true;
     }
 
-    qCritical("Pinned window native geometry could not be restored");
+    const QRect observed = observedNativeGeometry();
+    const QRect frame = m_platform->frameGeometry();
+    qCritical("Pinned window native geometry could not be restored: target=(%d,%d %dx%d) "
+              "observed=(%d,%d %dx%d) frame=(%d,%d %dx%d)",
+              committed.x(), committed.y(), committed.width(), committed.height(), observed.x(),
+              observed.y(), observed.width(), observed.height(), frame.x(), frame.y(),
+              frame.width(), frame.height());
     if (closeOnFailure) {
         QTimer::singleShot(0, this, &QWidget::close);
     }

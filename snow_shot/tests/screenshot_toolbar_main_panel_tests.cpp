@@ -642,8 +642,9 @@ void mainToolbarSpacingUsesReferenceItemMetrics() {
         }
         if (item->spacerItem() != nullptr) {
             ++spacerCount;
-            require(item->geometry().width() == qRound(8.0 * exactMetricScale),
-                    "main toolbar item spacing should remain 8 reference pixels at 1.5x");
+            require(item->geometry().width() ==
+                        qRound(referenceWidths.at(index + 1) * exactMetricScale),
+                    "main toolbar spacing must scale from its reference width");
             continue;
         }
         if (qobject_cast<adqt::widgets::AdButton*>(item->widget()) != nullptr) {
