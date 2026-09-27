@@ -309,12 +309,12 @@ if (-not (Test-Path -LiteralPath $mainExecutable)) {
 
 $versionInfo = (Get-Item -LiteralPath $mainExecutable).VersionInfo
 $expectedBinaryMetadata = @{
-    CompanyName = "Snow Apps"
-    FileDescription = "Snow Shot screenshot utility"
-    InternalName = "snow_shot"
+    CompanyName = "WingShot"
+    FileDescription = "WingShot screenshot utility"
+    InternalName = "WingShot"
     LegalCopyright = "Copyright (C) 2025-2026 mg-chao"
     OriginalFilename = "WingShot.exe"
-    ProductName = "Snow Shot"
+    ProductName = "WingShot"
 }
 foreach ($property in $expectedBinaryMetadata.Keys) {
     if ($versionInfo.$property -ne $expectedBinaryMetadata[$property]) {
@@ -640,7 +640,7 @@ if (-not (Test-Path -LiteralPath $cpackConfig)) {
 
 $cpackConfiguration = Get-Content -LiteralPath $cpackConfig -Raw
 $requiredCpackSettings = @{
-    CPACK_CREATE_DESKTOP_LINKS = "snow_shot"
+    CPACK_CREATE_DESKTOP_LINKS = "WingShot"
     CPACK_PACKAGE_EXECUTABLES = "WingShot;WingShot"
     CPACK_PACKAGE_HOMEPAGE_URL = "https://wingshot.anfioo.com"
     CPACK_PACKAGE_INSTALL_DIRECTORY = "WingShot"
@@ -651,7 +651,7 @@ foreach ($setting in $requiredCpackSettings.Keys) {
     $escapedSetting = [regex]::Escape($setting)
     $escapedValue = [regex]::Escape($requiredCpackSettings[$setting])
     $settingPresent = if ($setting -eq "CPACK_NSIS_INSTALLED_ICON_NAME") {
-        $cpackConfiguration -match 'set\(CPACK_NSIS_INSTALLED_ICON_NAME "bin\\+snow_shot\.exe"\)'
+        $cpackConfiguration -match 'set\(CPACK_NSIS_INSTALLED_ICON_NAME "bin\\+WingShot\.exe"\)'
     }
     else {
         $cpackConfiguration -match "set\($escapedSetting `"$escapedValue`"\)"

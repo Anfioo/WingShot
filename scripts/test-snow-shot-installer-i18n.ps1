@@ -144,8 +144,8 @@ foreach ($setting in '"Settings" "NumFields" "1"', '"Field 1" "Type" "CheckBox"'
 }
 if ($init.Contains('0 noOptionsPage') -or
     -not $generated.Contains('MUI_INSTALLOPTIONS_READ $INSTALL_DESKTOP "NSIS.InstallOptions.ini" "Field 1" "State"') -or
-    $generated -notmatch 'StrCmp "\$INSTALL_DESKTOP" "1" 0 \+2\r?\n\s*CreateShortCut "\$DESKTOP\\Snow Shot.lnk" "\$INSTDIR\\bin\\WingShot.exe"' -or
-    -not $generated.Contains('Delete "$DESKTOP\Snow Shot.lnk"')) {
+    $generated -notmatch 'StrCmp "\$INSTALL_DESKTOP" "1" 0 \+2\r?\n\s*CreateShortCut "\$DESKTOP\\WingShot.lnk" "\$INSTDIR\\bin\\WingShot.exe"' -or
+    -not $generated.Contains('Delete "$DESKTOP\WingShot.lnk"')) {
     throw "Desktop shortcut creation must honor the checkbox and support uninstall cleanup."
 }
 Write-Output "PASS: shortcut-only options default on, preserve selection, and gate desktop shortcut creation."
