@@ -816,7 +816,7 @@ class ImmediateQrRecognition final : public ScreenshotQrRecognitionPort {
     recognize(QImage, QObject*, Completion completion,
               ScreenshotQrRecognitionMode = ScreenshotQrRecognitionMode::QrAndBarcode) override {
         if (completion) {
-            completion(ScreenshotQrRecognitionResult{m_contents, {}});
+            completion(ScreenshotQrRecognitionResult{m_contents, {}, {}});
         }
         return 1;
     }
@@ -1293,7 +1293,7 @@ void pinnedSelectionRendersCachedOcrInCanvasCoordinates(bool restoreFromStorage 
                 table.html = QStringLiteral("<table><tr><td>Saved table</td></tr></table>");
                 request.recognitionResults.table = table;
                 request.recognitionResults.qr =
-                    ScreenshotQrRecognitionResult{{QStringLiteral("Saved barcode")}, {}};
+                    ScreenshotQrRecognitionResult{{QStringLiteral("Saved barcode")}, {}, {}};
             }
 
             QImage content(request.selection.size(), QImage::Format_ARGB32_Premultiplied);
@@ -2033,7 +2033,7 @@ void pinnedEditingPreservesActiveRecognition() {
             ScreenshotPinnedWindow window;
             auto config = cachedOcrPinConfig(nullptr);
             config.recognitionResults.qr =
-                ScreenshotQrRecognitionResult{{QStringLiteral("Saved barcode")}, {}};
+                ScreenshotQrRecognitionResult{{QStringLiteral("Saved barcode")}, {}, {}};
             auto* session = Access::hiddenSelectionOffscreen(window, config);
             session->activate(mode);
             require(session->active(), "activate cached recognition before opening the toolbar");
@@ -2062,7 +2062,7 @@ void pinnedDrawingToolsRemainUsableAfterRecognition() {
         ScreenshotPinnedWindow window;
         auto config = cachedOcrPinConfig(nullptr);
         config.recognitionResults.qr =
-            ScreenshotQrRecognitionResult{{QStringLiteral("Saved barcode")}, {}};
+            ScreenshotQrRecognitionResult{{QStringLiteral("Saved barcode")}, {}, {}};
         auto* session = Access::hiddenSelectionOffscreen(window, config);
         const snow_shot::storage::ScreenshotToolbarSettings settings;
         const QString previousFilter = settings.lastFilterTool();
@@ -2235,7 +2235,7 @@ void pinnedLatexSurvivesTransferAndRestart() {
     config.automaticTextRecognition = false;
     config.recognitionResults.text.reset();
     const QString source = QStringLiteral("\\frac{a}{b} <x> & y");
-    config.recognitionResults.latex = SnowShotLatexResult{source};
+    config.recognitionResults.latex = SnowShotLatexResult{source, {}, {}, 0};
     config.recognitionResults.visibleLatex = true;
     QByteArray payload;
     for (const bool restore : {false, true}) {
@@ -2380,7 +2380,7 @@ void cachedPinnedOcrAvailableWithoutRecognitionProvider() {
     table.html = QStringLiteral("<table><tr><td>Saved table</td></tr></table>");
     config.recognitionResults.table = table;
     config.recognitionResults.qr =
-        ScreenshotQrRecognitionResult{{QStringLiteral("Saved barcode")}, {}};
+        ScreenshotQrRecognitionResult{{QStringLiteral("Saved barcode")}, {}, {}};
     QPointer<ScreenshotPinnedWindow> window(new ScreenshotPinnedWindow());
     const auto cleanup = qScopeGuard([&]() {
         if (window != nullptr) {
@@ -9799,7 +9799,7 @@ void pinnedTextRecognitionSavesSourceFilesOffscreen() {
 
     auto config = cachedOcrPinConfig(nullptr);
     config.recognitionResults.qr =
-        ScreenshotQrRecognitionResult{{QStringLiteral("first"), QStringLiteral("雪")}, {}};
+        ScreenshotQrRecognitionResult{{QStringLiteral("first"), QStringLiteral("雪")}, {}, {}};
     QPointer<ScreenshotPinnedWindow> qrWindow(new ScreenshotPinnedWindow);
     require(qrWindow->present(config), "QR pin could not be presented");
     waitForUi(100);
@@ -11488,6 +11488,72 @@ void pinnedInteractionsReleasePointerRouting() {
     }
 }
 
+void pinnedControlledResizeCursorReturnsToDrawingTool() {
+    QScreen* screen = QGuiApplication::primaryScreen();
+    ScreenshotPinnedWindow window;
+    window.setAttribute(Qt::WA_DeleteOnClose, false);
+    QImage image(240, 120, QImage::Format_ARGB32_Premultiplied);
+    image.fill(Qt::white);
+    ScreenshotPinnedWindow::Config config;
+    config.screen = screen;
+    config.nativeGeometry = physicalPinGeometry(*screen, QPoint(40, 40), image.size());
+    config.canvasSourceRect = QRectF(QPointF(), QSizeF(image.size()));
+    config.initialWindowSize = image.size();
+    config.imageSource = ScreenshotImageSource::fromImage(image, config.canvasSourceRect);
+    config.automaticTextRecognition = false;
+    config.enableEditing = true;
+    require(window.present(config), "cursor pin presentation failed");
+    waitForUi(30);
+    auto* editButton = buttonNamed(window, QStringLiteral("Enable drawing mode"));
+    require(editButton != nullptr, "drawing mode button missing");
+    editButton->click();
+    auto* controller = window.findChild<ScreenshotPinnedEditController*>();
+    auto* canvas = window.findChild<SnowCanvasWidget*>();
+    require(controller != nullptr && controller->toolbarWindow() != nullptr && canvas != nullptr,
+            "drawing cursor fixture missing");
+    auto* palette = controller->toolbarWindow()->palette();
+    require(palette->activateToolShortcut(ScreenshotToolPalette::Tool::Shape),
+            "shape tool activation failed");
+    const auto move = [&](const QPoint& windowPosition) {
+        const QPoint global = window.mapToGlobal(windowPosition);
+        QMouseEvent event(QEvent::MouseMove, canvas->mapFromGlobal(global), global, Qt::NoButton,
+                          Qt::NoButton, Qt::NoModifier);
+        QCoreApplication::sendEvent(canvas, &event);
+    };
+    const QPoint center = window.rect().center();
+    move(center);
+    const Qt::CursorShape drawingCursor = canvas->cursor().shape();
+    require(drawingCursor != Qt::SizeHorCursor && drawingCursor != Qt::SizeVerCursor &&
+                drawingCursor != Qt::SizeFDiagCursor && drawingCursor != Qt::SizeBDiagCursor,
+            "drawing tool must start with its own cursor");
+    for (const QPoint& edge : {QPoint(1, center.y()), QPoint(center.x(), 1), QPoint(1, 1)}) {
+        move(edge);
+        require(canvas->cursor().shape() != drawingCursor,
+                "edge hover must take cursor ownership from the drawing tool");
+        move(center);
+        require(canvas->cursor().shape() == drawingCursor &&
+                    window.cursor().shape() == Qt::ArrowCursor,
+                "leaving a resize edge must restore the drawing cursor without a click");
+        move(edge);
+        QEvent leave(QEvent::Leave);
+        QCoreApplication::sendEvent(canvas, &leave);
+        // The canvas engine deliberately resolves Leave to its default arrow.
+        require(canvas->cursor().shape() == Qt::ArrowCursor &&
+                    window.cursor().shape() == Qt::ArrowCursor,
+                "leaving the canvas must release the resize cursor during drawing");
+        move(center);
+        require(canvas->cursor().shape() == drawingCursor,
+                "returning to the canvas must restore the drawing cursor");
+    }
+    require(palette->activateToolShortcut(ScreenshotToolPalette::Tool::Move),
+            "move tool activation failed");
+    move(QPoint(1, center.y()));
+    move(center);
+    require(canvas->cursor().shape() == Qt::OpenHandCursor,
+            "leaving an edge in move mode must restore the window drag cursor");
+    window.close();
+}
+
 void pinnedControlledInteractionAndGestures() {
     QScreen* screen = QGuiApplication::primaryScreen();
     ScreenshotPinnedWindow window;
@@ -12171,6 +12237,7 @@ int main(int argc, char* argv[]) {
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--controlled-interaction-only"))) {
+            pinnedControlledResizeCursorReturnsToDrawingTool();
             pinnedControlledInteractionAndGestures();
             return 0;
         }

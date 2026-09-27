@@ -10,6 +10,7 @@
 #include <private/qhighdpiscaling_p.h>
 
 #include <array>
+#include <cmath>
 #include <cstdlib>
 #include <iostream>
 #include <limits>
@@ -231,6 +232,61 @@ void logicalRetinaStepsUseOneWarp() {
             "scaled cursor steps must reject overflow");
 }
 
+void nativeMovementGranularityIsSymmetric() {
+    QPointF desktop;
+    int scale = 2;
+    int currentScale = 1;
+    int writes = 0;
+    PhysicalCursor cursor(PhysicalCursorAccess{
+        true,
+        [&]() -> std::optional<QPoint> {
+            currentScale = scale;
+            return (desktop * scale).toPoint();
+        },
+        [&](const QPoint& target) {
+            ++writes;
+            const QPointF requested = QPointF(target) / scale;
+            // Model CGWarpMouseCursorPosition: fractional desktop points floor,
+            // including negative coordinates on displays left/above the primary.
+            desktop = QPointF(std::floor(requested.x()), std::floor(requested.y()));
+            return desktop == requested;
+        },
+        [&] { return std::optional<QPointF>(desktop); }, false, [&] { return currentScale; }});
+    const std::array<std::pair<PhysicalCursorDirection, QPoint>, 4> directions = {{
+        {PhysicalCursorDirection::Up, QPoint(0, -1)},
+        {PhysicalCursorDirection::Down, QPoint(0, 1)},
+        {PhysicalCursorDirection::Left, QPoint(-1, 0)},
+        {PhysicalCursorDirection::Right, QPoint(1, 0)},
+    }};
+    for (int displayScale : {2, 1, 2}) {
+        scale = displayScale;
+        for (const QPoint start : {QPoint(600, 400), QPoint(-600, -400)}) {
+            for (const auto& [direction, offset] : directions) {
+                desktop = start;
+                for (int repeat = 1; repeat <= 3; ++repeat) {
+                    const int before = writes;
+                    const auto result = cursor.moveOnePixel(direction);
+                    require(result.status == PhysicalCursorMoveStatus::Applied &&
+                                desktop == start + offset * repeat &&
+                                result.position == (start + offset * repeat) * scale &&
+                                writes == before + 1,
+                            "repeated cursor nudges must move one native step in every direction");
+                }
+                desktop = start;
+                const auto result = cursor.movePixels(direction, 3);
+                require(result.commandApplied() && desktop == start + offset * (scale == 2 ? 2 : 3),
+                        "larger requests must round up to a whole native step");
+            }
+        }
+    }
+    desktop = QPointF(std::numeric_limits<int>::max() - 1, 0) / scale;
+    const int before = writes;
+    require(cursor.moveOnePixel(PhysicalCursorDirection::Right).status ==
+                    PhysicalCursorMoveStatus::InvalidTarget &&
+                writes == before,
+            "rounding to a native step must still reject coordinate overflow");
+}
+
 void everyMoveStartsFromTheLivePosition() {
     QPoint livePosition(10, 20);
     int readCount = 0;
@@ -420,6 +476,7 @@ int main(int argc, char** argv) {
         warpsKeepNativePointerStateSynchronized();
         everyDirectionRequestsOnePhysicalPixel();
         logicalRetinaStepsUseOneWarp();
+        nativeMovementGranularityIsSymmetric();
         everyMoveStartsFromTheLivePosition();
         operatingSystemResolutionIsReadBack();
         failuresHaveDistinctOutcomes();

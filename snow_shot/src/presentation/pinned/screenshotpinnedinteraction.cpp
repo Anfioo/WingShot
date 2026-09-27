@@ -348,6 +348,10 @@ bool ScreenshotPinnedWindow::handleControlledPointer(QObject* watched, QEvent* e
     const bool moveControl = watched == m_clickThroughMoveButton.get();
     if (watched != this && watched != m_canvas && watched != m_recognitionContent && !moveControl)
         return false;
+    if (event->type() == QEvent::Leave) {
+        clearWindowDragCursor();
+        return false;
+    }
     if (event->type() != QEvent::MouseMove && event->type() != QEvent::MouseButtonPress)
         return false;
     auto* mouse = static_cast<QMouseEvent*>(event);
@@ -359,6 +363,10 @@ bool ScreenshotPinnedWindow::handleControlledPointer(QObject* watched, QEvent* e
             setWindowDragCursor(resizeCursor(*handle));
             return true;
         }
+        // Edge resizing owns the host cursor even when a drawing tool disables
+        // window dragging. Release that ownership outside the edge so the canvas
+        // tool (or the window move policy) can resolve the cursor again.
+        updateWindowDragCursor(local.toPoint());
         return false;
     }
     if (mouse->button() == Qt::LeftButton &&

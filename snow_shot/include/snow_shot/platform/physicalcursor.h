@@ -43,6 +43,9 @@ struct PhysicalCursorAccess {
     std::function<std::optional<QPointF>()> readLogicalPosition = {};
     // Cursor warps on macOS do not generate native mouse movement events.
     bool generatesMouseMoveEvents = true;
+    // Physical pixels per native cursor step, evaluated after reading the live position
+    // so the backend can select the current display. Requests round up to whole steps.
+    std::function<int()> movementQuantum = {};
 };
 
 class PhysicalCursor final {
