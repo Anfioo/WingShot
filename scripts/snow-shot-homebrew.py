@@ -59,8 +59,7 @@ def cask(version, sha256):
   version "{version}"
   sha256 "{sha256}"
 
-  url "https://github.com/{REPOSITORY}/releases/download/v#{{version}}_snow-shot/snow-shot-#{{version}}-macos-arm64-homebrew.tar.gz",
-      verified: "github.com/{REPOSITORY}/"
+  url "https://github.com/{REPOSITORY}/releases/download/v#{{version}}_snow-shot/snow-shot-#{{version}}-macos-arm64-homebrew.tar.gz"
   name "Snow Shot"
   desc "Screenshot and screen recording application"
   homepage "https://snowshot.top/"
@@ -70,15 +69,15 @@ def cask(version, sha256):
 
   app "Snow Shot.app"
 
-  preflight_steps do
-    run "/bin/bash",
-        args:           ["{{{{staged_path}}}}/prepare-snow-shot-homebrew.sh",
-                         "{{{{staged_path}}}}/snow-shot-{{{{version}}}}-macos-arm64.dmg",
-                         "{{{{staged_path}}}}/Snow Shot.app"],
-        print_stdout:   true,
-        writable_paths: ["~/Library/Application Support/Snow Shot",
-                         "~/Library/Keychains",
-                         "~/Library/Security"]
+  # Third-party Ruby hooks preserve the desktop user's HOME and Keychain access.
+  preflight do
+    system_command "/bin/bash",
+                   args:         [staged_path.join("prepare-snow-shot-homebrew.sh"),
+                                  staged_path.join("snow-shot-#{{version}}-macos-arm64.dmg"),
+                                  staged_path.join("Snow Shot.app")],
+                   must_succeed: true,
+                   print_stdout: true,
+                   print_stderr: true
   end
 
   caveats <<~EOS

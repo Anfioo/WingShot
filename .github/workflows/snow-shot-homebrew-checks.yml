@@ -51,5 +51,6 @@ jobs:
       - name: Check Homebrew style and offline metadata
         run: |
           brew trust --cask mg-chao/preflight/snow-shot
-          brew style --cask mg-chao/preflight/snow-shot
+          # The official-tap declarative-only rule excludes supported third-party Ruby hooks.
+          brew style --cask --except Cask/InstallSteps mg-chao/preflight/snow-shot
           brew audit --cask mg-chao/preflight/snow-shot

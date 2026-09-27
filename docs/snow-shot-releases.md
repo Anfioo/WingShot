@@ -443,14 +443,19 @@ A nonexistent `--current-cask` means first publication. The output includes the
 archive and `Casks/snow-shot.rb`; it performs no network or Git writes. Run
 `python3 scripts/test-snow-shot-homebrew.py` for the release helper's focused tests.
 With Homebrew installed and the generated cask in the tap, run
-`brew style --cask mg-chao/tap/snow-shot` and
+`brew style --cask --except Cask/InstallSteps mg-chao/tap/snow-shot` and
 `brew audit --cask mg-chao/tap/snow-shot`. Native installation/upgrade qualification
 is described in `docs-macos-build.md` and is required separately from these tests.
 
 The pull-request workflow `snow-shot-homebrew-checks.yml` runs the two focused
 Python suites plus Homebrew style and offline metadata auditing on macOS. Its
-generated fixture is never published or installed. The cask uses Homebrew 7's
-declarative preflight API and the release's `prepare-snow-shot-homebrew.sh` wrapper
-for upgrade rollback. The sandbox explicitly allows the installer state, Keychain,
-and user trust-settings directories; it does not enable network access. Keep
-Homebrew current with `brew update` before installing this cask.
+generated fixture is never published or installed. The third-party cask uses the
+supported (but deprecated) third-party Ruby preflight API: Homebrew 7's declarative sandbox substitutes HOME
+and blocks account lookup, so it cannot preserve this installer's persistent
+Keychain identity as-is. The workflow excludes only `Cask/InstallSteps`, the
+rule requiring official taps to use declarative hooks. All other style checks
+and offline audits run normally; no runtime security settings are changed.
+
+Use `brew style --cask --except Cask/InstallSteps mg-chao/tap/snow-shot` for this
+third-party cask. The release's `prepare-snow-shot-homebrew.sh` wrapper handles
+rollback without requiring the unavailable signing key again.

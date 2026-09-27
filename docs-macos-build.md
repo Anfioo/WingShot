@@ -9,8 +9,8 @@ vcpkg and Cargo; universal builds are not supported by these presets.
 The project tap is `mg-chao/homebrew-tap`; its first cask becomes available after
 a stable GitHub release containing the Homebrew support is published. Beta and
 other prerelease tags (including `1.1.5-beta`) do not update this tap. Initially,
-Homebrew installation requires Homebrew 7 or later, Apple Silicon, and macOS 15
-or later.
+Homebrew installation supports Apple Silicon and macOS 15 or later only. Keep
+Homebrew current with `brew update`.
 
 ```sh
 brew update
