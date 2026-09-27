@@ -67,7 +67,7 @@ class ScreenshotOcrController final : public QObject {
     Q_OBJECT
 
   public:
-    enum class Mode { Text, Table, Qr, Markdown, Html };
+    enum class Mode { Text, Table, Qr, Markdown, Html, Latex };
 
     explicit ScreenshotOcrController(ScreenshotOcrControllerContext context,
                                      QObject* parent = nullptr);
@@ -76,6 +76,7 @@ class ScreenshotOcrController final : public QObject {
     void activate();
     void activateTable();
     void activateQr();
+    void activateLatex();
     void activateImageConversion(SnowShotImageConversionFormat format);
     void openImageConversionSettings();
     // Leaves the visible recognition tool but deliberately keeps requests and cache entries alive.
@@ -89,6 +90,7 @@ class ScreenshotOcrController final : public QObject {
     [[nodiscard]] Mode mode() const;
     [[nodiscard]] bool tableModeActive() const;
     [[nodiscard]] bool qrModeActive() const;
+    [[nodiscard]] bool latexModeActive() const;
     [[nodiscard]] bool copyRecognitionToClipboard(bool endCapture = true);
     void mergeTableSelection();
     void splitTableSelection();

@@ -69,6 +69,20 @@ void savesQrValuesAsOneTextFile() {
             "QR save must not produce an image or conversion file");
 }
 
+void savesLatexAsOneTextFile() {
+    QTemporaryDir directory;
+    require(directory.isValid(), "LaTeX save directory unavailable");
+    const QString source = QStringLiteral("\\frac{a_b}{c^2} <x> & y\n+1");
+    const auto saved = ScreenshotRecognitionFileExport::saveToPath(
+        {ScreenshotRecognitionFileKind::Latex, source},
+        directory.filePath(QStringLiteral("codes.html")));
+    require(saved.succeeded() && QFileInfo(saved.path).suffix() == QStringLiteral("txt") &&
+                read(saved.path) == source.toUtf8(),
+            "LaTeX source must remain verbatim in one UTF-8 text file");
+    require(!QFileInfo::exists(directory.filePath(QStringLiteral("codes.html"))),
+            "LaTeX save must not produce an image or conversion file");
+}
+
 void quickSaveAvoidsEitherPairCollision() {
     QTemporaryDir directory;
     require(directory.isValid(), "quick save directory unavailable");
@@ -187,6 +201,7 @@ int main(int argc, char** argv) {
     try {
         savesConversionPairsWithExactSource();
         savesQrValuesAsOneTextFile();
+        savesLatexAsOneTextFile();
         quickSaveAvoidsEitherPairCollision();
         emptyAndFailedPairLeaveNoPartialOutput();
         manualOverwriteConfirmsAndReplacesBothFiles();

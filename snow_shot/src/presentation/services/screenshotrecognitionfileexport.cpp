@@ -39,6 +39,7 @@ QString ScreenshotRecognitionFileExport::extension(ScreenshotRecognitionFileKind
         return QStringLiteral("html");
     case ScreenshotRecognitionFileKind::Markdown:
         return QStringLiteral("md");
+    case ScreenshotRecognitionFileKind::Latex:
     case ScreenshotRecognitionFileKind::Qr:
         return QStringLiteral("txt");
     }
@@ -53,6 +54,7 @@ QString ScreenshotRecognitionFileExport::dialogFilter(ScreenshotRecognitionFileK
     case ScreenshotRecognitionFileKind::Markdown:
         return message(
             QT_TRANSLATE_NOOP("ScreenshotRecognitionFileExport", "Markdown document (*.md)"));
+    case ScreenshotRecognitionFileKind::Latex:
     case ScreenshotRecognitionFileKind::Qr:
         return message(
             QT_TRANSLATE_NOOP("ScreenshotRecognitionFileExport", "Text document (*.txt)"));
@@ -79,7 +81,7 @@ QStringList ScreenshotRecognitionFileExport::outputPaths(const QString& primaryP
     if (primaryPath.isEmpty())
         return {};
     QStringList paths{primaryPath};
-    if (kind != ScreenshotRecognitionFileKind::Qr) {
+    if (kind != ScreenshotRecognitionFileKind::Qr && kind != ScreenshotRecognitionFileKind::Latex) {
         QString companion = primaryPath;
         companion.chop(extension(kind).size());
         companion += QStringLiteral("txt");

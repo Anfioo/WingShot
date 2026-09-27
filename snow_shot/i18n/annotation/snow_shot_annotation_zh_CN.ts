@@ -516,6 +516,10 @@
             <translation>键盘大小</translation>
         </message>
         <message>
+            <source>LaTeX Formula Recognition</source>
+            <translation>LaTeX 公式识别</translation>
+        </message>
+        <message>
             <source>Line</source>
             <translation>直线</translation>
         </message>

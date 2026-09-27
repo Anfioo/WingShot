@@ -89,7 +89,7 @@ class ScreenshotRecognitionSessionController final : public QObject {
     Q_OBJECT
 
   public:
-    enum class Mode { Text = 0, Table = 1, Qr = 2, Markdown = 3, Html = 4 };
+    enum class Mode { Text = 0, Table = 1, Qr = 2, Markdown = 3, Html = 4, Latex = 5 };
 
     ScreenshotRecognitionSessionController(ScreenshotOcrRecognitionPort* recognition,
                                            ScreenshotQrRecognitionPort* qrRecognition,
@@ -199,6 +199,9 @@ class ScreenshotRecognitionSessionController final : public QObject {
     void startTextRender();
     void startTableRecognition();
     void startQrRecognition();
+    void startLatexRecognition();
+    void applyLatexContents(const QString& source);
+    void handleLatexOutput(quint64 generation, const QString& key, SnowShotLatexResult result);
     void handleTextOutput(quint64 generation, const QString& key,
                           ScreenshotOcrRecognitionResult output);
     void handleTableOutput(quint64 generation, const QString& key, SnowShotTableResult result);
@@ -253,6 +256,9 @@ class ScreenshotRecognitionSessionController final : public QObject {
     QHash<QString, TextCacheEntry> m_textCache;
     QHash<QString, std::shared_ptr<ScreenshotTableEditingSession>> m_tableCache;
     QHash<QString, QStringList> m_qrCache;
+    QHash<QString, SnowShotLatexResult> m_latexResults;
+    SnowShotApiClient::RequestToken m_latexRequestToken = 0;
+    quint64 m_latexGeneration = 0;
     QHash<QString, SnowShotTableResult> m_tableResults;
     QHash<QString, ScreenshotQrRecognitionResult> m_qrResults;
     std::shared_ptr<ScreenshotOcrPresentation> m_presentation;

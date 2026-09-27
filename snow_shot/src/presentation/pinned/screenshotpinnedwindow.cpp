@@ -204,6 +204,9 @@ QByteArray serializeRecognitionResults(const ScreenshotRecognitionResults& resul
                << quint32(conversion.size());
         stream.writeRawData(conversion.constData(), static_cast<int>(conversion.size()));
     }
+    if (results.latex && results.latex->succeeded()) {
+        stream << quint32(0x4C415458) << quint8(1) << results.latex->latex << results.visibleLatex;
+    }
     return bytes;
 }
 
@@ -254,6 +257,13 @@ ScreenshotRecognitionResults deserializeRecognitionResults(const QByteArray& byt
         quint32 marker = 0;
         quint8 version = 0;
         stream >> marker >> version;
+        if (marker == quint32(0x4C415458) && version == 1) {
+            SnowShotLatexResult latex;
+            stream >> latex.latex >> results.visibleLatex;
+            if (stream.status() == QDataStream::Ok && latex.succeeded())
+                results.latex = std::move(latex);
+            continue;
+        }
         if (marker == snow_shot::presentation::kImageConversionPayloadMarker) {
             quint32 size = 0;
             stream >> size;
@@ -1982,6 +1992,7 @@ bool ScreenshotPinnedWindow::present(const Config& requestedConfig,
             m_initialRecognitionVisible = false;
             m_initialTranslationVisible = false;
             m_recognitionResults.visibleConversion.reset();
+            m_recognitionResults.visibleLatex = false;
         }
     }
     const bool restoreClickThrough =
@@ -3530,6 +3541,13 @@ void ScreenshotPinnedWindow::finishDeferredPresentationSetup(quint64 generation)
     SNOW_SHOT_PIN_PERF_MILESTONE("window.recognition_target_ready");
     SNOW_SHOT_PIN_PERF_MILESTONE("window.context_menu_ready");
     SNOW_SHOT_PIN_PERF_MILESTONE("window.controls_ready");
+    if (std::exchange(m_recognitionResults.visibleLatex, false) && m_recognitionResults.latex) {
+        requestMaterializedImage([this, generation](bool succeeded) {
+            if (succeeded && generation == m_presentationGeneration && !m_closing)
+                activateRecognitionMode(
+                    static_cast<int>(ScreenshotRecognitionSessionController::Mode::Latex), false);
+        });
+    }
     if (const auto visible = std::exchange(m_recognitionResults.visibleConversion, std::nullopt)) {
         const auto found = std::find_if(
             m_recognitionResults.conversions.cbegin(), m_recognitionResults.conversions.cend(),
@@ -3677,6 +3695,11 @@ void ScreenshotPinnedWindow::configureEditToolbar(
         m_translateAfterRecognition = false;
         activateRecognitionMode(
             static_cast<int>(ScreenshotRecognitionSessionController::Mode::Markdown));
+    });
+    connect(toolbar, &ScreenshotToolPalette::latexRequested, this, [this]() {
+        m_translateAfterRecognition = false;
+        activateRecognitionMode(
+            static_cast<int>(ScreenshotRecognitionSessionController::Mode::Latex));
     });
     connect(toolbar, &ScreenshotToolPalette::htmlRequested, this, [this]() {
         m_translateAfterRecognition = false;
@@ -3863,6 +3886,9 @@ bool ScreenshotPinnedWindow::recognitionModeAvailable(int mode) const {
                              : m_recognitionResults;
     const bool hasCacheKey = !results.key.isEmpty();
     switch (static_cast<ScreenshotRecognitionSessionController::Mode>(mode)) {
+    case ScreenshotRecognitionSessionController::Mode::Latex:
+        return (results.latex && results.latex->succeeded()) ||
+               (m_ocrSupported && m_tableRecognition != nullptr);
     case ScreenshotRecognitionSessionController::Mode::Markdown:
     case ScreenshotRecognitionSessionController::Mode::Html:
         return !results.conversions.isEmpty() || (m_ocrSupported && m_tableRecognition != nullptr);
@@ -3894,6 +3920,10 @@ void ScreenshotPinnedWindow::updateRecognitionToolbarState() {
             static_cast<int>(ScreenshotRecognitionSessionController::Mode::Table)));
         toolbar->setQrEnabled(recognitionModeAvailable(
             static_cast<int>(ScreenshotRecognitionSessionController::Mode::Qr)));
+        toolbar->setLatexState(
+            recognitionModeAvailable(
+                static_cast<int>(ScreenshotRecognitionSessionController::Mode::Latex)),
+            m_recognitionSession->busy(ScreenshotRecognitionSessionController::Mode::Latex));
         toolbar->setImageConversionEnabled(recognitionModeAvailable(
             static_cast<int>(ScreenshotRecognitionSessionController::Mode::Markdown)));
         toolbar->setImageConversionBusy(
@@ -4070,6 +4100,10 @@ void ScreenshotPinnedWindow::configureRecognitionSession() {
                                    static_cast<int>(
                                        ScreenshotRecognitionSessionController::Mode::Html)) {
                             host->setActiveTool(ScreenshotToolPalette::Tool::Html);
+                        } else if (mode ==
+                                   static_cast<int>(
+                                       ScreenshotRecognitionSessionController::Mode::Latex)) {
+                            host->setActiveTool(ScreenshotToolPalette::Tool::Latex);
                         } else if (controller->editMode()) {
                             controller->recognitionDeactivated();
                         } else {
@@ -4113,6 +4147,12 @@ void ScreenshotPinnedWindow::configureRecognitionSession() {
                         toolbar->setOcrBusy(textBusy);
                         toolbar->setTableBusy(tableBusy);
                         toolbar->setQrBusy(qrBusy);
+                        toolbar->setLatexState(
+                            recognitionModeAvailable(static_cast<int>(
+                                ScreenshotRecognitionSessionController::Mode::Latex)),
+                            m_recognitionSession &&
+                                m_recognitionSession->busy(
+                                    ScreenshotRecognitionSessionController::Mode::Latex));
                     }
                 }
                 refreshContextMenu();
@@ -4262,7 +4302,11 @@ ScreenshotRecognitionWindow* ScreenshotPinnedWindow::ensureRecognitionContent() 
                     showPinnedRecognitionMessage(this, message, false);
                 },
                 [this](const QUrl& url) {
-                    if (m_recognitionSession != nullptr && m_recognitionSession->qrModeActive()) {
+                    if (m_recognitionSession != nullptr &&
+                        (m_recognitionSession->qrModeActive() ||
+                         (m_recognitionSession->active() &&
+                          m_recognitionSession->mode() ==
+                              ScreenshotRecognitionSessionController::Mode::Latex))) {
                         if (url.isValid()) {
                             QDesktopServices::openUrl(url);
                         }
@@ -6901,8 +6945,8 @@ QJsonObject ScreenshotPinnedWindow::automationEdit(const QString& action,
         return {{QStringLiteral("payload"), QString::fromUtf8(serialized)}};
     } else if (action == QStringLiteral("recognize")) {
         const QStringList kinds{QStringLiteral("text"), QStringLiteral("table"),
-                                QStringLiteral("qr"), QStringLiteral("markdown"),
-                                QStringLiteral("html")};
+                                QStringLiteral("qr"),   QStringLiteral("markdown"),
+                                QStringLiteral("html"), QStringLiteral("latex")};
         const qsizetype mode = kinds.indexOf(payload.value(QStringLiteral("kind")).toString());
         if (mode < 0)
             return fail("invalid_parameters");

@@ -516,6 +516,10 @@
             <translation>鍵盤大小</translation>
         </message>
         <message>
+            <source>LaTeX Formula Recognition</source>
+            <translation>LaTeX 公式辨識</translation>
+        </message>
+        <message>
             <source>Line</source>
             <translation>直線</translation>
         </message>

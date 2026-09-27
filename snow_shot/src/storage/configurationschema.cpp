@@ -34,12 +34,12 @@ const QStringList kDrawingToolbarItemIds =
 const QStringList kLastDrawingToolIds = QStringList{QStringLiteral("")} + kDrawingToolIds;
 
 const QStringList kActionToolbarItemIds = {
-    QStringLiteral("barcode-recognition"),  QStringLiteral("table-recognition"),
-    QStringLiteral("convert-to-markdown"),  QStringLiteral("convert-to-html"),
-    QStringLiteral("record-screen"),        QStringLiteral("pin-to-screen"),
-    QStringLiteral("text-recognition"),     QStringLiteral("text-translation"),
-    QStringLiteral("scrolling-screenshot"), QStringLiteral("quick-save"),
-    QStringLiteral("save-as-file"),
+    QStringLiteral("barcode-recognition"), QStringLiteral("table-recognition"),
+    QStringLiteral("convert-to-markdown"), QStringLiteral("latex-recognition"),
+    QStringLiteral("convert-to-html"),     QStringLiteral("record-screen"),
+    QStringLiteral("pin-to-screen"),       QStringLiteral("text-recognition"),
+    QStringLiteral("text-translation"),    QStringLiteral("scrolling-screenshot"),
+    QStringLiteral("quick-save"),          QStringLiteral("save-as-file"),
 };
 
 QJsonArray jsonArray(const QStringList& values) {
@@ -72,7 +72,8 @@ QVector<QStringList> defaultDrawingToolbarPositions() {
 QVector<QStringList> defaultActionToolbarPositions() {
     return {
         {QStringLiteral("convert-to-html"), QStringLiteral("convert-to-markdown"),
-         QStringLiteral("barcode-recognition"), QStringLiteral("table-recognition")},
+         QStringLiteral("latex-recognition"), QStringLiteral("barcode-recognition"),
+         QStringLiteral("table-recognition")},
         {QStringLiteral("record-screen")},
         {QStringLiteral("pin-to-screen")},
         {QStringLiteral("text-recognition")},
@@ -84,13 +85,15 @@ QVector<QStringList> defaultActionToolbarPositions() {
 
 const QStringList kPinnedActionToolbarItemIds = {
     QStringLiteral("barcode-recognition"), QStringLiteral("table-recognition"),
-    QStringLiteral("convert-to-markdown"), QStringLiteral("convert-to-html"),
-    QStringLiteral("text-recognition"),    QStringLiteral("text-translation")};
+    QStringLiteral("convert-to-markdown"), QStringLiteral("latex-recognition"),
+    QStringLiteral("convert-to-html"),     QStringLiteral("text-recognition"),
+    QStringLiteral("text-translation")};
 
 QVector<QStringList> defaultPinnedActionToolbarPositions() {
     return {
         {QStringLiteral("convert-to-html"), QStringLiteral("convert-to-markdown"),
-         QStringLiteral("barcode-recognition"), QStringLiteral("table-recognition")},
+         QStringLiteral("latex-recognition"), QStringLiteral("barcode-recognition"),
+         QStringLiteral("table-recognition")},
         {QStringLiteral("text-recognition")},
         {QStringLiteral("text-translation")},
     };
@@ -1605,6 +1608,39 @@ ConfigurationNormalization normalizeToolbarLayout(const QJsonValue& value,
                 positions[recognitionPosition].push_back(id);
                 positioned.insert(id);
             }
+        }
+    }
+    // Upgrade the previous default recognition group, preserving custom arrangements.
+    for (QStringList& position : positions) {
+        if (position == QStringList{QStringLiteral("convert-to-html"),
+                                    QStringLiteral("latex-recognition"),
+                                    QStringLiteral("convert-to-markdown"),
+                                    QStringLiteral("barcode-recognition"),
+                                    QStringLiteral("table-recognition")}) {
+            position.swapItemsAt(1, 2);
+        }
+    }
+    if (known.contains(QStringLiteral("latex-recognition")) &&
+        !positioned.contains(QStringLiteral("latex-recognition")) &&
+        !hiddenSet.contains(QStringLiteral("latex-recognition"))) {
+        for (QStringList& position : positions) {
+            if (position.contains(QStringLiteral("latex-recognition"))) {
+                positioned.insert(QStringLiteral("latex-recognition"));
+                break;
+            }
+            const auto index = position.indexOf(QStringLiteral("convert-to-markdown"));
+            if (index >= 0) {
+                // Popup buttons reverse the saved stack: insert after Markdown to appear to its
+                // left.
+                position.insert(index + 1, QStringLiteral("latex-recognition"));
+                positioned.insert(QStringLiteral("latex-recognition"));
+                break;
+            }
+        }
+        if (!positioned.contains(QStringLiteral("latex-recognition")) &&
+            hiddenSet.contains(QStringLiteral("convert-to-markdown"))) {
+            hidden.push_back(QStringLiteral("latex-recognition"));
+            hiddenSet.insert(QStringLiteral("latex-recognition"));
         }
     }
     for (const QStringList& defaultPosition : defaultPositions) {

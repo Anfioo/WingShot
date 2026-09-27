@@ -221,6 +221,8 @@ ScreenshotToolPalette::Tool paletteToolForActiveTool(ScreenshotActiveTool tool) 
         return ScreenshotToolPalette::Tool::Table;
     case ScreenshotActiveTool::Qr:
         return ScreenshotToolPalette::Tool::Qr;
+    case ScreenshotActiveTool::Latex:
+        return ScreenshotToolPalette::Tool::Latex;
     case ScreenshotActiveTool::Markdown:
         return ScreenshotToolPalette::Tool::Markdown;
     case ScreenshotActiveTool::Html:
@@ -396,6 +398,7 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     void setTextTranslationTool() override;
     void setTableTool() override;
     void setQrTool() override;
+    void setLatexTool() override;
     void setMarkdownTool() override;
     void setHtmlTool() override;
     void openImageConversionSettings() override;
@@ -2123,7 +2126,8 @@ void ScreenshotController::Impl::undoCanvasEdit() {
         m_ocrController->undoTableEdit();
         return;
     }
-    if (m_ocrController != nullptr && m_ocrController->qrModeActive()) {
+    if (m_ocrController != nullptr &&
+        (m_ocrController->qrModeActive() || m_ocrController->latexModeActive())) {
         return;
     }
     if (m_ocrController != nullptr && m_ocrController->editing()) {
@@ -2138,7 +2142,8 @@ void ScreenshotController::Impl::redoCanvasEdit() {
         m_ocrController->redoTableEdit();
         return;
     }
-    if (m_ocrController != nullptr && m_ocrController->qrModeActive()) {
+    if (m_ocrController != nullptr &&
+        (m_ocrController->qrModeActive() || m_ocrController->latexModeActive())) {
         return;
     }
     if (m_ocrController != nullptr && m_ocrController->editing()) {
@@ -2251,6 +2256,7 @@ bool ScreenshotController::Impl::activateToolForSelectionResize(ScreenshotActive
     case ScreenshotActiveTool::Ocr:
     case ScreenshotActiveTool::Table:
     case ScreenshotActiveTool::Qr:
+    case ScreenshotActiveTool::Latex:
     case ScreenshotActiveTool::Markdown:
     case ScreenshotActiveTool::Html:
         QTimer::singleShot(0, &owner,
@@ -2281,6 +2287,8 @@ void ScreenshotController::Impl::activateRecognitionToolAfterSelectionResize(
         m_ocrController->activateTable();
     } else if (tool == ScreenshotActiveTool::Qr) {
         m_ocrController->activateQr();
+    } else if (tool == ScreenshotActiveTool::Latex) {
+        m_ocrController->activateLatex();
     } else if (tool == ScreenshotActiveTool::Markdown || tool == ScreenshotActiveTool::Html) {
         m_ocrController->activateImageConversion(tool == ScreenshotActiveTool::Markdown
                                                      ? SnowShotImageConversionFormat::Markdown
@@ -2405,6 +2413,16 @@ void ScreenshotController::Impl::setMarkdownTool() {
         return;
     }
     m_ocrController->activateImageConversion(SnowShotImageConversionFormat::Markdown);
+    m_presentationServices->updateOverlayState();
+    restoreToolUiAfterScrollingCapture(stopped);
+}
+
+void ScreenshotController::Impl::setLatexTool() {
+    const bool stopped = stopScrollingCapture(true);
+    if (!ensureRecognitionFeature()) {
+        return;
+    }
+    m_ocrController->activateLatex();
     m_presentationServices->updateOverlayState();
     restoreToolUiAfterScrollingCapture(stopped);
 }
@@ -5489,6 +5507,7 @@ const std::pair<const char*, ScreenshotActiveTool> mcpTools[] = {
     {"ocr", ScreenshotActiveTool::Ocr},
     {"table", ScreenshotActiveTool::Table},
     {"qr", ScreenshotActiveTool::Qr},
+    {"latex", ScreenshotActiveTool::Latex},
     {"markdown", ScreenshotActiveTool::Markdown},
     {"html", ScreenshotActiveTool::Html},
 };

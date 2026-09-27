@@ -73,6 +73,8 @@ ScreenshotToolPalette::Tool paletteTool(ScreenshotActiveTool tool) {
         return ScreenshotToolPalette::Tool::Table;
     case ScreenshotActiveTool::Qr:
         return ScreenshotToolPalette::Tool::Qr;
+    case ScreenshotActiveTool::Latex:
+        return ScreenshotToolPalette::Tool::Latex;
     case ScreenshotActiveTool::Markdown:
         return ScreenshotToolPalette::Tool::Markdown;
     case ScreenshotActiveTool::Html:
@@ -136,6 +138,9 @@ ScreenshotOcrController::ScreenshotOcrController(ScreenshotOcrControllerContext 
                                       ScreenshotRecognitionSessionController::Mode::Table)
                             ? ScreenshotActiveTool::Table
                         : mode == static_cast<int>(
+                                      ScreenshotRecognitionSessionController::Mode::Latex)
+                            ? ScreenshotActiveTool::Latex
+                        : mode == static_cast<int>(
                                       ScreenshotRecognitionSessionController::Mode::Markdown)
                             ? ScreenshotActiveTool::Markdown
                         : mode ==
@@ -169,6 +174,11 @@ ScreenshotOcrController::ScreenshotOcrController(ScreenshotOcrControllerContext 
                     toolbar->setOcrBusy(textBusy);
                     toolbar->setTableBusy(tableBusy);
                     toolbar->setQrBusy(qrBusy);
+                    if (toolbar->palette())
+                        toolbar->palette()->setLatexState(
+                            true,
+                            m_session && m_session->busy(
+                                             ScreenshotRecognitionSessionController::Mode::Latex));
                 }
             },
             [this]() { m_messages->destroy(QString::fromLatin1(kRecognitionMessageKey)); },
@@ -280,6 +290,11 @@ bool ScreenshotOcrController::tableModeActive() const {
     return m_session->tableModeActive();
 }
 
+bool ScreenshotOcrController::latexModeActive() const {
+    return m_session->active() &&
+           m_session->mode() == ScreenshotRecognitionSessionController::Mode::Latex;
+}
+
 bool ScreenshotOcrController::qrModeActive() const {
     return m_session->qrModeActive();
 }
@@ -294,6 +309,10 @@ void ScreenshotOcrController::activateTable() {
 
 void ScreenshotOcrController::activateQr() {
     activateMode(Mode::Qr);
+}
+
+void ScreenshotOcrController::activateLatex() {
+    activateMode(Mode::Latex);
 }
 
 void ScreenshotOcrController::activateImageConversion(SnowShotImageConversionFormat format) {
@@ -390,6 +409,8 @@ void ScreenshotOcrController::activateMode(Mode mode) {
         m_context.interaction.setOcrTool();
     } else if (mode == Mode::Table) {
         m_context.interaction.setTableTool();
+    } else if (mode == Mode::Latex) {
+        m_context.interaction.setCanvasTool(ScreenshotActiveTool::Latex);
     } else if (mode == Mode::Markdown || mode == Mode::Html) {
         m_context.interaction.setCanvasTool(mode == Mode::Markdown ? ScreenshotActiveTool::Markdown
                                                                    : ScreenshotActiveTool::Html);
@@ -401,8 +422,9 @@ void ScreenshotOcrController::activateMode(Mode mode) {
                                                 : mode == Mode::Table ? ScreenshotActiveTool::Table
                                                 : mode == Mode::Markdown
                                                     ? ScreenshotActiveTool::Markdown
-                                                : mode == Mode::Html ? ScreenshotActiveTool::Html
-                                                                     : ScreenshotActiveTool::Qr;
+                                                : mode == Mode::Latex ? ScreenshotActiveTool::Latex
+                                                : mode == Mode::Html  ? ScreenshotActiveTool::Html
+                                                                      : ScreenshotActiveTool::Qr;
         toolbar->setActiveTool(paletteTool(activeTool));
     }
 

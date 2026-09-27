@@ -270,6 +270,7 @@ bool toolUsesActionToolbar(ScreenshotToolPalette::Tool tool, bool showMoveOption
            tool == ScreenshotToolPalette::Tool::Ocr ||
            tool == ScreenshotToolPalette::Tool::TextTranslation ||
            tool == ScreenshotToolPalette::Tool::Qr || tool == ScreenshotToolPalette::Tool::Table ||
+           tool == ScreenshotToolPalette::Tool::Latex ||
            tool == ScreenshotToolPalette::Tool::Markdown ||
            tool == ScreenshotToolPalette::Tool::Html ||
            tool == ScreenshotToolPalette::Tool::ScrollingScreenshot;
@@ -289,6 +290,7 @@ actionFamilyForTool(ScreenshotToolPalette::Tool tool) {
     case ScreenshotToolPalette::Tool::TextTranslation:
         return ScreenshotToolPalette::ActionFamily::TextRecognition;
     case ScreenshotToolPalette::Tool::Table:
+    case ScreenshotToolPalette::Tool::Latex:
     case ScreenshotToolPalette::Tool::Qr:
         return ScreenshotToolPalette::ActionFamily::TableRecognition;
     case ScreenshotToolPalette::Tool::ScrollingScreenshot:
@@ -320,6 +322,7 @@ bool toolUsesStandardStyleToolbar(ScreenshotToolPalette::Tool tool) {
     case ScreenshotToolPalette::Tool::Ocr:
     case ScreenshotToolPalette::Tool::TextTranslation:
     case ScreenshotToolPalette::Tool::Table:
+    case ScreenshotToolPalette::Tool::Latex:
     case ScreenshotToolPalette::Tool::Qr:
     case ScreenshotToolPalette::Tool::ScrollingScreenshot:
     case ScreenshotToolPalette::Tool::Markdown:
@@ -404,6 +407,8 @@ QString actionToolShortcutId(const QString& itemId) {
 }
 
 std::optional<ScreenshotToolPalette::Tool> actionTool(const QString& itemId) {
+    if (itemId == QStringLiteral("latex-recognition"))
+        return ScreenshotToolPalette::Tool::Latex;
     if (itemId == QStringLiteral("convert-to-markdown")) {
         return ScreenshotToolPalette::Tool::Markdown;
     }
@@ -430,6 +435,8 @@ std::optional<ScreenshotToolPalette::Tool> actionTool(const QString& itemId) {
 
 QString actionToolItemId(ScreenshotToolPalette::Tool tool) {
     switch (tool) {
+    case ScreenshotToolPalette::Tool::Latex:
+        return QStringLiteral("latex-recognition");
     case ScreenshotToolPalette::Tool::Markdown:
         return QStringLiteral("convert-to-markdown");
     case ScreenshotToolPalette::Tool::Html:
@@ -1309,7 +1316,7 @@ bool ScreenshotToolPalette::setSecondaryToolbarVisibility(bool actionToolbarVisi
 
     const bool ocrVisible = m_activeTool == Tool::Ocr || m_activeTool == Tool::TextTranslation;
     const bool tableVisible = m_activeTool == Tool::Table;
-    const bool qrVisible = m_activeTool == Tool::Qr;
+    const bool qrVisible = m_activeTool == Tool::Qr || m_activeTool == Tool::Latex;
     const bool conversionVisible = m_activeTool == Tool::Markdown || m_activeTool == Tool::Html;
     const bool originalVisible = ocrVisible || tableVisible || qrVisible || conversionVisible;
     const bool scrollingVisible = m_activeTool == Tool::ScrollingScreenshot;
@@ -1726,6 +1733,7 @@ void ScreenshotToolPalette::setActiveTool(Tool tool) {
     case Tool::TextTranslation:
         activeButton = actionToolEntryButton(QStringLiteral("text-translation"));
         break;
+    case Tool::Latex:
     case Tool::Markdown:
     case Tool::Html:
         activeButton = actionToolEntryButton(actionToolItemId(tool));
@@ -1808,7 +1816,7 @@ void ScreenshotToolPalette::selectDynamicEntryTool(Tool tool) {
         selectDrawingToolGroupEntry(tool);
     } else if (tool == Tool::Table || tool == Tool::Qr) {
         setTableQrEntryTool(tool);
-    } else if (tool == Tool::Markdown || tool == Tool::Html) {
+    } else if (tool == Tool::Latex || tool == Tool::Markdown || tool == Tool::Html) {
         selectActionToolGroupEntry(actionToolItemId(tool));
     } else if (tool == Tool::Ocr) {
         selectActionToolGroupEntry(QStringLiteral("text-recognition"));
@@ -4066,6 +4074,9 @@ void ScreenshotToolPalette::activateDrawingTool(Tool tool) {
     case Tool::Qr:
         emit qrRequested();
         break;
+    case Tool::Latex:
+        emit latexRequested();
+        break;
     case Tool::Markdown:
         emit markdownRequested();
         break;
@@ -4204,6 +4215,7 @@ bool ScreenshotToolPalette::activateToolFromToolbar(Tool tool, bool toggleVisibl
     case Tool::TextTranslation:
         requestedButton = actionToolEntryButton(QStringLiteral("text-translation"));
         break;
+    case Tool::Latex:
     case Tool::Markdown:
     case Tool::Html:
         requestedButton = actionToolEntryButton(actionToolItemId(tool));
@@ -4243,7 +4255,8 @@ bool ScreenshotToolPalette::historyActionEnabled(const QString& itemId) const {
         return false;
     }
     const bool undo = itemId == QStringLiteral("undo");
-    if (m_activeTool == Tool::Qr || m_activeTool == Tool::Markdown || m_activeTool == Tool::Html) {
+    if (m_activeTool == Tool::Latex || m_activeTool == Tool::Qr || m_activeTool == Tool::Markdown ||
+        m_activeTool == Tool::Html) {
         return false;
     }
     if (m_activeTool == Tool::Table) {
@@ -4426,6 +4439,8 @@ void ScreenshotToolPalette::ensureDrawingToolGroupPopover(adqt::widgets::AdButto
 
 adqt::widgets::AdButton*
 ScreenshotToolPalette::actionToolSourceButton(const QString& itemId) const {
+    if (itemId == QStringLiteral("latex-recognition"))
+        return m_latexButton;
     if (itemId == QStringLiteral("convert-to-markdown")) {
         return m_markdownButton;
     }
@@ -4512,6 +4527,8 @@ bool ScreenshotToolPalette::activateActionTool(const QString& itemId, bool toggl
         return activateToolFromToolbar(Tool::Ocr, toggleVisibleButton);
     } else if (itemId == QStringLiteral("text-translation")) {
         return activateToolFromToolbar(Tool::TextTranslation, toggleVisibleButton);
+    } else if (itemId == QStringLiteral("latex-recognition")) {
+        return activateToolFromToolbar(Tool::Latex, toggleVisibleButton);
     } else if (itemId == QStringLiteral("convert-to-markdown")) {
         return activateToolFromToolbar(Tool::Markdown, toggleVisibleButton);
     } else if (itemId == QStringLiteral("convert-to-html")) {
@@ -4927,16 +4944,10 @@ void ScreenshotToolPalette::applyMainToolbarLayout(bool notify) {
     }
 
     const QVector<adqt::widgets::AdButton*> actionSources{
-        m_tableButton,
-        m_markdownButton,
-        m_htmlButton,
-        m_screenRecordButton,
-        m_pinButton,
-        m_ocrButton,
-        m_textTranslationButton,
-        m_scrollingScreenshotButton,
-        m_saveButton,
-        m_quickSaveButton,
+        m_tableButton, m_markdownButton,        m_latexButton,
+        m_htmlButton,  m_screenRecordButton,    m_pinButton,
+        m_ocrButton,   m_textTranslationButton, m_scrollingScreenshotButton,
+        m_saveButton,  m_quickSaveButton,
     };
     for (adqt::widgets::AdButton* source : actionSources) {
         if (source != nullptr) {
@@ -5270,6 +5281,12 @@ bool ScreenshotToolPalette::addMainSecondaryButtons(const Options& options, QBox
     }
 
     if (options.showImageConversionTools) {
+        m_latexButton =
+            addToolButton(QT_TRANSLATE_NOOP("ScreenshotToolPalette", "LaTeX Formula Recognition"),
+                          adqt::icons::antd::outlined::Function());
+        m_latexButton->setObjectName(QStringLiteral("screenshotLatexRecognitionButton"));
+        connect(m_latexButton, &adqt::widgets::AdButton::clicked, this,
+                [this]() { activateActionTool(QStringLiteral("latex-recognition")); });
         m_markdownButton =
             addToolButton(QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Convert to Markdown"),
                           custom_outlined_icons::Markdown());
@@ -5277,7 +5294,7 @@ bool ScreenshotToolPalette::addMainSecondaryButtons(const Options& options, QBox
         m_htmlButton = addToolButton(QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Convert to HTML"),
                                      custom_outlined_icons::Html());
         m_htmlButton->setObjectName(QStringLiteral("screenshotConvertToHtmlButton"));
-        for (auto* button : {m_markdownButton, m_htmlButton}) {
+        for (auto* button : {m_markdownButton, m_htmlButton, m_latexButton}) {
             button->setBusyIndicatorPresentation(
                 adqt::widgets::AdButton::BusyIndicatorPresentation::IsolatedSurface);
             addButton(button);
@@ -8662,4 +8679,12 @@ void ScreenshotToolPalette::setAutoFilterAvailable(bool available) {
     if (m_fillRegionsSelect) {
         m_fillRegionsSelect->setEnabled(available);
     }
+}
+
+void ScreenshotToolPalette::setLatexState(bool enabled, bool busy) {
+    if (m_latexButton) {
+        m_latexButton->setEnabled(enabled);
+        m_latexButton->setBusy(busy);
+    }
+    refreshActionToolGroups();
 }

@@ -221,7 +221,8 @@ void toolbarLayoutSectionResetsRemainIndependent() {
         backend.toolbarLayout(storage::ScreenshotToolbarLayoutKind::ActionTools);
     const storage::ScreenshotToolbarLayout expectedDefaultActionLayout{
         {{QStringLiteral("convert-to-html"), QStringLiteral("convert-to-markdown"),
-          QStringLiteral("barcode-recognition"), QStringLiteral("table-recognition")},
+          QStringLiteral("latex-recognition"), QStringLiteral("barcode-recognition"),
+          QStringLiteral("table-recognition")},
          {QStringLiteral("record-screen")},
          {QStringLiteral("pin-to-screen")},
          {QStringLiteral("text-recognition")},
@@ -244,10 +245,10 @@ void toolbarLayoutSectionResetsRemainIndependent() {
     const storage::ScreenshotToolbarLayout actionLayout{
         {{QStringLiteral("quick-save"), QStringLiteral("save-as-file")}},
         {QStringLiteral("convert-to-html"), QStringLiteral("convert-to-markdown"),
-         QStringLiteral("barcode-recognition"), QStringLiteral("table-recognition"),
-         QStringLiteral("record-screen"), QStringLiteral("pin-to-screen"),
-         QStringLiteral("text-recognition"), QStringLiteral("text-translation"),
-         QStringLiteral("scrolling-screenshot")},
+         QStringLiteral("latex-recognition"), QStringLiteral("barcode-recognition"),
+         QStringLiteral("table-recognition"), QStringLiteral("record-screen"),
+         QStringLiteral("pin-to-screen"), QStringLiteral("text-recognition"),
+         QStringLiteral("text-translation"), QStringLiteral("scrolling-screenshot")},
     };
     require(backend.applyToolbarLayout(storage::ScreenshotToolbarLayoutKind::DrawingTools,
                                        drawingLayout) &&
@@ -685,6 +686,11 @@ int main(int argc, char** argv) {
     static_cast<void>(
         applicationStorage.initialize({temporary.filePath(QStringLiteral("bin")),
                                        temporary.filePath(QStringLiteral("data")), 60000}));
+    if (application.arguments().contains(QStringLiteral("--toolbar-layout-only"))) {
+        toolbarLayoutSectionResetsRemainIndependent();
+        applicationStorage.shutdown();
+        return 0;
+    }
     const bool selectorOnly = application.arguments().contains(QStringLiteral("--selector-only"));
     if (application.arguments().contains(
             QStringLiteral("--shortcut-exit-confirmation-settings-only"))) {

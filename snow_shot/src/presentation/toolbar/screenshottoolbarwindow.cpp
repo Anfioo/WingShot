@@ -198,6 +198,10 @@ void ScreenshotToolbarWindow::connectToolCommands(ScreenshotToolPalette& toolPal
         m_commands.setTableTool();
         setActiveToolAndReposition(ScreenshotToolPalette::Tool::Table);
     });
+    connect(&toolPalette, &ScreenshotToolPalette::latexRequested, this, [this]() {
+        m_commands.setLatexTool();
+        setActiveToolAndReposition(ScreenshotToolPalette::Tool::Latex);
+    });
     connect(&toolPalette, &ScreenshotToolPalette::markdownRequested, this, [this]() {
         m_commands.setMarkdownTool();
         setActiveToolAndReposition(ScreenshotToolPalette::Tool::Markdown);

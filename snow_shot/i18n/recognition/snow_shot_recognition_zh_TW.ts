@@ -137,6 +137,18 @@
             <translation>正在轉換為 Markdown</translation>
         </message>
         <message>
+            <source>LaTeX recognition failed</source>
+            <translation>LaTeX 辨識失敗</translation>
+        </message>
+        <message>
+            <source>LaTeX recognition request could not be prepared</source>
+            <translation>無法準備 LaTeX 辨識請求</translation>
+        </message>
+        <message>
+            <source>LaTeX recognition service is unavailable</source>
+            <translation>LaTeX 辨識服務無法使用</translation>
+        </message>
+        <message>
             <source>No barcode was recognized</source>
             <translation>未辨識到條碼</translation>
         </message>
@@ -151,6 +163,10 @@
         <message>
             <source>Preparing text recognition components (%1%)</source>
             <translation>正在準備文字辨識元件（%1%）</translation>
+        </message>
+        <message>
+            <source>Recognizing LaTeX formula</source>
+            <translation>正在辨識 LaTeX 公式</translation>
         </message>
         <message>
             <source>Recognizing barcode</source>
@@ -208,6 +224,10 @@
     <context>
         <name>ScreenshotRecognitionWindow</name>
         <message>
+            <source>Barcode recognition result</source>
+            <translation>條碼辨識結果</translation>
+        </message>
+        <message>
             <source>Copy</source>
             <translation>複製</translation>
         </message>
@@ -218,6 +238,10 @@
         <message>
             <source>Delete</source>
             <translation>刪除</translation>
+        </message>
+        <message>
+            <source>LaTeX formula source</source>
+            <translation>LaTeX 公式原始碼</translation>
         </message>
         <message>
             <source>Paste</source>

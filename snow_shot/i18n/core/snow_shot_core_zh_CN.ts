@@ -524,6 +524,10 @@ so every moment on screen can be expressed clearly and shared easily.</source>
             <translation>图像转换超时，请尝试较小的区域。</translation>
         </message>
         <message>
+            <source>Invalid LaTeX recognition response</source>
+            <translation>无效的 LaTeX 识别响应</translation>
+        </message>
+        <message>
             <source>Invalid model stream response</source>
             <translation>模型流式响应无效</translation>
         </message>
@@ -538,6 +542,22 @@ so every moment on screen can be expressed clearly and shared easily.</source>
         <message>
             <source>Invalid translation stream response</source>
             <translation>无效的翻译流响应</translation>
+        </message>
+        <message>
+            <source>LaTeX recognition failed</source>
+            <translation>LaTeX 识别失败</translation>
+        </message>
+        <message>
+            <source>LaTeX recognition request timed out</source>
+            <translation>LaTeX 识别请求超时</translation>
+        </message>
+        <message>
+            <source>LaTeX recognition response is too large</source>
+            <translation>LaTeX 识别响应过大</translation>
+        </message>
+        <message>
+            <source>LaTeX recognition returned no formula</source>
+            <translation>LaTeX 识别未返回公式</translation>
         </message>
         <message>
             <source>No translation services are available</source>

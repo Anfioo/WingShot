@@ -774,24 +774,25 @@ void screenshotUiSchemaRepairsStructuredValues() {
         storage::ConfigurationSchema::defaultValue(
             QStringLiteral("screenshot_toolbar/action_tools_layout"))
             .toObject();
-    require(defaultActionLayout ==
-                QJsonObject{
-                    {QStringLiteral("positions"),
+    require(
+        defaultActionLayout ==
+            QJsonObject{
+                {QStringLiteral("positions"),
+                 QJsonArray{
                      QJsonArray{
-                         QJsonArray{QStringLiteral("convert-to-html"),
-                                    QStringLiteral("convert-to-markdown"),
-                                    QStringLiteral("barcode-recognition"),
-                                    QStringLiteral("table-recognition")},
-                         QJsonArray{QStringLiteral("record-screen")},
-                         QJsonArray{QStringLiteral("pin-to-screen")},
-                         QJsonArray{QStringLiteral("text-recognition")},
-                         QJsonArray{QStringLiteral("text-translation")},
-                         QJsonArray{QStringLiteral("scrolling-screenshot")},
-                         QJsonArray{QStringLiteral("quick-save"), QStringLiteral("save-as-file")},
-                     }},
-                    {QStringLiteral("hidden"), QJsonArray{}},
-                },
-            "default action toolbar groups conversions with barcode and table recognition");
+                         QStringLiteral("convert-to-html"), QStringLiteral("convert-to-markdown"),
+                         QStringLiteral("latex-recognition"), QStringLiteral("barcode-recognition"),
+                         QStringLiteral("table-recognition")},
+                     QJsonArray{QStringLiteral("record-screen")},
+                     QJsonArray{QStringLiteral("pin-to-screen")},
+                     QJsonArray{QStringLiteral("text-recognition")},
+                     QJsonArray{QStringLiteral("text-translation")},
+                     QJsonArray{QStringLiteral("scrolling-screenshot")},
+                     QJsonArray{QStringLiteral("quick-save"), QStringLiteral("save-as-file")},
+                 }},
+                {QStringLiteral("hidden"), QJsonArray{}},
+            },
+        "default action toolbar groups conversions with barcode and table recognition");
 
     const auto validColor = storage::ConfigurationSchema::normalize(
         QStringLiteral("screenshot_ui/cursor_guide_line_color"), QStringLiteral("#abcdef80"));
@@ -889,10 +890,10 @@ void screenshotUiSchemaRepairsStructuredValues() {
         normalizedActions.valid && normalizedActions.changed && actionLayout.size() == 2 &&
             actionLayout.value(QStringLiteral("positions")).toArray() ==
                 QJsonArray{
-                    QJsonArray{QStringLiteral("quick-save"), QStringLiteral("save-as-file"),
-                               QStringLiteral("table-recognition"),
-                               QStringLiteral("convert-to-markdown"),
-                               QStringLiteral("convert-to-html")},
+                    QJsonArray{
+                        QStringLiteral("quick-save"), QStringLiteral("save-as-file"),
+                        QStringLiteral("table-recognition"), QStringLiteral("convert-to-markdown"),
+                        QStringLiteral("latex-recognition"), QStringLiteral("convert-to-html")},
                     QJsonArray{QStringLiteral("record-screen")},
                     QJsonArray{QStringLiteral("pin-to-screen")},
                     QJsonArray{QStringLiteral("text-translation")},
@@ -909,10 +910,10 @@ void screenshotUiSchemaRepairsStructuredValues() {
         {QStringLiteral("hidden"),
          QJsonArray{QStringLiteral("barcode-recognition"), QStringLiteral("table-recognition"),
                     QStringLiteral("convert-to-markdown"), QStringLiteral("convert-to-html"),
-                    QStringLiteral("record-screen"), QStringLiteral("pin-to-screen"),
-                    QStringLiteral("text-recognition"), QStringLiteral("text-translation"),
-                    QStringLiteral("scrolling-screenshot"), QStringLiteral("quick-save"),
-                    QStringLiteral("save-as-file")}},
+                    QStringLiteral("latex-recognition"), QStringLiteral("record-screen"),
+                    QStringLiteral("pin-to-screen"), QStringLiteral("text-recognition"),
+                    QStringLiteral("text-translation"), QStringLiteral("scrolling-screenshot"),
+                    QStringLiteral("quick-save"), QStringLiteral("save-as-file")}},
     };
     const auto normalizedAllHidden = storage::ConfigurationSchema::normalize(
         QStringLiteral("screenshot_toolbar/action_tools_layout"), allHiddenActionLayout);
@@ -979,8 +980,8 @@ void screenshotUiAdaptersRoundTripTypedValues() {
          {QStringLiteral("table-recognition")}},
         {QStringLiteral("barcode-recognition"), QStringLiteral("pin-to-screen"),
          QStringLiteral("convert-to-markdown"), QStringLiteral("convert-to-html"),
-         QStringLiteral("text-recognition"), QStringLiteral("text-translation"),
-         QStringLiteral("scrolling-screenshot")},
+         QStringLiteral("latex-recognition"), QStringLiteral("text-recognition"),
+         QStringLiteral("text-translation"), QStringLiteral("scrolling-screenshot")},
     };
     require(toolbar.setLayout(storage::ScreenshotToolbarLayoutKind::ActionTools, actionLayout) &&
                 toolbar.layout(storage::ScreenshotToolbarLayoutKind::ActionTools) == actionLayout &&
@@ -995,7 +996,7 @@ void screenshotUiAdaptersRoundTripTypedValues() {
     // This valid layout resembles a historical screenshot default; pinned layouts must not migrate.
     const storage::ScreenshotToolbarLayout pinnedLayout{
         {{QStringLiteral("barcode-recognition"), QStringLiteral("table-recognition")},
-         {QStringLiteral("convert-to-markdown")},
+         {QStringLiteral("convert-to-markdown"), QStringLiteral("latex-recognition")},
          {QStringLiteral("convert-to-html")},
          {QStringLiteral("text-recognition")},
          {QStringLiteral("text-translation")}},

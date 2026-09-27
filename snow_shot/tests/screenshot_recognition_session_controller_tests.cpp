@@ -760,6 +760,8 @@ void translationLanguageSelectsUseCodePrefixGroups() {
 }
 } // namespace
 
+void runLatexRecognitionTests();
+
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
     QTemporaryDir temporary;
@@ -770,6 +772,11 @@ int main(int argc, char** argv) {
                 .initialize({executable, temporary.path(), 60000})
                 .success,
             "initialize recognition test storage");
+    if (application.arguments().contains(QStringLiteral("--latex-only"))) {
+        runLatexRecognitionTests();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--original-image-only"))) {
         originalImageOverridePreservesSessionState();
         snow_shot::storage::ApplicationStorage::instance().shutdown();

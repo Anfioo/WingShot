@@ -6,7 +6,7 @@
 
 class QWidget;
 
-enum class ScreenshotRecognitionFileKind { Html, Markdown, Qr };
+enum class ScreenshotRecognitionFileKind { Html, Markdown, Qr, Latex };
 
 struct ScreenshotRecognitionFileSnapshot {
     ScreenshotRecognitionFileKind kind = ScreenshotRecognitionFileKind::Qr;

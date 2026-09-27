@@ -524,6 +524,10 @@ so every moment on screen can be expressed clearly and shared easily.</translati
             <translation>Image conversion timed out. Try a smaller area.</translation>
         </message>
         <message>
+            <source>Invalid LaTeX recognition response</source>
+            <translation>Invalid LaTeX recognition response</translation>
+        </message>
+        <message>
             <source>Invalid model stream response</source>
             <translation>Invalid model stream response</translation>
         </message>
@@ -538,6 +542,22 @@ so every moment on screen can be expressed clearly and shared easily.</translati
         <message>
             <source>Invalid translation stream response</source>
             <translation>Invalid translation stream response</translation>
+        </message>
+        <message>
+            <source>LaTeX recognition failed</source>
+            <translation>LaTeX recognition failed</translation>
+        </message>
+        <message>
+            <source>LaTeX recognition request timed out</source>
+            <translation>LaTeX recognition request timed out</translation>
+        </message>
+        <message>
+            <source>LaTeX recognition response is too large</source>
+            <translation>LaTeX recognition response is too large</translation>
+        </message>
+        <message>
+            <source>LaTeX recognition returned no formula</source>
+            <translation>LaTeX recognition returned no formula</translation>
         </message>
         <message>
             <source>No translation services are available</source>

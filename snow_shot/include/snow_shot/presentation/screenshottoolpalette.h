@@ -91,6 +91,7 @@ class ScreenshotToolPalette final : public QWidget,
         Markdown,
         Html,
         AutoFilter,
+        Latex,
     };
 
     enum class MoveToolPresentation {
@@ -385,6 +386,7 @@ class ScreenshotToolPalette final : public QWidget,
     void setQrEnabled(bool enabled);
     void setQrBusy(bool busy);
     void setImageConversionEnabled(bool enabled);
+    void setLatexState(bool enabled, bool busy);
     void setImageConversionBusy(bool markdownBusy, bool htmlBusy);
     void setTableEditingState(bool available, bool canUndo, bool canRedo, bool canMerge,
                               bool canSplit, bool canReset);
@@ -454,6 +456,7 @@ class ScreenshotToolPalette final : public QWidget,
     void textTranslationRequested();
     void tableRequested();
     void qrRequested();
+    void latexRequested();
     void markdownRequested();
     void htmlRequested();
     void imageConversionSettingsRequested();
@@ -827,6 +830,7 @@ class ScreenshotToolPalette final : public QWidget,
     adqt::widgets::AdButton* m_tableButton = nullptr;
     adqt::widgets::AdButton* m_tableOptionButton = nullptr;
     adqt::widgets::AdButton* m_qrButton = nullptr;
+    adqt::widgets::AdButton* m_latexButton = nullptr;
     adqt::widgets::AdButton* m_markdownButton = nullptr;
     adqt::widgets::AdButton* m_htmlButton = nullptr;
     adqt::widgets::AdButton* m_conversionSettingsButton = nullptr;

@@ -647,6 +647,10 @@
             <translation>Hidden tools</translation>
         </message>
         <message>
+            <source>LaTeX Formula Recognition</source>
+            <translation>LaTeX Formula Recognition</translation>
+        </message>
+        <message>
             <source>No hidden tools</source>
             <translation>No hidden tools</translation>
         </message>

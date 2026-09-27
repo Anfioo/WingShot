@@ -132,7 +132,7 @@ class ScreenshotRecognitionWindow final : public QWidget {
     void setTextEditorStreaming(bool streaming);
     void hideTextEditor();
 
-    void showQrContents(const QStringList& contents);
+    void showQrContents(const QStringList& contents, bool detectLinks = true);
     void clearQrContents();
     void showImageConversion(SnowShotImageConversionFormat format, const QString& source, bool busy,
                              const QString& error);
@@ -146,6 +146,7 @@ class ScreenshotRecognitionWindow final : public QWidget {
     void imageConversionRetryRequested();
 
   protected:
+    void changeEvent(QEvent* event) override;
     void contextMenuEvent(QContextMenuEvent* event) override;
     void focusOutEvent(QFocusEvent* event) override;
     void mousePressEvent(QMouseEvent* event) override;
@@ -185,6 +186,7 @@ class ScreenshotRecognitionWindow final : public QWidget {
     QTextEdit* m_textEditor = nullptr;
     adqt::widgets::AdSpin* m_textEditorSpin = nullptr;
     QTextBrowser* m_qrBrowser = nullptr;
+    bool m_qrDetectLinks = true;
     ScreenshotImageConversionView* m_conversionView = nullptr;
     ScreenshotFormattedTextLayer* m_formattedTextLayer = nullptr;
     ScreenshotTableEditor* m_tableEditor = nullptr;

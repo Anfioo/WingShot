@@ -647,6 +647,10 @@
             <translation>隱藏的工具</translation>
         </message>
         <message>
+            <source>LaTeX Formula Recognition</source>
+            <translation>LaTeX 公式辨識</translation>
+        </message>
+        <message>
             <source>No hidden tools</source>
             <translation>沒有隱藏的工具</translation>
         </message>

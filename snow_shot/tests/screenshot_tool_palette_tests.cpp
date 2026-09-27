@@ -4042,11 +4042,17 @@ void pinnedActionLayoutUsesGenericStacks() {
     options.showSaveButton = options.saveButtonWithResultActions = true;
     options.actions = ScreenshotToolPalette::CopyAction | ScreenshotToolPalette::ConfirmAction;
     options.actionToolsLayoutKind = kind;
-    const ScreenshotToolbarLayout expected{
+    const ScreenshotToolbarLayout previous{
         {{barcode, table}, {markdown}, {html}, {ocr}, {translation}}, {}};
-    options.actionToolsLayout = expected;
-    require(layout::normalizedLayout(expected, kind) == expected,
-            "presentation normalization must not migrate pinned layouts");
+    const ScreenshotToolbarLayout expected{{{barcode, table},
+                                            {markdown, QStringLiteral("latex-recognition")},
+                                            {html},
+                                            {ocr},
+                                            {translation}},
+                                           {}};
+    options.actionToolsLayout = previous;
+    require(layout::normalizedLayout(previous, kind) == expected,
+            "pinned migration adds LaTeX beside Markdown without rearranging other positions");
     ScreenshotToolPalette palette(options);
     palette.show();
     QCoreApplication::processEvents();
@@ -4982,7 +4988,8 @@ void imageConversionToolsExposeRecognitionActions() {
             group->property("screenshotToolbarPositionItems").toStringList() ==
                 QStringList{
                     QStringLiteral("convert-to-html"), QStringLiteral("convert-to-markdown"),
-                    QStringLiteral("barcode-recognition"), QStringLiteral("table-recognition")} &&
+                    QStringLiteral("latex-recognition"), QStringLiteral("barcode-recognition"),
+                    QStringLiteral("table-recognition")} &&
             group->accessibleName() == QStringLiteral("Table recognition"),
         "the recognition group initially shows the bottom tool even with a remembered QR entry");
     static_cast<void>(palette.sizeHint());
@@ -5011,6 +5018,7 @@ void imageConversionToolsExposeRecognitionActions() {
     }
     require(popoverItems == QStringList{QStringLiteral("table-recognition"),
                                         QStringLiteral("barcode-recognition"),
+                                        QStringLiteral("latex-recognition"),
                                         QStringLiteral("convert-to-markdown"),
                                         QStringLiteral("convert-to-html")},
             "recognition popover follows the configured stack from bottom to top");
@@ -5038,6 +5046,7 @@ void imageConversionToolsExposeRecognitionActions() {
                 !popoverButtonWithTooltip(popover, "Table recognition")->isEnabled(),
             "conversion options remain reachable when the selected barcode and table tools are "
             "unavailable");
+    palette.setLatexState(false, false);
     palette.setImageConversionEnabled(false);
     require(!group->isEnabled(),
             "the recognition group disables only when all options are unavailable");
@@ -5072,6 +5081,30 @@ void imageConversionToolsExposeRecognitionActions() {
                 group->accessibleName() == QStringLiteral("Convert to HTML") &&
                 adqt::icons::describeIcon(group->iconRef()).key.name == QStringLiteral("html"),
             "HTML switches format and retains the conversion sub-toolbar");
+    palette.setLatexState(true, false);
+    reopenConversionOptions();
+    auto* latex = popoverButtonWithTooltip(popover, "LaTeX Formula Recognition");
+    int latexRequests = 0;
+    QObject::connect(&palette, &ScreenshotToolPalette::latexRequested, &palette,
+                     [&]() { ++latexRequests; });
+    require(latex != nullptr, "recognition popup contains LaTeX");
+    latex->click();
+    require(latexRequests == 1 && palette.activeTool() == ScreenshotToolPalette::Tool::Latex,
+            "LaTeX activates through the recognition popup");
+    settings = palette.findChild<adqt::widgets::AdButton*>(
+        QStringLiteral("screenshotImageConversionSettingsButton"));
+    require(!settings || settings->isHidden(), "LaTeX has no conversion settings");
+    auto* original = palette.findChild<adqt::widgets::AdButton*>(
+        QStringLiteral("screenshotShowOriginalImageButton"));
+    require(original && !original->isHidden(), "LaTeX retains QR's original image toggle");
+    palette.setLatexState(true, true);
+    require(group->busy(), "LaTeX progress reaches the group button");
+    palette.setLatexState(true, false);
+    reopenConversionOptions();
+    html->click();
+    settings = palette.findChild<adqt::widgets::AdButton*>(
+        QStringLiteral("screenshotImageConversionSettingsButton"));
+    require(settings != nullptr, "returning to HTML recreates conversion settings");
     const QString snapshots = qEnvironmentVariable("SNOW_SHOT_CONVERSION_SNAPSHOTS");
     if (!snapshots.isEmpty()) {
         require(QDir().mkpath(snapshots), "create conversion toolbar snapshot directory");
@@ -5130,17 +5163,18 @@ void imageConversionToolsExposeRecognitionActions() {
                 palette.activeTool() == ScreenshotToolPalette::Tool::Select,
             "clicking the selected conversion group trigger toggles recognition off");
     group->click();
-    require(htmlRequests == 2 && palette.activeTool() == ScreenshotToolPalette::Tool::Html,
+    require(htmlRequests == 3 && palette.activeTool() == ScreenshotToolPalette::Tool::Html,
             "the group trigger remembers and reactivates the selected conversion format");
     settings = palette.findChild<adqt::widgets::AdButton*>(
         QStringLiteral("screenshotImageConversionSettingsButton"));
     const QPointer<adqt::widgets::AdButton> settingsGuard(settings);
     reopenConversionOptions();
+    palette.setLatexState(false, false);
     palette.setImageConversionEnabled(false);
     require(group->isEnabled() && !markdown->isEnabled() && !html->isEnabled(),
             "barcode and table remain reachable when the selected conversion is unavailable");
     group->click();
-    require(htmlRequests == 2,
+    require(htmlRequests == 3,
             "the enabled group trigger cannot dispatch its disabled conversion entry");
     reopenConversionOptions();
     auto* barcodeOption = popoverButtonWithTooltip(popover, "Barcode recognition");

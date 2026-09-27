@@ -13,6 +13,8 @@
 
 struct ScreenshotRecognitionResults {
     QString key;
+    std::optional<SnowShotLatexResult> latex;
+    bool visibleLatex = false;
     std::optional<ScreenshotOcrRecognitionResult> text;
     std::optional<SnowShotTableResult> table;
     std::optional<ScreenshotQrRecognitionResult> qr;
@@ -21,7 +23,8 @@ struct ScreenshotRecognitionResults {
     std::optional<SnowShotImageConversionFormat> visibleConversion;
 
     [[nodiscard]] bool isEmpty() const {
-        return !text.has_value() && !table.has_value() && !qr.has_value() && conversions.isEmpty();
+        return !latex.has_value() && !text.has_value() && !table.has_value() && !qr.has_value() &&
+               conversions.isEmpty();
     }
 
     [[nodiscard]] bool isValidFor(const QString& targetKey) const {

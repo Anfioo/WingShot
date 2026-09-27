@@ -516,6 +516,10 @@
             <translation>Keyboard Size</translation>
         </message>
         <message>
+            <source>LaTeX Formula Recognition</source>
+            <translation>LaTeX Formula Recognition</translation>
+        </message>
+        <message>
             <source>Line</source>
             <translation>Line</translation>
         </message>

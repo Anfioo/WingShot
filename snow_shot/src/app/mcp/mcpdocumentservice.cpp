@@ -511,34 +511,36 @@ class DocumentWorker final : public QObject {
                 return {failure(request, QStringLiteral("invalid_source")), {}};
             McpDocumentService::Source source;
             {
-            QBuffer buffer(&encoded);
-            if (!buffer.open(QIODevice::ReadOnly))
-                return {failure(request, QStringLiteral("invalid_source")), {}};
-            QImageReader reader(&buffer);
-            reader.setAutoTransform(true);
-            auto size = reader.size();
-            const bool native = !size.isValid();
-            auto nativeFormat = snow::image::Format::unknown;
-            if (native) {
-                const auto format = ScreenshotImageFileService::formatForPath(path);
-                if (format && *format != ScreenshotImageFileFormat::Pdf)
-                    nativeFormat = ScreenshotImageFileService::snowImageFormat(*format);
-                size = snow_shot::image_codec::inspectSize(encoded, nativeFormat);
-            }
-            if (!validSize(size))
-                return {failure(request, QStringLiteral("invalid_source")), {}};
-            // Qt may decode to 64-bit pixels; the native decoder may temporarily retain an
-            // RGBA buffer plus its QImage copy. Reserve their conservative peak before decoding.
-            const qint64 decodedBytes = static_cast<qint64>(size.width()) * size.height() * 8;
-            if (!admission->replace(reservation->bytes, encoded.size() + decodedBytes))
-                return {failure(request, QStringLiteral("resource_limit")), {}};
-            reservation->bytes = encoded.size() + decodedBytes;
-            if (beforeDecode)
-                beforeDecode(request);
-            if (canceled && canceled->load())
-                return {failure(request, QStringLiteral("canceled")), {}};
-            source.image = native ? snow_shot::image_codec::decode(encoded, nativeFormat, nullptr)
-                                  : reader.read();
+                QBuffer buffer(&encoded);
+                if (!buffer.open(QIODevice::ReadOnly))
+                    return {failure(request, QStringLiteral("invalid_source")), {}};
+                QImageReader reader(&buffer);
+                reader.setAutoTransform(true);
+                auto size = reader.size();
+                const bool native = !size.isValid();
+                auto nativeFormat = snow::image::Format::unknown;
+                if (native) {
+                    const auto format = ScreenshotImageFileService::formatForPath(path);
+                    if (format && *format != ScreenshotImageFileFormat::Pdf)
+                        nativeFormat = ScreenshotImageFileService::snowImageFormat(*format);
+                    size = snow_shot::image_codec::inspectSize(encoded, nativeFormat);
+                }
+                if (!validSize(size))
+                    return {failure(request, QStringLiteral("invalid_source")), {}};
+                // Qt may decode to 64-bit pixels; the native decoder may temporarily retain an
+                // RGBA buffer plus its QImage copy. Reserve their conservative peak before
+                // decoding.
+                const qint64 decodedBytes = static_cast<qint64>(size.width()) * size.height() * 8;
+                if (!admission->replace(reservation->bytes, encoded.size() + decodedBytes))
+                    return {failure(request, QStringLiteral("resource_limit")), {}};
+                reservation->bytes = encoded.size() + decodedBytes;
+                if (beforeDecode)
+                    beforeDecode(request);
+                if (canceled && canceled->load())
+                    return {failure(request, QStringLiteral("canceled")), {}};
+                source.image = native
+                                   ? snow_shot::image_codec::decode(encoded, nativeFormat, nullptr)
+                                   : reader.read();
             }
             encoded.clear();
             source.metadata = {{QStringLiteral("kind"), QStringLiteral("file")},
@@ -1615,9 +1617,9 @@ struct McpDocumentService::Impl {
                    ScreenshotMcpServer::Completion done) {
         const QString kind =
             request.params.value(QStringLiteral("kind")).toString(QStringLiteral("text"));
-        const QStringList modes{QStringLiteral("text"), QStringLiteral("table"),
-                                QStringLiteral("qr"), QStringLiteral("markdown"),
-                                QStringLiteral("html")};
+        const QStringList modes{QStringLiteral("text"),     QStringLiteral("table"),
+                                QStringLiteral("qr"),       QStringLiteral("latex"),
+                                QStringLiteral("markdown"), QStringLiteral("html")};
         const qsizetype index = modes.indexOf(kind);
         if (index < 0 || (index == 0 && !ports.recognition) ||
             (index == 2 && !ports.qrRecognition) || (index != 0 && index != 2 && !ports.api)) {

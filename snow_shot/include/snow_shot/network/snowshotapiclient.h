@@ -25,6 +25,17 @@ struct SnowShotTableResult {
     }
 };
 
+struct SnowShotLatexResult {
+    QString latex;
+    QString error;
+    QString code;
+    int httpStatus = 0;
+
+    [[nodiscard]] bool succeeded() const {
+        return !latex.trimmed().isEmpty() && error.isEmpty();
+    }
+};
+
 struct SnowShotChatModel {
     QString id;
     QString name;
@@ -79,6 +90,7 @@ class SnowShotApiClient final : public QObject {
   public:
     using RequestToken = quint64;
     using Completion = std::function<void(SnowShotTableResult)>;
+    using LatexCompletion = std::function<void(SnowShotLatexResult)>;
     using ChatModelsCompletion = std::function<void(SnowShotChatModelsResult)>;
     using TranslationDelta = std::function<void(const QString&)>;
     using TranslationCompletion = std::function<void(SnowShotTranslationResult)>;
@@ -96,6 +108,8 @@ class SnowShotApiClient final : public QObject {
     }
     [[nodiscard]] RequestToken extractTable(const QImage& image, QObject* receiver,
                                             Completion completion);
+    [[nodiscard]] RequestToken extractLatex(const QImage& image, QObject* receiver,
+                                            LatexCompletion completion);
     [[nodiscard]] RequestToken fetchChatModels(const QString& locale, QObject* receiver,
                                                ChatModelsCompletion completion);
     [[nodiscard]] RequestToken streamTranslation(const SnowShotTranslationRequest& request,
@@ -125,8 +139,11 @@ class SnowShotApiClient final : public QObject {
   private:
     friend class SnowShotApiClientTestAccess;
     std::function<QByteArray(const QImage&)> m_tableImagePreparation;
+    int m_latexTimeoutMs = 65000;
     int m_tableTimeoutMs = 35000;
     struct Request;
+    void startLatexUpload(RequestToken token, const QByteArray& webp);
+    void finishLatex(RequestToken token, SnowShotLatexResult result);
     void startTableUpload(RequestToken token, const QByteArray& webp);
     void cleanupRequest(Request* request);
     [[nodiscard]] QNetworkAccessManager* networkAccessManager();

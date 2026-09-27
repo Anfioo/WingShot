@@ -27,12 +27,13 @@ enum class ScreenshotActiveTool {
     Markdown,
     Html,
     AutoFilter,
+    Latex,
 };
 
 [[nodiscard]] inline bool isScreenshotRecognitionTool(ScreenshotActiveTool tool) {
     return tool == ScreenshotActiveTool::Ocr || tool == ScreenshotActiveTool::Table ||
-           tool == ScreenshotActiveTool::Qr || tool == ScreenshotActiveTool::Markdown ||
-           tool == ScreenshotActiveTool::Html;
+           tool == ScreenshotActiveTool::Latex || tool == ScreenshotActiveTool::Qr ||
+           tool == ScreenshotActiveTool::Markdown || tool == ScreenshotActiveTool::Html;
 }
 
 enum class ScreenshotCaptureMode {

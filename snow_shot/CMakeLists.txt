@@ -7809,3 +7809,13 @@ if(SNOW_SHOT_BUILD_TESTS)
     set_tests_properties(snow-shot-qr-controller-tests PROPERTIES
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen" LABELS "unit")
 endif()
+
+if(TARGET snow-shot-recognition-session-controller-tests)
+    add_test(NAME snow-shot-latex-recognition-tests COMMAND snow-shot-recognition-session-controller-tests --latex-only -platform offscreen)
+    set_tests_properties(snow-shot-latex-recognition-tests PROPERTIES LABELS "unit" TIMEOUT 60)
+endif()
+
+if(TARGET snow-shot-pinned-window-tests)
+    add_test(NAME snow-shot-pinned-latex-tests COMMAND snow-shot-pinned-window-tests --latex-only -platform offscreen)
+    set_tests_properties(snow-shot-pinned-latex-tests PROPERTIES LABELS "unit" TIMEOUT 60)
+endif()

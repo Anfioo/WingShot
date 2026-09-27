@@ -77,6 +77,7 @@ enum class Icon {
     ScrollingScreenshot,
     SaveAsFile,
     QuickSave,
+    Latex,
     Markdown,
     Html,
 };
@@ -163,6 +164,9 @@ struct EditorDescriptor {
         {"convert-to-markdown", "ScreenshotToolbarEditorSettingsWidget",
          QT_TRANSLATE_NOOP("ScreenshotToolbarEditorSettingsWidget", "Convert to Markdown"),
          Icon::Markdown},
+        {"latex-recognition", "ScreenshotToolbarEditorSettingsWidget",
+         QT_TRANSLATE_NOOP("ScreenshotToolbarEditorSettingsWidget", "LaTeX Formula Recognition"),
+         Icon::Latex},
         {"convert-to-html", "ScreenshotToolbarEditorSettingsWidget",
          QT_TRANSLATE_NOOP("ScreenshotToolbarEditorSettingsWidget", "Convert to HTML"), Icon::Html},
         {"record-screen", "ScreenshotToolbarEditorSettingsWidget",
@@ -220,6 +224,7 @@ editorDescriptors(storage::ScreenshotToolbarLayoutKind kind) {
             const QString id = QString::fromLatin1(descriptor.id);
             if (id == QStringLiteral("barcode-recognition") ||
                 id == QStringLiteral("table-recognition") ||
+                id == QStringLiteral("latex-recognition") ||
                 id == QStringLiteral("convert-to-markdown") ||
                 id == QStringLiteral("convert-to-html") ||
                 id == QStringLiteral("text-recognition") ||
@@ -258,7 +263,8 @@ editorDescriptors(storage::ScreenshotToolbarLayoutKind kind) {
 [[nodiscard]] inline QVector<QStringList> actionDefaultPositions() {
     return {
         {QStringLiteral("convert-to-html"), QStringLiteral("convert-to-markdown"),
-         QStringLiteral("barcode-recognition"), QStringLiteral("table-recognition")},
+         QStringLiteral("latex-recognition"), QStringLiteral("barcode-recognition"),
+         QStringLiteral("table-recognition")},
         {QStringLiteral("record-screen")},
         {QStringLiteral("pin-to-screen")},
         {QStringLiteral("text-recognition")},
@@ -273,7 +279,8 @@ defaultPositions(storage::ScreenshotToolbarLayoutKind kind) {
     if (kind == storage::ScreenshotToolbarLayoutKind::PinnedActionTools) {
         return {
             {QStringLiteral("convert-to-html"), QStringLiteral("convert-to-markdown"),
-             QStringLiteral("barcode-recognition"), QStringLiteral("table-recognition")},
+             QStringLiteral("latex-recognition"), QStringLiteral("barcode-recognition"),
+             QStringLiteral("table-recognition")},
             {QStringLiteral("text-recognition")},
             {QStringLiteral("text-translation")},
         };
@@ -381,6 +388,39 @@ normalizedLayout(const storage::ScreenshotToolbarLayout& input, const QStringLis
                 result.positions[recognitionPosition].push_back(itemId);
                 positioned.insert(itemId);
             }
+        }
+    }
+    // Upgrade the previous default recognition group, preserving custom arrangements.
+    for (QStringList& position : result.positions) {
+        if (position == QStringList{QStringLiteral("convert-to-html"),
+                                    QStringLiteral("latex-recognition"),
+                                    QStringLiteral("convert-to-markdown"),
+                                    QStringLiteral("barcode-recognition"),
+                                    QStringLiteral("table-recognition")}) {
+            position.swapItemsAt(1, 2);
+        }
+    }
+    if (known.contains(QStringLiteral("latex-recognition")) &&
+        !positioned.contains(QStringLiteral("latex-recognition")) &&
+        !hidden.contains(QStringLiteral("latex-recognition"))) {
+        for (QStringList& position : result.positions) {
+            if (position.contains(QStringLiteral("latex-recognition"))) {
+                positioned.insert(QStringLiteral("latex-recognition"));
+                break;
+            }
+            const auto index = position.indexOf(QStringLiteral("convert-to-markdown"));
+            if (index >= 0) {
+                // Popup buttons reverse the saved stack: insert after Markdown to appear to its
+                // left.
+                position.insert(index + 1, QStringLiteral("latex-recognition"));
+                positioned.insert(QStringLiteral("latex-recognition"));
+                break;
+            }
+        }
+        if (!positioned.contains(QStringLiteral("latex-recognition")) &&
+            hidden.contains(QStringLiteral("convert-to-markdown"))) {
+            result.hidden.push_back(QStringLiteral("latex-recognition"));
+            hidden.insert(QStringLiteral("latex-recognition"));
         }
     }
     for (const QStringList& defaultPosition : defaultLayout) {
@@ -567,6 +607,8 @@ moveItemToHidden(const storage::ScreenshotToolbarLayout& input,
         return custom::ScanQrcode();
     case Icon::TableRecognition:
         return custom::TableRecognition();
+    case Icon::Latex:
+        return adqt::icons::antd::outlined::Function();
     case Icon::Markdown:
         return custom::Markdown();
     case Icon::Html:

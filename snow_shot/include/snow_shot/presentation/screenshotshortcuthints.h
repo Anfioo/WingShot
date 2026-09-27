@@ -442,6 +442,7 @@ screenshotShortcutHintRows(const ScreenshotShortcutHintContext& context) {
     case ScreenshotActiveTool::Ocr:
     case ScreenshotActiveTool::Table:
     case ScreenshotActiveTool::Qr:
+    case ScreenshotActiveTool::Latex:
     case ScreenshotActiveTool::Markdown:
     case ScreenshotActiveTool::Html:
     case ScreenshotActiveTool::Move:

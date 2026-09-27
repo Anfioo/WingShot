@@ -182,8 +182,10 @@ void ScreenshotRecognitionSessionController::setProviders(
                         showStatus(TranslationService::modelConfigurationChangedText(), true);
                     emit recognitionResultsChanged();
                 });
-        connect(tableRecognition, &QObject::destroyed, this,
-                [this]() { handleRecognitionProviderDestroyed(Mode::Table); });
+        connect(tableRecognition, &QObject::destroyed, this, [this]() {
+            handleRecognitionProviderDestroyed(Mode::Table);
+            handleRecognitionProviderDestroyed(Mode::Latex);
+        });
     }
 }
 
@@ -216,6 +218,11 @@ void ScreenshotRecognitionSessionController::seedRecognitionResults(
     }
 
     m_conversion->seed(m_target.key, results.conversions);
+    if (results.latex && results.latex->succeeded()) {
+        m_latexResults.insert(m_target.key, *results.latex);
+        if (m_active && m_mode == Mode::Latex)
+            applyLatexContents(results.latex->latex);
+    }
     bool textInserted = false;
     if (!m_target.hasFormattedText() && results.text.has_value() && results.text->error.isEmpty() &&
         results.text->presentation != nullptr && !m_textCache.contains(m_target.key)) {
@@ -291,6 +298,9 @@ ScreenshotRecognitionSessionController::cachedRecognitionResults() const {
         return results;
     }
     results.key = m_target.key;
+    if (m_latexResults.contains(m_target.key))
+        results.latex = m_latexResults.value(m_target.key);
+    results.visibleLatex = m_active && m_mode == Mode::Latex;
     results.conversions = m_conversion->entries(m_target.key);
     if (const auto text = m_textCache.constFind(m_target.key);
         text != m_textCache.cend() && text->recognitionResult.error.isEmpty() &&
@@ -433,6 +443,13 @@ void ScreenshotRecognitionSessionController::activate(Mode mode) {
         } else {
             startTableRecognition();
         }
+    } else if (mode == Mode::Latex) {
+        setPendingTextRecognitionRendering(false);
+        if (m_latexResults.contains(m_target.key)) {
+            applyLatexContents(m_latexResults.value(m_target.key).latex);
+        } else {
+            startLatexRecognition();
+        }
     } else if (mode == Mode::Qr) {
         setPendingTextRecognitionRendering(false);
         const auto cached = m_qrCache.constFind(m_target.key);
@@ -503,6 +520,7 @@ void ScreenshotRecognitionSessionController::invalidate() {
     m_textCache.clear();
     m_tableCache.clear();
     m_qrCache.clear();
+    m_latexResults.clear();
     m_tableResults.clear();
     m_qrResults.clear();
     m_textCacheKey.clear();
@@ -545,6 +563,7 @@ void ScreenshotRecognitionSessionController::resetTargetState() {
     ++m_textGeneration;
     ++m_tableGeneration;
     ++m_qrGeneration;
+    ++m_latexGeneration;
     ++m_translationGeneration;
     m_textCacheKey.clear();
     m_tableCacheKey.clear();
@@ -560,7 +579,8 @@ bool ScreenshotRecognitionSessionController::active() const {
 }
 
 bool ScreenshotRecognitionSessionController::busy() const {
-    return busy(Mode::Text) || busy(Mode::Table) || busy(Mode::Qr) || m_conversion->busy();
+    return busy(Mode::Latex) || busy(Mode::Text) || busy(Mode::Table) || busy(Mode::Qr) ||
+           m_conversion->busy();
 }
 
 bool ScreenshotRecognitionSessionController::busy(Mode mode) const {
@@ -569,6 +589,8 @@ bool ScreenshotRecognitionSessionController::busy(Mode mode) const {
         return m_textRequestToken != 0 || m_textRenderRequestToken != 0;
     case Mode::Table:
         return m_tableRequestToken != 0;
+    case Mode::Latex:
+        return m_latexRequestToken != 0;
     case Mode::Qr:
         return m_qrRequestToken != 0;
     case Mode::Markdown:
@@ -1208,6 +1230,9 @@ ScreenshotRecognitionSessionController::fileExportSnapshot() const {
     case Mode::Markdown:
         return ScreenshotRecognitionFileSnapshot{ScreenshotRecognitionFileKind::Markdown,
                                                  m_conversion->source()};
+    case Mode::Latex:
+        return ScreenshotRecognitionFileSnapshot{ScreenshotRecognitionFileKind::Latex,
+                                                 m_latexResults.value(m_target.key).latex};
     case Mode::Qr:
         return ScreenshotRecognitionFileSnapshot{ScreenshotRecognitionFileKind::Qr,
                                                  m_qrContents.join(QLatin1Char('\n'))};
@@ -1226,6 +1251,12 @@ std::unique_ptr<QMimeData> ScreenshotRecognitionSessionController::recognitionCl
             return {};
         }
         mimeData->setText(m_conversion->source());
+        return mimeData;
+    }
+    if (m_mode == Mode::Latex) {
+        if (!m_latexResults.contains(m_target.key))
+            return {};
+        mimeData->setText(m_latexResults.value(m_target.key).latex);
         return mimeData;
     }
     if (m_mode == Mode::Qr) {
@@ -1437,6 +1468,37 @@ void ScreenshotRecognitionSessionController::startTableRecognition() {
     }
 }
 
+void ScreenshotRecognitionSessionController::startLatexRecognition() {
+    if (!hasTarget() || m_tableRecognition == nullptr || m_latexRequestToken != 0 ||
+        !screenshotOcrImageWithinPixelLimit(m_target.image.size())) {
+        if (m_tableRecognition == nullptr) {
+            showStatus(tr("LaTeX recognition service is unavailable"), true);
+        }
+        return;
+    }
+    const quint64 generation = ++m_latexGeneration;
+    const QString key = m_target.key;
+    showRecognitionMessage();
+    const auto callbackCompleted = std::make_shared<bool>(false);
+    m_latexRequestToken = m_tableRecognition->extractLatex(
+        m_target.image, this,
+        [this, generation, key, callbackCompleted](SnowShotLatexResult result) {
+            *callbackCompleted = true;
+            if (generation == m_latexGeneration) {
+                m_latexRequestToken = 0;
+            }
+            handleLatexOutput(generation, key, std::move(result));
+        });
+    if (*callbackCompleted) {
+        m_latexRequestToken = 0;
+    }
+    updateBusyState();
+    if (m_latexRequestToken == 0 && !*callbackCompleted) {
+        showStatus(tr("LaTeX recognition request could not be prepared"), true);
+        hideRecognitionMessage();
+    }
+}
+
 void ScreenshotRecognitionSessionController::startQrRecognition() {
     if (!hasTarget() || m_qrRecognition == nullptr || m_qrRequestToken != 0 ||
         !screenshotOcrImageWithinPixelLimit(m_target.image.size())) {
@@ -1548,6 +1610,29 @@ void ScreenshotRecognitionSessionController::handleTableOutput(quint64 generatio
     hideRecognitionMessage();
     updateBusyState();
     emit recognitionResultsChanged();
+}
+
+void ScreenshotRecognitionSessionController::handleLatexOutput(quint64 generation,
+                                                               const QString& key,
+                                                               SnowShotLatexResult result) {
+    if (generation != m_latexGeneration || key != m_target.key)
+        return;
+    if (result.succeeded()) {
+        m_latexResults.insert(key, result);
+        if (m_active && m_mode == Mode::Latex)
+            applyLatexContents(result.latex);
+        emit recognitionResultsChanged();
+    } else if (m_active && m_mode == Mode::Latex) {
+        showStatus(result.error.isEmpty() ? tr("LaTeX recognition failed") : result.error, true);
+    }
+    hideRecognitionMessage();
+    updateBusyState();
+}
+
+void ScreenshotRecognitionSessionController::applyLatexContents(const QString& source) {
+    ensureContent();
+    if (content() != nullptr)
+        content()->showQrContents({source}, false);
 }
 
 void ScreenshotRecognitionSessionController::handleQrOutput(quint64 generation, const QString& key,
@@ -1843,6 +1928,7 @@ void ScreenshotRecognitionSessionController::hideModelDownloadMessage() {
 
 void ScreenshotRecognitionSessionController::showRecognitionMessage() const {
     const QString message = m_mode == Mode::Table      ? tr("Recognizing table")
+                            : m_mode == Mode::Latex    ? tr("Recognizing LaTeX formula")
                             : m_mode == Mode::Qr       ? tr("Recognizing barcode")
                             : m_mode == Mode::Markdown ? tr("Converting to Markdown")
                             : m_mode == Mode::Html     ? tr("Converting to HTML")
@@ -1871,6 +1957,10 @@ void ScreenshotRecognitionSessionController::showStatus(const QString& message, 
 
 void ScreenshotRecognitionSessionController::cancelOutstandingRequests() {
     cancelTranslationRequests();
+    if (m_tableRecognition && m_latexRequestToken)
+        m_tableRecognition->cancel(m_latexRequestToken);
+    m_latexRequestToken = 0;
+    ++m_latexGeneration;
     if (m_recognition != nullptr && m_textRequestToken != 0) {
         m_recognition->cancel(m_textRequestToken);
     }
@@ -1937,6 +2027,11 @@ void ScreenshotRecognitionSessionController::handleRecognitionProviderDestroyed(
             m_translationSettingsModal->reject();
         }
         break;
+    case Mode::Latex:
+        requestWasPending = m_latexRequestToken != 0;
+        m_latexRequestToken = 0;
+        ++m_latexGeneration;
+        break;
     case Mode::Qr:
         requestWasPending = m_qrRequestToken != 0;
         m_qrRequestToken = 0;
@@ -1950,6 +2045,7 @@ void ScreenshotRecognitionSessionController::handleRecognitionProviderDestroyed(
     if (requestWasPending && m_active && !overlayWasPending) {
         const QString message = translationWasPending ? tr("Translation failed")
                                 : mode == Mode::Text  ? tr("Text recognition failed")
+                                : mode == Mode::Latex ? tr("LaTeX recognition failed")
                                 : mode == Mode::Table ? tr("Table recognition failed")
                                                       : tr("Barcode recognition failed");
         showStatus(message, true);
@@ -1966,8 +2062,9 @@ QJsonObject ScreenshotRecognitionSessionController::workflowState() const {
         entry != m_textCache.cend() &&
         (m_translationInImage ? entry->overlayTranslation.status : entry->translationStatus) ==
             TextCacheEntry::TranslationStatus::Streaming;
-    const QStringList modes{QStringLiteral("text"), QStringLiteral("table"), QStringLiteral("qr"),
-                            QStringLiteral("markdown"), QStringLiteral("html")};
+    const QStringList modes{QStringLiteral("text"), QStringLiteral("table"),
+                            QStringLiteral("qr"),   QStringLiteral("markdown"),
+                            QStringLiteral("html"), QStringLiteral("latex")};
     const QString error = conversionModeActive() ? m_conversion->error() : m_workflowError;
     return {{QStringLiteral("active"), m_active},
             {QStringLiteral("kind"), modes.at(static_cast<int>(m_mode))},
@@ -2021,6 +2118,9 @@ QJsonObject ScreenshotRecognitionSessionController::workflowResult() const {
                   {QStringLiteral("cells"), cells},
                   {QStringLiteral("html"), document.toHtml()},
                   {QStringLiteral("text"), document.toPlainText()}};
+    } else if (m_mode == Mode::Latex && m_latexResults.contains(m_target.key)) {
+        result = {{QStringLiteral("kind"), QStringLiteral("latex")},
+                  {QStringLiteral("text"), m_latexResults.value(m_target.key).latex}};
     } else if (m_mode == Mode::Qr && m_qrResults.contains(m_target.key)) {
         result = {{QStringLiteral("kind"), QStringLiteral("qr")},
                   {QStringLiteral("contents"), QJsonArray::fromStringList(m_qrContents)},

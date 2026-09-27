@@ -2228,6 +2228,49 @@ void pinnedSnapshotRetainsRecognitionBeforeDeferredSetup() {
             "invalidating initialized recognition must not revive the original cached result");
 }
 
+void pinnedLatexSurvivesTransferAndRestart() {
+    using Mode = ScreenshotRecognitionSessionController::Mode;
+    IdleOcrRecognition recognition;
+    auto config = cachedOcrPinConfig(&recognition);
+    config.automaticTextRecognition = false;
+    config.recognitionResults.text.reset();
+    const QString source = QStringLiteral("\\frac{a}{b} <x> & y");
+    config.recognitionResults.latex = SnowShotLatexResult{source};
+    config.recognitionResults.visibleLatex = true;
+    QByteArray payload;
+    for (const bool restore : {false, true}) {
+        config.restorePersistentState = restore;
+        if (restore) {
+            config.persistedRecognitionResults = payload;
+            config.recognitionResults = {};
+        }
+        QPointer<ScreenshotPinnedWindow> window(new ScreenshotPinnedWindow);
+        const auto cleanup = qScopeGuard([&]() {
+            if (window) {
+                window->close();
+                static_cast<void>(processUntilDeleted(window, 2000));
+            }
+        });
+        require(window->present(config), "LaTeX pin presents");
+        waitForUi(100);
+        auto* session = window->findChild<ScreenshotRecognitionSessionController*>();
+        require(session && session->active() && session->mode() == Mode::Latex && !session->busy(),
+                "transferred and restored LaTeX activates without an API request");
+        require(session->recognitionClipboardMimeData()->text() == source,
+                "pin copy preserves formula source");
+        const auto snapshot = session->fileExportSnapshot();
+        require(snapshot && snapshot->kind == ScreenshotRecognitionFileKind::Latex &&
+                    snapshot->source == source,
+                "pin save exports LaTeX text");
+        const auto record = window->persistenceSnapshot();
+        require(!record.recognitionResults.isEmpty(), "pin persistence contains LaTeX");
+        if (restore)
+            require(record.recognitionResults == payload, "LaTeX payload round-trips exactly");
+        payload = record.recognitionResults;
+        require(recognition.requests == 0, "LaTeX restore does not invoke OCR");
+    }
+}
+
 void pinnedImageConversionsSurviveRestartWithoutProvider() {
     using Format = SnowShotImageConversionFormat;
     using Mode = ScreenshotRecognitionSessionController::Mode;
@@ -12330,6 +12373,10 @@ int main(int argc, char* argv[]) {
         }
         if (app.arguments().contains(QStringLiteral("--scaling-resize-only"))) {
             pinnedScalingAndAspectLockedResizing(sourceRuntime);
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--latex-only"))) {
+            pinnedLatexSurvivesTransferAndRestart();
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--qr-copy-only"))) {
