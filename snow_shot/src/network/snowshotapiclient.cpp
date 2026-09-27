@@ -34,6 +34,21 @@ constexpr int kTranslationTimeoutMs = 120'000;
 constexpr qsizetype kMaximumResponseBytes = 4 * 1024 * 1024;
 constexpr qsizetype kMaximumChatRequestBytes = 2 * 1024 * 1024;
 
+QImage prepareLatexImage(const QImage& image) {
+    // Match RapidLaTeXOCR's max_width/max_height in SnowShotApi. Extra pixels
+    // would be discarded by the worker after uploading and decoding them.
+    constexpr int maximumWidth = 672;
+    constexpr int maximumHeight = 192;
+    if (image.isNull() || (image.width() <= maximumWidth && image.height() <= maximumHeight)) {
+        return image;
+    }
+    const double ratio = std::max(static_cast<double>(image.width()) / maximumWidth,
+                                  static_cast<double>(image.height()) / maximumHeight);
+    const QSize size(std::max(1, static_cast<int>(image.width() / ratio)),
+                     std::max(1, static_cast<int>(image.height() / ratio)));
+    return image.scaled(size, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+}
+
 QByteArray imageConversionBody(const SnowShotImageConversionRequest& input) {
     const QByteArray webp =
         SnowShotApiClient::encodeWebp(SnowShotApiClient::prepareImage(input.image));
@@ -496,7 +511,7 @@ SnowShotApiClient::RequestToken SnowShotApiClient::extractLatex(const QImage& so
         const qint64 queueMs = accepted.elapsed();
         QElapsedTimer encoding;
         encoding.start();
-        const QByteArray webp = prepare ? prepare(source) : encodeWebp(prepareImage(source));
+        const QByteArray webp = prepare ? prepare(source) : encodeWebp(prepareLatexImage(source));
         const qint64 preparationMs = encoding.elapsed();
         QMetaObject::invokeMethod(
             QCoreApplication::instance(),

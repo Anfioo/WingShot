@@ -1,5 +1,6 @@
 #include "snow_shot/network/snowshotapiclient.h"
 #include "snow_shot/diagnostics/diagnostics.h"
+#include "snowimageqtcodec.h"
 
 #include <QCoreApplication>
 #include <QEventLoop>
@@ -1025,6 +1026,40 @@ void customModelsUseIndependentOpenAiConnections() {
             "deleted custom ID never routes to builtin service");
 }
 
+void latexUploadDimensions() {
+    struct Scenario {
+        QSize source;
+        QSize expected;
+    };
+    const Scenario scenarios[] = {
+        {{1344, 384}, {672, 192}}, {{2000, 100}, {672, 33}}, {{100, 1000}, {19, 192}},
+        {{672, 192}, {672, 192}},  {{160, 48}, {160, 48}},   {{4000, 1}, {672, 1}},
+        {{1, 4000}, {1, 192}},
+    };
+    for (const auto& scenario : scenarios) {
+        QTcpServer server;
+        require(server.listen(QHostAddress::LocalHost), "LaTeX sizing fixture listens");
+        SnowShotApiClient client(QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort()));
+        QImage source(scenario.source, QImage::Format_RGBA8888);
+        source.fill(Qt::white);
+        source.setDevicePixelRatio(2.0);
+        require(client.extractLatex(source, &client, [](SnowShotLatexResult) {}) != 0,
+                "LaTeX sizing request accepted");
+        const QByteArray request = waitForHttpRequest(
+            server, "HTTP/1.1 200 OK\r\nContent-Length: 24\r\nConnection: close\r\n\r\n"
+                    "{\"data\":{\"latex\":\"x^2\"}}");
+        const qsizetype start = request.indexOf("RIFF");
+        const qsizetype end = request.indexOf("\r\n--", start);
+        require(start >= 0 && end > start, "LaTeX multipart contains WebP data");
+        const QImage uploaded = snow_shot::image_codec::decode(
+            request.mid(start, end - start), snow::image::Format::webp, "latex.webp");
+        require(!uploaded.isNull() && uploaded.size() == scenario.expected,
+                "uploaded LaTeX pixels fit the worker limits without upscaling");
+        require(source.size() == scenario.source && source.devicePixelRatio() == 2.0,
+                "LaTeX preparation preserves the original image");
+    }
+}
+
 void latexResponseContracts() {
     struct Scenario {
         int status;
@@ -1113,6 +1148,7 @@ int main(int argc, char** argv) {
             "transport failures without a code should remain concise");
     tablePreparationIsAsynchronousAndLifetimeSafe();
     latexPreparationIsAsynchronousAndLifetimeSafe();
+    latexUploadDimensions();
     latexResponseContracts();
     customModelsUseIndependentOpenAiConnections();
     apiClientUsesModelCatalogAndStreamingChatContracts();
