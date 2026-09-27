@@ -403,7 +403,7 @@ One-time setup:
 
 The workflow validates release metadata, source version, checksums, and the current
 tap version, then produces `snow-shot-<version>-macos-arm64-homebrew.tar.gz`.
-This archive contains the DMG, a normalized checksum sidecar, and the installer
+This archive contains the DMG, a normalized checksum sidecar, and both installer scripts
 from that tag. Archive entry metadata and gzip timestamps are fixed for repeatable
 builds. The generated cask pins the archive's SHA-256 and uses the versioned
 GitHub release URL. Intel assets are not required or advertised by this cask.
@@ -446,3 +446,11 @@ With Homebrew installed and the generated cask in the tap, run
 `brew style --cask mg-chao/tap/snow-shot` and
 `brew audit --cask mg-chao/tap/snow-shot`. Native installation/upgrade qualification
 is described in `docs-macos-build.md` and is required separately from these tests.
+
+The pull-request workflow `snow-shot-homebrew-checks.yml` runs the two focused
+Python suites plus Homebrew style and offline metadata auditing on macOS. Its
+generated fixture is never published or installed. The cask uses Homebrew 7's
+declarative preflight API and the release's `prepare-snow-shot-homebrew.sh` wrapper
+for upgrade rollback. The sandbox explicitly allows the installer state, Keychain,
+and user trust-settings directories; it does not enable network access. Keep
+Homebrew current with `brew update` before installing this cask.

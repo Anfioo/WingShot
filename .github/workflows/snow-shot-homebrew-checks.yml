@@ -7,6 +7,7 @@ on:
       - scripts/snow-shot-homebrew.py
       - scripts/test-snow-shot-homebrew.py
       - scripts/install-snow-shot-macos.sh
+      - scripts/prepare-snow-shot-homebrew.sh
       - scripts/test-macos-installer.py
       - homebrew/**
 
@@ -25,9 +26,13 @@ jobs:
           persist-credentials: false
       - name: Check focused installer and release behavior
         run: |
-          bash -n scripts/install-snow-shot-macos.sh
+          bash -n scripts/install-snow-shot-macos.sh scripts/prepare-snow-shot-homebrew.sh
           python3 scripts/test-macos-installer.py
           python3 scripts/test-snow-shot-homebrew.py
+      - name: Use current Homebrew audit rules
+        run: |
+          brew update
+          brew --version
       - name: Generate an unpublished cask fixture
         run: |
           export CASK_FIXTURE="$(brew --repository)/Library/Taps/mg-chao/homebrew-preflight/Casks/snow-shot.rb"
@@ -45,5 +50,6 @@ jobs:
           PY
       - name: Check Homebrew style and offline metadata
         run: |
+          brew trust --cask mg-chao/preflight/snow-shot
           brew style --cask mg-chao/preflight/snow-shot
           brew audit --cask mg-chao/preflight/snow-shot

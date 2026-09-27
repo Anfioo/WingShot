@@ -3,6 +3,7 @@
 Apple Silicon and macOS 15 or later are required. After the first stable cask is published:
 
 ```sh
+brew update
 brew install --cask mg-chao/tap/snow-shot
 brew upgrade --cask snow-shot
 brew uninstall --cask snow-shot

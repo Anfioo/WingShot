@@ -66,30 +66,20 @@ def cask(version, sha256):
   homepage "https://snowshot.top/"
 
   depends_on arch: :arm64
-  depends_on macos: ">= :sequoia"
-
-  preflight do
-    prepared_app = staged_path.join("Snow Shot.app")
-    if prepared_app.exist? || prepared_app.symlink?
-      # Homebrew restores the previous staged app before replaying preflight on rollback.
-      # Verify that backup without requiring the signing key that may have caused failure.
-      raise "Invalid staged Snow Shot application" if prepared_app.symlink? || !prepared_app.directory?
-
-      system_command "/usr/bin/codesign",
-                     args:         ["--verify", "--deep", "--strict", prepared_app],
-                     must_succeed: true
-    else
-      system_command "/bin/bash",
-                     args:         [staged_path.join("install-snow-shot-macos.sh"),
-                                    "--dmg", staged_path.join("snow-shot-#{{version}}-macos-arm64.dmg"),
-                                    "--prepare-app", prepared_app],
-                     must_succeed: true,
-                     print_stdout: true,
-                     print_stderr: true
-    end
-  end
+  depends_on macos: :sequoia
 
   app "Snow Shot.app"
+
+  preflight_steps do
+    run "/bin/bash",
+        args:           ["{{{{staged_path}}}}/prepare-snow-shot-homebrew.sh",
+                         "{{{{staged_path}}}}/snow-shot-{{{{version}}}}-macos-arm64.dmg",
+                         "{{{{staged_path}}}}/Snow Shot.app"],
+        print_stdout:   true,
+        writable_paths: ["~/Library/Application Support/Snow Shot",
+                         "~/Library/Keychains",
+                         "~/Library/Security"]
+  end
 
   caveats <<~EOS
     Snow Shot reuses a signing identity in your login Keychain. The first install
@@ -112,6 +102,9 @@ def package(release, source, assets, output, current):
     installer = (source / 'scripts/install-snow-shot-macos.sh').read_bytes()
     if b'--prepare-app)' not in installer or b'\r' in installer:
         raise ValueError('The release installer must support --prepare-app and use LF line endings.')
+    preflight = (source / 'scripts/prepare-snow-shot-homebrew.sh').read_bytes()
+    if b'\r' in preflight:
+        raise ValueError('The Homebrew preflight must use LF line endings.')
     dmg = assets / name
     checksum = assets / (name + '.sha256')
     lines = [line.strip() for line in checksum.read_text(encoding='utf-8').splitlines() if line.strip()]
@@ -128,6 +121,7 @@ def package(release, source, assets, output, current):
                 (name, dmg, None),
                 (name + '.sha256', None, (digest(dmg) + '  ' + name + '\n').encode()),
                 ('install-snow-shot-macos.sh', None, installer),
+                ('prepare-snow-shot-homebrew.sh', None, preflight),
             ):
                 info = tarfile.TarInfo(filename)
                 info.mode = 0o644

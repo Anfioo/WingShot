@@ -3,7 +3,6 @@
 import hashlib
 import importlib.util
 import json
-import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -26,6 +25,8 @@ class HomebrewTests(unittest.TestCase):
         (self.source / 'scripts').mkdir(parents=True)
         self.installer = Path(__file__).with_name('install-snow-shot-macos.sh').read_bytes()
         (self.source / 'scripts/install-snow-shot-macos.sh').write_bytes(self.installer)
+        self.preflight = Path(__file__).with_name('prepare-snow-shot-homebrew.sh').read_bytes()
+        (self.source / 'scripts/prepare-snow-shot-homebrew.sh').write_bytes(self.preflight)
         (self.source / 'CMakeLists.txt').write_text('set(SNOW_SHOT_VERSION "1.2.3")\n')
         self.assets = self.root / 'assets'
         self.assets.mkdir()
@@ -50,15 +51,17 @@ class HomebrewTests(unittest.TestCase):
         archive, cask = self.package()
         first = archive.read_bytes()
         with tarfile.open(archive) as tar:
-            self.assertEqual(tar.getnames(), [self.name, self.name + '.sha256', 'install-snow-shot-macos.sh'])
+            self.assertEqual(tar.getnames(), [self.name, self.name + '.sha256', 'install-snow-shot-macos.sh', 'prepare-snow-shot-homebrew.sh'])
             self.assertEqual(tar.extractfile('install-snow-shot-macos.sh').read(), self.installer)
             self.assertEqual(tar.extractfile(self.name).read(), b'fixture dmg')
+            self.assertEqual(tar.extractfile('prepare-snow-shot-homebrew.sh').read(), self.preflight)
             self.assertTrue(all(item.uid == 0 and item.mtime == 0 for item in tar))
         self.assertIn(brew.digest(archive), cask)
         self.assertIn('depends_on arch: :arm64', cask)
-        self.assertIn('depends_on macos: ">= :sequoia"', cask)
+        self.assertIn('depends_on macos: :sequoia', cask)
         self.assertIn('app "Snow Shot.app"', cask)
-        self.assertIn('"--prepare-app", prepared_app', cask)
+        self.assertIn('{{staged_path}}/prepare-snow-shot-homebrew.sh', cask)
+        self.assertIn('preflight_steps do', cask)
         for forbidden in ('/main/', '/latest/', 'sha256 :no_check', 'zap ', 'sudo', '/Applications/'):
             self.assertNotIn(forbidden, cask)
         self.package()
@@ -67,54 +70,38 @@ class HomebrewTests(unittest.TestCase):
             subprocess.run(['ruby', '-c', str(self.output / 'Casks/snow-shot.rb')], check=True, capture_output=True)
 
     @unittest.skipUnless(shutil.which('ruby'), 'Requires Ruby for preflight execution')
-    def test_preflight_handles_fresh_install_and_homebrew_rollback(self):
-        # Exercise the generated Ruby block with a minimal DSL and command recorder.
-        # Homebrew itself is qualified separately on a disposable macOS account.
+    def test_declarative_preflight_preserves_install_time_paths(self):
+        # Evaluate the generated block without expanding tokens prematurely.
         self.package()
         runner = self.root / 'preflight.rb'
         runner.write_text('''require "json"
-require "pathname"
 class Fixture
   def version(value = nil)
     @version = value if value
     @version
   end
   def method_missing(*); end
-  def preflight(&block); @preflight = block; end
-  def staged_path; Pathname(ARGV[1]); end
-  def system_command(executable, **options)
-    raise "fixture command failure" if ENV["FAIL_COMMAND"] == "1"
-    @commands ||= []
-    @commands << [executable, options[:args].map(&:to_s), options[:must_succeed]]
-  end
-  def execute
-    instance_eval(&@preflight)
-    puts JSON.generate(@commands)
+  def preflight_steps(&block); instance_eval(&block); end
+  def run(executable, **options)
+    puts JSON.generate([executable, options])
   end
 end
 def cask(_name, &block)
-  fixture = Fixture.new
-  fixture.instance_eval(&block)
-  fixture.execute
+  Fixture.new.instance_eval(&block)
 end
 load ARGV[0]
 ''')
-        command = ['ruby', str(runner), str(self.output / 'Casks/snow-shot.rb'), str(self.output)]
-        fresh = subprocess.run(command, capture_output=True, text=True, check=True)
-        commands = json.loads(fresh.stdout)
-        self.assertEqual(commands[0][0], '/bin/bash')
-        self.assertEqual(commands[0][1][-2:], ['--prepare-app', str(self.output / 'Snow Shot.app')])
-        self.assertTrue(commands[0][2])
-        app = self.output / 'Snow Shot.app'
-        app.mkdir()
-        restored = subprocess.run(command, capture_output=True, text=True, check=True)
-        self.assertEqual(json.loads(restored.stdout), [
-            ['/usr/bin/codesign', ['--verify', '--deep', '--strict', str(app)], True]])
-        failed = subprocess.run(command, capture_output=True, env=dict(os.environ, FAIL_COMMAND='1'))
-        self.assertNotEqual(failed.returncode, 0)
-        app.rmdir()
-        app.symlink_to(self.root / 'missing')
-        self.assertNotEqual(subprocess.run(command, capture_output=True).returncode, 0)
+        result = subprocess.run(['ruby', str(runner), str(self.output / 'Casks/snow-shot.rb')],
+                                capture_output=True, text=True, check=True)
+        executable, options = json.loads(result.stdout)
+        self.assertEqual(executable, '/bin/bash')
+        self.assertEqual(options['args'], [
+            '{{staged_path}}/prepare-snow-shot-homebrew.sh',
+            '{{staged_path}}/snow-shot-{{version}}-macos-arm64.dmg',
+            '{{staged_path}}/Snow Shot.app'])
+        self.assertEqual(options['writable_paths'], [
+            '~/Library/Application Support/Snow Shot', '~/Library/Keychains', '~/Library/Security'])
+        self.assertNotIn('network_access', options)
 
     def test_stable_release_only(self):
         for change in (dict(draft=True), dict(prerelease=True), dict(tag_name='v1.2.3-beta_snow-shot'),

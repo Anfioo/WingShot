@@ -10,6 +10,7 @@ After the first stable Homebrew release is published, Apple Silicon Macs running
 macOS 15 or later can install with:
 
 ```sh
+brew update
 brew install --cask mg-chao/tap/snow-shot
 brew upgrade --cask snow-shot
 brew uninstall --cask snow-shot

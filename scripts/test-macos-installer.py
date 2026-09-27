@@ -16,6 +16,7 @@ import tempfile
 import unittest
 
 SCRIPT = Path(__file__).resolve().with_name('install-snow-shot-macos.sh')
+PREFLIGHT = SCRIPT.with_name('prepare-snow-shot-homebrew.sh')
 FINGERPRINT = 'A' * 40
 REQUIREMENT = 'identifier "com.snowshot.snow_shot" and anchor = H"' + FINGERPRINT + '"'
 PRIMARY = 'https://snowshot.top/setup/snow-shot_macos-arm64.dmg'
@@ -428,6 +429,31 @@ sign_application''', success=False)
         self.shell('trap cleanup EXIT; prepare_state', success=False)
         self.assertFalse((self.root / 'outside').exists())
         self.assertFalse((self.state / 'lock').exists())
+
+    def test_homebrew_backup_does_not_require_signing_key(self):
+        self.previous()
+        code = 'source ' + shlex.quote(str(PREFLIGHT)) + '; homebrew_prepare_application "$FIXTURE/package.dmg" "$destination"'
+        self.shell(code, MISSING_IDENTITY='1')
+        self.assertEqual(self.calls(), [['codesign', '--verify', '--deep', '--strict', str(self.destination)]])
+        (self.destination / 'reject-signature').touch()
+        self.shell(code, success=False)
+        self.assertTrue((self.destination / 'old-marker').exists())
+
+    def test_homebrew_backup_rejects_symlink(self):
+        self.destination.symlink_to(self.bundle)
+        code = 'source ' + shlex.quote(str(PREFLIGHT)) + '; homebrew_prepare_application "$FIXTURE/package.dmg" "$destination"'
+        self.shell(code, success=False)
+        self.assertFalse(self.calls())
+
+    def test_homebrew_fresh_preflight_forwards_local_paths(self):
+        wrapper = self.root / PREFLIGHT.name
+        shutil.copyfile(PREFLIGHT, wrapper)
+        (self.root / SCRIPT.name).write_text("#!/bin/bash\nprintf '%s\\n' \"$@\"\n")
+        result = subprocess.run(['/bin/bash', str(wrapper), str(self.dmg), str(self.destination)],
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.splitlines(), ['--dmg', str(self.dmg), '--prepare-app', str(self.destination)])
+        self.assertFalse(self.destination.exists())
 
     def prepare_code(self):
         return '''trap cleanup EXIT
