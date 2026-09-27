@@ -564,6 +564,52 @@ void deleteKeyRemovesEditedText() {
     }
 }
 
+void commandResolverPreservesTextAndEngineCommands() {
+    SnowCanvasRuntime runtime;
+    SnowCanvasWidget canvas(runtime);
+    canvas.resize(600, 360);
+    canvas.show();
+    QApplication::processEvents();
+    createArrow(canvas, runtime);
+    canvas.setCommandKeyResolver([](const QKeyEvent& event) {
+        switch (event.nativeVirtualKey()) {
+        case 0:
+            return Qt::Key_A;
+        case 6:
+            return Qt::Key_Z;
+        case 36:
+            return Qt::Key_Return;
+        default:
+            return Qt::Key_unknown;
+        }
+    });
+    const auto send = [&](int logical, quint32 physical, Qt::KeyboardModifiers modifiers,
+                          const QString& text = QString()) {
+        QKeyEvent event(QEvent::KeyPress, logical, modifiers, 1, physical, 0, text);
+        QApplication::sendEvent(&canvas, &event);
+    };
+    openLabel(canvas);
+    send(Qt::Key_Q, 0, Qt::NoModifier, QStringLiteral("layout text"));
+    send(Qt::Key_Q, 0, Qt::ControlModifier); // physical Select All
+    send(Qt::Key_Q, 0, Qt::NoModifier, QStringLiteral("replacement"));
+    QInputMethodEvent ime;
+    ime.setCommitString(QString::fromUtf8("连接"));
+    QApplication::sendEvent(&canvas, &ime);
+    send(Qt::Key_unknown, 36, Qt::ControlModifier);
+    require(payload(runtime, QStringLiteral("Text")).value(QStringLiteral("text")).toString() ==
+                QString::fromUtf8("replacement连接"),
+            "resolved commands must preserve layout text and IME commits");
+    send(Qt::Key_Z, 0, Qt::ControlModifier, QStringLiteral("z"));
+    require(records(runtime, QStringLiteral("Text")).size() == 1,
+            "logical Z at another physical position must not undo in the engine");
+    send(Qt::Key_Q, 6, Qt::ControlModifier, QStringLiteral("q"));
+    require(records(runtime, QStringLiteral("Text")).isEmpty(),
+            "engine undo must use the resolved command key, not event text");
+    send(Qt::Key_Q, 6, Qt::ControlModifier | Qt::ShiftModifier, QStringLiteral("Q"));
+    require(records(runtime, QStringLiteral("Text")).size() == 1,
+            "engine redo must use the same physical command identity");
+}
+
 void widgetLifecycle() {
     SnowCanvasRuntime runtime;
     SnowCanvasWidget canvas(runtime);
@@ -991,6 +1037,7 @@ int main(int argc, char** argv) {
         return 0;
     indentedTriangleStyleRoundTrips();
     deleteKeyRemovesEditedText();
+    commandResolverPreservesTextAndEngineCommands();
     widgetLifecycle();
     arrowLabelWheelChangesFontSizeWhileSelecting();
     wrappingAndFinalPointerPosition();

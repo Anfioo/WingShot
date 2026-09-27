@@ -1,3 +1,4 @@
+#include "snow_shot/shortcuts/shortcutbinding.h"
 #include "snow_shot/presentation/pinnedgeometry.h"
 #include "snow_shot/presentation/screenshotwheelinput.h"
 #include "snow_shot/presentation/screenshotpinnedwindow.h"
@@ -308,14 +309,14 @@ bool ScreenshotPinnedWindow::handleControlledPointer(QObject* watched, QEvent* e
     if (!m_platform->usesControlledInteraction() || !event)
         return false;
     if (m_controlledEscapeRelease && event->type() == QEvent::KeyRelease &&
-        static_cast<QKeyEvent*>(event)->key() == Qt::Key_Escape) {
+        snow_shot::shortcuts::commandKey(*static_cast<QKeyEvent*>(event)) == Qt::Key_Escape) {
         m_controlledEscapeRelease = false;
         event->accept();
         return true;
     }
     if (m_interactionPlacement) {
         if (event->type() == QEvent::KeyPress &&
-            static_cast<QKeyEvent*>(event)->key() == Qt::Key_Escape) {
+            snow_shot::shortcuts::commandKey(*static_cast<QKeyEvent*>(event)) == Qt::Key_Escape) {
             m_controlledEscapeRelease = true;
             endControlledInteraction(true);
             event->accept();

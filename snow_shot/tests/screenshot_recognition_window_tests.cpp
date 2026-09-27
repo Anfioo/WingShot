@@ -1,3 +1,4 @@
+#include "physical_key_test_support.h"
 #include "snow_shot/presentation/screenshotgeometry.h"
 #include "snow_shot/presentation/screenshotocrpresentation.h"
 #include "snow_shot/presentation/screenshotrecognitionwindow.h"
@@ -27,6 +28,7 @@
 #include <QGraphicsView>
 #include <QImage>
 #include <QKeyEvent>
+#include <QLineEdit>
 #include <QMouseEvent>
 #include <QMimeData>
 #include <QPlainTextEdit>
@@ -43,6 +45,7 @@
 #include <QTimer>
 #include <QThread>
 #include <QUrl>
+#include <QVBoxLayout>
 #include <QWindow>
 
 #include <cstdlib>
@@ -588,7 +591,7 @@ void recognitionWindowUsesOrdinaryQtWindowBehavior() {
     require(window.windowHandle() != nullptr &&
                 window.windowHandle()->transientParent() == overlayHost.windowHandle(),
             "the screenshot overlay should own recognition stacking through Qt");
-    QKeyEvent sessionShortcutEvent(QEvent::KeyPress, Qt::Key_P, Qt::NoModifier);
+    PhysicalKeyEvent sessionShortcutEvent(QEvent::KeyPress, Qt::Key_P, Qt::NoModifier);
     QApplication::sendEvent(&window, &sessionShortcutEvent);
     require(sessionShortcutCalls == 1 && sessionShortcutEvent.isAccepted(),
             "a focused recognition surface should dispatch through its shared screenshot manager");
@@ -653,11 +656,11 @@ void recognitionWindowUsesOrdinaryQtWindowBehavior() {
     require(!presentation->textSelectionActive() && !presentation->selectedText().isEmpty(),
             "the recognition window should update and finish OCR selection locally");
 
-    QKeyEvent selectAll(QEvent::KeyPress, Qt::Key_A, Qt::ControlModifier);
+    PhysicalKeyEvent selectAll(QEvent::KeyPress, Qt::Key_A, Qt::ControlModifier);
     QApplication::sendEvent(&window, &selectAll);
     require(presentation->selectedText() == recognizedLine.text,
             "Select All should be handled locally by the recognition window");
-    QKeyEvent copy(QEvent::KeyPress, Qt::Key_C, Qt::ControlModifier);
+    PhysicalKeyEvent copy(QEvent::KeyPress, Qt::Key_C, Qt::ControlModifier);
     QApplication::sendEvent(&window, &copy);
     require(lowerPriorityCopyCalls == 0 && copy.isAccepted() &&
                 QGuiApplication::clipboard()->text() == recognizedLine.text &&
@@ -694,7 +697,7 @@ void recognitionWindowUsesOrdinaryQtWindowBehavior() {
             "clicking a blank OCR area should clear the existing text selection");
 
     // Selection is custom presentation state, so losing focus must explicitly clear it.
-    QKeyEvent selectAllAgain(QEvent::KeyPress, Qt::Key_A, Qt::ControlModifier);
+    PhysicalKeyEvent selectAllAgain(QEvent::KeyPress, Qt::Key_A, Qt::ControlModifier);
     QApplication::sendEvent(&window, &selectAllAgain);
     require(presentation->hasTextSelection(),
             "Select All should establish a selection before the focus-loss check");
@@ -727,7 +730,7 @@ void recognitionWindowUsesOrdinaryQtWindowBehavior() {
     QTextCursor noTextSelection = textEditor->textCursor();
     noTextSelection.clearSelection();
     textEditor->setTextCursor(noTextSelection);
-    QKeyEvent copyWholeDraft(QEvent::KeyPress, Qt::Key_C, Qt::ControlModifier);
+    PhysicalKeyEvent copyWholeDraft(QEvent::KeyPress, Qt::Key_C, Qt::ControlModifier);
     QApplication::sendEvent(textEditor, &copyWholeDraft);
     require(copyWholeDraft.isAccepted() &&
                 QGuiApplication::clipboard()->text() ==
@@ -827,12 +830,13 @@ void recognitionWindowUsesOrdinaryQtWindowBehavior() {
             "opening an inline editor should preserve table and viewport geometry");
     require(cellEditor->document()->documentMargin() == 0.0,
             "inline table editors should remove the document's implicit text margin");
-    QKeyEvent escape(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
+    PhysicalKeyEvent escape(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
     QApplication::sendEvent(cellEditor, &escape);
     processEditorClose();
-    QKeyEvent escapeRepeat(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier, QString(), true);
+    PhysicalKeyEvent escapeRepeat(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier, QString(),
+                                  true);
     QApplication::sendEvent(editor, &escapeRepeat);
-    QKeyEvent escapeRelease(QEvent::KeyRelease, Qt::Key_Escape, Qt::NoModifier);
+    PhysicalKeyEvent escapeRelease(QEvent::KeyRelease, Qt::Key_Escape, Qt::NoModifier);
     QApplication::sendEvent(editor, &escapeRelease);
     require(!editor->isEditingCell() && recognitionCancelCalls == 0,
             "Escape should cancel an active cell edit before reaching screenshot cancellation");
@@ -841,7 +845,7 @@ void recognitionWindowUsesOrdinaryQtWindowBehavior() {
     cellEditor = editor->findChild<QPlainTextEdit*>(QStringLiteral("snowShotTableCellEditor"));
     require(cellEditor != nullptr, "inline editor should reopen after cancel");
     cellEditor->setPlainText(QString(240, QLatin1Char('L')));
-    QKeyEvent enter(QEvent::KeyPress, Qt::Key_Return, Qt::NoModifier);
+    PhysicalKeyEvent enter(QEvent::KeyPress, Qt::Key_Return, Qt::NoModifier);
     QApplication::sendEvent(cellEditor, &enter);
     processEditorClose();
     require(session->document.cellText(0, 0) == QString(240, QLatin1Char('L')) &&
@@ -859,7 +863,7 @@ void recognitionWindowUsesOrdinaryQtWindowBehavior() {
     clickCell(*editor, 0, 0);
     cellEditor = editor->findChild<QPlainTextEdit*>(QStringLiteral("snowShotTableCellEditor"));
     require(cellEditor != nullptr, "inline editor should open for horizontal navigation");
-    QKeyEvent tab(QEvent::KeyPress, Qt::Key_Tab, Qt::NoModifier);
+    PhysicalKeyEvent tab(QEvent::KeyPress, Qt::Key_Tab, Qt::NoModifier);
     QApplication::sendEvent(cellEditor, &tab);
     processEditorClose();
     require(editor->currentIndex().row() == 0 && editor->currentIndex().column() == 1 &&
@@ -1276,12 +1280,12 @@ void qrContentsUseStrictRichTextLinksAndPreserveOrder() {
                 presentedSelection.selectedText() == contents.join(QChar(0x2029)),
             "QR results should present every payload selected for a plain copy");
 
-    QKeyEvent sessionShortcutEvent(QEvent::KeyPress, Qt::Key_P, Qt::NoModifier);
+    PhysicalKeyEvent sessionShortcutEvent(QEvent::KeyPress, Qt::Key_P, Qt::NoModifier);
     QApplication::sendEvent(browser, &sessionShortcutEvent);
     require(sessionShortcutEvent.isAccepted() && sessionShortcutCalls == 1,
             "screenshot-session shortcuts should dispatch while QR results have focus");
 
-    QKeyEvent copyAll(QEvent::KeyPress, Qt::Key_C, Qt::ControlModifier);
+    PhysicalKeyEvent copyAll(QEvent::KeyPress, Qt::Key_C, Qt::ControlModifier);
     QApplication::sendEvent(browser, &copyAll);
     require(copyAll.isAccepted() && lowerPriorityCopyCalls == 0 &&
                 QGuiApplication::clipboard()->text() == contents.join(QLatin1Char('\n')) &&
@@ -1318,17 +1322,17 @@ void qrContentsUseStrictRichTextLinksAndPreserveOrder() {
 
     window.showQrContents({});
     QApplication::clipboard()->setText(QStringLiteral("stale clipboard text"));
-    QKeyEvent copyEmpty(QEvent::KeyPress, Qt::Key_C, Qt::ControlModifier);
+    PhysicalKeyEvent copyEmpty(QEvent::KeyPress, Qt::Key_C, Qt::ControlModifier);
     QApplication::sendEvent(browser, &copyEmpty);
     require(copyEmpty.isAccepted() && QApplication::clipboard()->text().isEmpty() &&
                 recognitionCopyCalls == 2,
             "Ctrl+C should directly copy empty text for a completed QR result with no payload");
 
-    QKeyEvent escape(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
+    PhysicalKeyEvent escape(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
     QApplication::sendEvent(browser, &escape);
     require(escape.isAccepted() && recognitionCancelCalls == 0,
             "Escape press must leave the recognition window open");
-    QKeyEvent escapeRelease(QEvent::KeyRelease, Qt::Key_Escape, Qt::NoModifier);
+    PhysicalKeyEvent escapeRelease(QEvent::KeyRelease, Qt::Key_Escape, Qt::NoModifier);
     QApplication::sendEvent(browser, &escapeRelease);
     require(escapeRelease.isAccepted() && recognitionCancelCalls == 1,
             "Escape should remain available while QR results have focus");
@@ -1362,7 +1366,7 @@ void emptyOcrResultCopiesEmptyText() {
     QApplication::processEvents();
     QApplication::clipboard()->setText(QStringLiteral("stale clipboard text"));
 
-    QKeyEvent copyEmpty(QEvent::KeyPress, Qt::Key_C, Qt::ControlModifier);
+    PhysicalKeyEvent copyEmpty(QEvent::KeyPress, Qt::Key_C, Qt::ControlModifier);
     QApplication::sendEvent(&window, &copyEmpty);
     require(copyEmpty.isAccepted() && QApplication::clipboard()->text().isEmpty() &&
                 recognitionCopyCalls == 1,
@@ -1932,7 +1936,7 @@ void recognitionContextMenusUseAntDesignAndCopyLocally() {
                        });
     require(cellEditor->textCursor().selectedText() == QStringLiteral(" cell"),
             "inline table context Select All should select the cell text");
-    QKeyEvent escape(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
+    PhysicalKeyEvent escape(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
     QApplication::sendEvent(cellEditor, &escape);
     processEditorClose();
     table->selectionModel()->clearSelection();
@@ -2041,9 +2045,98 @@ void tableClipboardPreservesLargeValuesForWholeTableAndSelection() {
 }
 } // namespace
 
+void tableTabNavigationPreservesDirectionAndFocus() {
+    QWidget window;
+    QVBoxLayout layout(&window);
+    QLineEdit before;
+    ScreenshotTableEditor editor;
+    QLineEdit after;
+    layout.addWidget(&before);
+    layout.addWidget(&editor);
+    layout.addWidget(&after);
+    auto session = std::make_shared<ScreenshotTableEditingSession>(
+        ScreenshotTableDocument::fromPlainText(QStringLiteral("a\tb\tc")));
+    editor.setSession(session);
+    window.show();
+    window.activateWindow();
+    QApplication::processEvents();
+    for (bool reverse : {false, true}) {
+        const auto modifiers = reverse ? Qt::ShiftModifier : Qt::NoModifier;
+        const auto key = reverse ? Qt::Key_Backtab : Qt::Key_Tab;
+        editor.setCurrentIndex(editor.model()->index(0, 1));
+        editor.setFocus();
+        PhysicalKeyEvent navigation(QEvent::KeyPress, key, modifiers);
+        QApplication::sendEvent(&editor, &navigation);
+        require(editor.currentIndex().column() == (reverse ? 0 : 2) && editor.hasFocus(),
+                "Tab and Shift+Tab must navigate cells without moving focus to sibling widgets");
+#ifdef Q_OS_MACOS
+        // A native Tab with an unknown legend reaches keyPressEvent directly,
+        // without QWidget's focus traversal and its synthesized navigation event.
+        editor.setCurrentIndex(editor.model()->index(0, 1));
+        QKeyEvent physicalTab(QEvent::KeyPress, Qt::Key_unknown, modifiers, 1, 48, 0);
+        QApplication::sendEvent(&editor, &physicalTab);
+        require(editor.currentIndex().column() == (reverse ? 0 : 2) && editor.hasFocus(),
+                "physical Tab must preserve navigation direction independently of its legend");
+#endif
+    }
+    editor.setTabKeyNavigation(false);
+    for (bool reverse : {false, true}) {
+        editor.setCurrentIndex(editor.model()->index(0, 1));
+        editor.setFocus();
+        PhysicalKeyEvent navigation(QEvent::KeyPress, reverse ? Qt::Key_Backtab : Qt::Key_Tab,
+                                    reverse ? Qt::ShiftModifier : Qt::NoModifier);
+        QApplication::sendEvent(&editor, &navigation);
+        require(editor.currentIndex().column() == 1 && (reverse ? before : after).hasFocus(),
+                "disabling cell Tab navigation must preserve normal forward and reverse focus "
+                "traversal");
+    }
+}
+
+void tableCommandsUsePhysicalKeys() {
+#ifdef Q_OS_MACOS
+    auto session = std::make_shared<ScreenshotTableEditingSession>(
+        ScreenshotTableDocument::fromPlainText(QStringLiteral("original")));
+    ScreenshotTableEditor editor;
+    editor.setSession(session);
+    editor.show();
+    const auto send = [&](int logical, quint32 physical, Qt::KeyboardModifiers modifiers) {
+        QKeyEvent event(QEvent::KeyPress, logical, modifiers, 1, physical, 0);
+        QApplication::sendEvent(&editor, &event);
+    };
+    send(Qt::Key_A, 3, Qt::ControlModifier);
+    require(!editor.commandState().hasSelection,
+            "the base table view must not select all from a logical A at physical F");
+    send(Qt::Key_Q, 0, Qt::ControlModifier);
+    require(editor.commandState().hasSelection, "table Select All must use physical A");
+    editor.setCurrentIndex(editor.model()->index(0, 0));
+    QApplication::clipboard()->setText(QStringLiteral("replacement"));
+    send(Qt::Key_Q, 9, Qt::ControlModifier);
+    require(session->document.cellText(0, 0) == QStringLiteral("replacement"),
+            "table Paste must use physical V");
+    send(Qt::Key_Q, 6, Qt::ControlModifier);
+    require(session->document.cellText(0, 0) == QStringLiteral("original"),
+            "table Undo must use physical Z");
+    send(Qt::Key_Q, 6, Qt::ControlModifier | Qt::ShiftModifier);
+    require(session->document.cellText(0, 0) == QStringLiteral("replacement"),
+            "table Redo must use physical Shift+Z");
+    QApplication::clipboard()->setText(QStringLiteral("sentinel"));
+    send(Qt::Key_Q, 8, Qt::ControlModifier);
+    require(QApplication::clipboard()->text() == QStringLiteral("replacement"),
+            "table Copy must use physical C");
+    send(Qt::Key_unknown, 51, Qt::NoModifier);
+    require(session->document.cellText(0, 0).isEmpty(),
+            "table Delete must accept native input with an unknown logical key");
+#endif
+}
+
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
     QApplication::setQuitOnLastWindowClosed(false);
+    tableTabNavigationPreservesDirectionAndFocus();
+    tableCommandsUsePhysicalKeys();
+    if (application.arguments().contains(QStringLiteral("--physical-commands-only"))) {
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--original-image-only"))) {
         originalImageOverrideHidesEveryContentPage();
         embeddedRecognitionWindowPreservesParentSurfaceWithVisibleTextLayer();

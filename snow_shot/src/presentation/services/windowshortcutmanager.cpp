@@ -115,12 +115,13 @@ struct WindowShortcutManager::Impl {
     // dispatch them as the fresh presses they physically are.
     [[nodiscard]] bool isStaleAutoRepeat(const QKeyEvent& event) const {
         const quint64 token = shortcuts::eventKeyToken(event);
-        return event.isAutoRepeat() && event.key() != Qt::Key_unknown &&
+        return event.isAutoRepeat() &&
+               shortcuts::eventKeyToken(event) != static_cast<quint64>(Qt::Key_unknown) &&
                !m_heldKeys.contains(token) && m_unreleasedKeys.contains(token);
     }
 
     void noteKeyPress(const QKeyEvent& event) {
-        if (event.key() == Qt::Key_unknown) {
+        if (shortcuts::eventKeyToken(event) == static_cast<quint64>(Qt::Key_unknown)) {
             return;
         }
         const quint64 token = shortcuts::eventKeyToken(event);
@@ -132,7 +133,8 @@ struct WindowShortcutManager::Impl {
     void noteKeyRelease(const QKeyEvent& event) {
         // Auto-repeat sequences include synthetic repeat releases that must not
         // end the held state; only a real release clears the records.
-        if (!event.isAutoRepeat() && event.key() != Qt::Key_unknown) {
+        if (!event.isAutoRepeat() &&
+            shortcuts::eventKeyToken(event) != static_cast<quint64>(Qt::Key_unknown)) {
             const quint64 token = shortcuts::eventKeyToken(event);
             ++m_keyStateRevisions[token];
             m_heldKeys.remove(token);

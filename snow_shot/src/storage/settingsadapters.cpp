@@ -139,12 +139,24 @@ QString pinToScreenShortcutKey(const QString& actionId) {
                : QString();
 }
 
+bool shortcutUsesKey(const shortcuts::ShortcutBinding& shortcut, Qt::Key key) {
+#ifdef Q_OS_MACOS
+    const auto physical = shortcuts::macVirtualKeyForBinding(shortcut);
+    const auto expected = shortcuts::macVirtualKeyForBinding(
+        shortcuts::bindingFromPortableText(QKeySequence(key).toString(QKeySequence::PortableText)));
+    return physical && expected && physical == expected;
+#else
+    return shortcuts::commandKey(shortcut) == key;
+#endif
+}
+
 bool screenshotHistoryShortcutAllowed(const QString& actionId,
                                       const shortcuts::ShortcutBinding& shortcut) {
     const bool historyAction = actionId == QStringLiteral("previous_screenshot_history") ||
                                actionId == QStringLiteral("next_screenshot_history");
-    return historyAction && (shortcut.portableText == QStringLiteral(",") ||
-                             shortcut.portableText == QStringLiteral("."));
+    const auto identity = shortcuts::effectiveIdentity(shortcut);
+    return historyAction && identity.modifiers == Qt::NoModifier &&
+           (shortcutUsesKey(shortcut, Qt::Key_Comma) || shortcutUsesKey(shortcut, Qt::Key_Period));
 }
 
 bool isReservedLocalShortcut(const shortcuts::ShortcutBinding& shortcut) {
@@ -154,21 +166,20 @@ bool isReservedLocalShortcut(const shortcuts::ShortcutBinding& shortcut) {
         return false;
     }
 
-    const QKeyCombination combination = sequence[0];
-    const Qt::Key key = combination.key();
-    const Qt::KeyboardModifiers modifiers = combination.keyboardModifiers();
-    if (key == Qt::Key_Escape || key == Qt::Key_Backspace || key == Qt::Key_Delete ||
-        key == Qt::Key_F4) {
+    const Qt::KeyboardModifiers modifiers = shortcuts::effectiveIdentity(shortcut).modifiers;
+    if (shortcutUsesKey(shortcut, Qt::Key_Escape) || shortcutUsesKey(shortcut, Qt::Key_Backspace) ||
+        shortcutUsesKey(shortcut, Qt::Key_Delete) || shortcutUsesKey(shortcut, Qt::Key_F4)) {
         return true;
     }
-    if ((key == Qt::Key_Comma || key == Qt::Key_Period) && modifiers == Qt::NoModifier) {
+    if ((shortcutUsesKey(shortcut, Qt::Key_Comma) || shortcutUsesKey(shortcut, Qt::Key_Period)) &&
+        modifiers == Qt::NoModifier) {
         return true;
     }
-    if (key == Qt::Key_C && modifiers.testFlag(Qt::ControlModifier) &&
+    if (shortcutUsesKey(shortcut, Qt::Key_C) && modifiers.testFlag(Qt::ControlModifier) &&
         !modifiers.testFlag(Qt::AltModifier) && !modifiers.testFlag(Qt::MetaModifier)) {
         return true;
     }
-    return key == Qt::Key_Z && modifiers.testFlag(Qt::ControlModifier);
+    return shortcutUsesKey(shortcut, Qt::Key_Z) && modifiers.testFlag(Qt::ControlModifier);
 }
 
 QVector<QStringList> stringListArray(const QJsonValue& value) {
@@ -879,18 +890,16 @@ bool ScreenshotShortcutSettings::isReservedShortcutAllowed(
         return false;
     }
 
-    const QKeyCombination combination = sequence[0];
-    const Qt::Key key = combination.key();
-    const Qt::KeyboardModifiers modifiers = combination.keyboardModifiers();
+    const Qt::KeyboardModifiers modifiers = shortcuts::effectiveIdentity(shortcut).modifiers;
     if (actionId == QStringLiteral("cancel_screenshot")) {
-        return key == Qt::Key_Escape;
+        return shortcutUsesKey(shortcut, Qt::Key_Escape);
     }
     if (actionId == QStringLiteral("copy_to_clipboard")) {
-        return key == Qt::Key_C && modifiers.testFlag(Qt::ControlModifier) &&
+        return shortcutUsesKey(shortcut, Qt::Key_C) && modifiers.testFlag(Qt::ControlModifier) &&
                !modifiers.testFlag(Qt::AltModifier) && !modifiers.testFlag(Qt::MetaModifier);
     }
     if (actionId == QStringLiteral("undo")) {
-        return key == Qt::Key_Z && modifiers.testFlag(Qt::ControlModifier);
+        return shortcutUsesKey(shortcut, Qt::Key_Z) && modifiers.testFlag(Qt::ControlModifier);
     }
     return false;
 }

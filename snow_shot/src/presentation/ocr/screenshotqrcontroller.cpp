@@ -1,3 +1,4 @@
+#include "snow_shot/shortcuts/shortcutbinding.h"
 #include "snow_shot/presentation/screenshotqrcontroller.h"
 
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
@@ -57,7 +58,8 @@ class ScreenshotQrMarker final : public QAbstractButton {
         painter.drawPixmap(QPoint(5, 5), glyph);
     }
     void keyPressEvent(QKeyEvent* event) override {
-        if (event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter) {
+        if (snow_shot::shortcuts::commandKey(*event) == Qt::Key_Return ||
+            snow_shot::shortcuts::commandKey(*event) == Qt::Key_Enter) {
             click();
             event->accept();
             return;
@@ -573,7 +575,7 @@ bool ScreenshotQrController::eventFilter(QObject* watched, QEvent* event) {
         return true;
     }
     if (m_popover && m_popover->isVisible() && event->type() == QEvent::KeyPress &&
-        static_cast<QKeyEvent*>(event)->key() == Qt::Key_Escape) {
+        snow_shot::shortcuts::commandKey(*static_cast<QKeyEvent*>(event)) == Qt::Key_Escape) {
         QPointer<ScreenshotQrMarker> marker = m_popoverMarker;
         dismissPopover();
         if (marker) {

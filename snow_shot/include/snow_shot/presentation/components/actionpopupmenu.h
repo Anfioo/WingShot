@@ -1,4 +1,5 @@
 #pragma once
+#include "snow_shot/shortcuts/shortcutbinding.h"
 
 #include "theme/theme_manager.h"
 #include "widgets/context_menu.h"
@@ -99,10 +100,11 @@ class ActionPopupMenu final : public QObject {
             m_menu->dismissPopup();
         if (event->type() == QEvent::KeyPress) {
             const auto* key = static_cast<QKeyEvent*>(event);
-            if (watched == m_trigger &&
-                (key->key() == Qt::Key_Return || key->key() == Qt::Key_Enter ||
-                 key->key() == Qt::Key_Space || key->key() == Qt::Key_Up ||
-                 key->key() == Qt::Key_Down)) {
+            if (watched == m_trigger && (snow_shot::shortcuts::commandKey(*key) == Qt::Key_Return ||
+                                         snow_shot::shortcuts::commandKey(*key) == Qt::Key_Enter ||
+                                         snow_shot::shortcuts::commandKey(*key) == Qt::Key_Space ||
+                                         snow_shot::shortcuts::commandKey(*key) == Qt::Key_Up ||
+                                         snow_shot::shortcuts::commandKey(*key) == Qt::Key_Down)) {
                 open(true);
                 return true;
             }
@@ -110,7 +112,7 @@ class ActionPopupMenu final : public QObject {
                 m_keyboard = true;
                 m_closeTimer.stop();
             }
-            if (watched == m_menu && key->key() == Qt::Key_Escape) {
+            if (watched == m_menu && snow_shot::shortcuts::commandKey(*key) == Qt::Key_Escape) {
                 m_menu->dismissPopup();
                 m_trigger->setFocus(Qt::PopupFocusReason);
                 return true;

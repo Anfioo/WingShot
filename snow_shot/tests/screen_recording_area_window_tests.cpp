@@ -1,3 +1,4 @@
+#include "physical_key_test_support.h"
 #include "snow_shot/presentation/screenrecordingareawindow.h"
 
 #include "snow_shot/presentation/screenshotgeometry.h"
@@ -330,11 +331,11 @@ void wheelAndEscapeRespectDrawingOwnership() {
 
     sendMouseEvent(*canvas, QEvent::MouseButtonPress, QPointF(16, 16), Qt::LeftButton,
                    Qt::LeftButton);
-    QKeyEvent cancelGesture(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
+    PhysicalKeyEvent cancelGesture(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
     QCoreApplication::sendEvent(canvas, &cancelGesture);
     require(deactivationRequests == 0,
             "the first Escape should cancel an in-progress gesture before deactivating drawing");
-    QKeyEvent deactivate(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
+    PhysicalKeyEvent deactivate(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
     QCoreApplication::sendEvent(canvas, &deactivate);
     require(deactivationRequests == 1 && deactivate.isAccepted(),
             "Escape should request pass-through after transient canvas work is canceled");

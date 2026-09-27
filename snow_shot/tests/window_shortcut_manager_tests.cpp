@@ -1,8 +1,11 @@
+#include "snow_shot/presentation/windowcloseshortcut.h"
+#include "physical_key_test_support.h"
 #include "snow_shot/presentation/windowshortcutmanager.h"
 #include "snow_shot/shortcuts/shortcutbinding.h"
 #include "snow_shot/shortcuts/shortcutdisplayservice.h"
 
 #include <QApplication>
+#include <QDialog>
 #include <QKeyEvent>
 #include <QLineEdit>
 #include <QSpinBox>
@@ -113,7 +116,7 @@ void sharedShortcutDomainCanonicalizesIdentityAndDisplay() {
 
 bool sendKey(QObject* receiver, QEvent::Type type, Qt::Key key,
              Qt::KeyboardModifiers modifiers = Qt::NoModifier, bool autoRepeat = false) {
-    QKeyEvent event(type, key, modifiers, QString(), autoRepeat);
+    PhysicalKeyEvent event(type, key, modifiers, QString(), autoRepeat);
     event.setAccepted(false);
     const bool filtered = QCoreApplication::sendEvent(receiver, &event);
     return filtered || event.isAccepted();
@@ -122,8 +125,8 @@ bool sendKey(QObject* receiver, QEvent::Type type, Qt::Key key,
 bool sendNativeKey(QObject* receiver, QEvent::Type type, Qt::Key logicalKey,
                    Qt::KeyboardModifiers modifiers, quint32 nativeVirtualKey,
                    bool autoRepeat = false) {
-    QKeyEvent event(type, logicalKey, modifiers, nativeVirtualKey, nativeVirtualKey, 0, QString(),
-                    autoRepeat);
+    PhysicalKeyEvent event(type, logicalKey, modifiers, nativeVirtualKey, nativeVirtualKey, 0,
+                           QString(), autoRepeat);
     event.setAccepted(false);
     const bool filtered = QCoreApplication::sendEvent(receiver, &event);
     return filtered || event.isAccepted();
@@ -198,9 +201,10 @@ void priorityAndFallthroughAreDeterministic() {
 void shiftedTabMatchesBacktabEvents() {
     const auto binding =
         snow_shot::shortcuts::bindingFromPortableText(QStringLiteral("Alt+Shift+Tab"));
-    QKeyEvent press(QEvent::KeyPress, Qt::Key_Backtab, Qt::AltModifier | Qt::ShiftModifier);
-    QKeyEvent release(QEvent::KeyRelease, Qt::Key_Backtab, Qt::AltModifier | Qt::ShiftModifier);
-    QKeyEvent plainTab(QEvent::KeyPress, Qt::Key_Tab, Qt::AltModifier);
+    PhysicalKeyEvent press(QEvent::KeyPress, Qt::Key_Backtab, Qt::AltModifier | Qt::ShiftModifier);
+    PhysicalKeyEvent release(QEvent::KeyRelease, Qt::Key_Backtab,
+                             Qt::AltModifier | Qt::ShiftModifier);
+    PhysicalKeyEvent plainTab(QEvent::KeyPress, Qt::Key_Tab, Qt::AltModifier);
     require(snow_shot::shortcuts::shortcutMatchesEvent(binding, press) &&
                 snow_shot::shortcuts::shortcutReleaseMatchesEvent(binding, release),
             "Shift+Tab bindings must recognize Qt Backtab press and release events");
@@ -519,7 +523,89 @@ void heldModifierParsingAndAdditionalModifiersAreScoped() {
     require(exactCount == 0, "ordinary bare shortcuts must retain exact modifier matching");
 }
 
+void windowCloseShortcutStaysWithinItsOwnSurface() {
+#ifdef Q_OS_MACOS
+    QWidget window;
+    QLineEdit editor(&window);
+    int closes = 0;
+    snow_shot::presentation::installWindowCloseShortcut(&window, [&] { ++closes; });
+    window.show();
+    QDialog dialog(&window);
+    QLineEdit dialogEditor(&dialog);
+    dialog.setWindowModality(Qt::WindowModal);
+    dialog.show();
+    QApplication::processEvents();
+    const auto pressClose = [](QWidget* receiver) {
+        sendNativeKey(receiver, QEvent::KeyPress, Qt::Key_Q, Qt::ControlModifier, 13);
+        sendNativeKey(receiver, QEvent::KeyRelease, Qt::Key_Q, Qt::ControlModifier, 13);
+    };
+    pressClose(&dialogEditor);
+    require(closes == 0, "Cmd+W in an owned modal must not close its parent window");
+    dialog.hide();
+    QWidget tool(&window, Qt::Tool);
+    tool.show();
+    QApplication::processEvents();
+    pressClose(&tool);
+    require(closes == 0, "owned tool windows must not inherit their parent's close shortcut");
+    tool.hide();
+    pressClose(&editor);
+    require(closes == 1, "ordinary child widgets must retain the window's close shortcut");
+
+    // Register the parent last so filter ordering cannot hide an overly broad scope.
+    QWidget secondWindow;
+    QDialog secondDialog(&secondWindow);
+    QLineEdit secondEditor(&secondDialog);
+    int dialogCloses = 0;
+    snow_shot::presentation::installWindowCloseShortcut(&secondDialog, [&] { ++dialogCloses; });
+    snow_shot::presentation::installWindowCloseShortcut(&secondWindow, [&] { ++closes; });
+    secondWindow.show();
+    secondDialog.setModal(true);
+    secondDialog.show();
+    QApplication::processEvents();
+    pressClose(&secondEditor);
+    require(dialogCloses == 1 && closes == 1,
+            "a modal's own close shortcut must win independently of filter installation order");
+#endif
+}
+
 void macPhysicalBindingsSurviveLogicalLayoutChanges() {
+#ifdef Q_OS_MACOS
+    namespace domain = snow_shot::shortcuts;
+    const auto aBinding = domain::bindingFromPortableText(QStringLiteral("Ctrl+A"));
+    QKeyEvent nativeA(QEvent::KeyPress, Qt::Key_unknown, Qt::ControlModifier, 1, 0, 0);
+    require(domain::shortcutMatchesEvent(aBinding, nativeA) &&
+                domain::commandKey(nativeA) == Qt::Key_A,
+            "native code zero must work even when the logical key is unknown");
+    QKeyEvent syntheticA(QEvent::KeyPress, Qt::Key_A, Qt::ControlModifier);
+    require(!domain::shortcutMatchesEvent(aBinding, syntheticA),
+            "synthetic characters without physical identity must not dispatch commands");
+    const domain::ShortcutBinding unsupported{QStringLiteral("Ctrl+F25")};
+    QKeyEvent unsupportedEvent(QEvent::KeyPress, Qt::Key_F25, Qt::ControlModifier, 1, 128, 0);
+    require(!domain::shortcutMatchesEvent(unsupported, unsupportedEvent),
+            "unresolvable keys must not fall back to logical matching");
+    const auto commandC = domain::bindingFromPortableText(QStringLiteral("Ctrl+C"));
+    QKeyEvent controlC(QEvent::KeyPress, Qt::Key_C, Qt::MetaModifier, 1, 8, 0);
+    require(!domain::shortcutMatchesEvent(commandC, controlC),
+            "physical Control must not impersonate Command");
+    QKeyEvent shiftedPunctuation(QEvent::KeyPress, Qt::Key_Q, Qt::ShiftModifier, 1, 24, 0);
+    require(domain::shortcutMatchesEvent(domain::bindingFromPortableText(QStringLiteral("Shift+=")),
+                                         shiftedPunctuation) &&
+                domain::commandKey(shiftedPunctuation) == Qt::Key_Equal,
+            "shifted punctuation must retain its unshifted physical position");
+    QKeyEvent rightShift(QEvent::KeyPress, Qt::Key_unknown, Qt::NoModifier, 1, 60, 0);
+    require(domain::shortcutMatchesEvent(
+                domain::bindingFromPortableText(QStringLiteral("Shift"), true), rightShift),
+            "either physical Shift key must support modifier-only shortcuts");
+    QWidget closeWindow;
+    int closes = 0;
+    snow_shot::presentation::installWindowCloseShortcut(&closeWindow, [&] { ++closes; });
+    snow_shot::presentation::installWindowCloseShortcut(&closeWindow, [&] { closes += 10; });
+    sendNativeKey(&closeWindow, QEvent::KeyPress, Qt::Key_Q, Qt::ControlModifier, 13);
+    sendNativeKey(&closeWindow, QEvent::KeyRelease, Qt::Key_Q, Qt::ControlModifier, 13);
+    sendNativeKey(&closeWindow, QEvent::KeyPress, Qt::Key_W, Qt::ControlModifier, 12);
+    require(closes == 1, "close must use physical W and be installed only once");
+#endif
+
 #ifdef Q_OS_MACOS
     namespace shortcut_domain = snow_shot::shortcuts;
     QWidget window;
@@ -555,13 +641,13 @@ void macPhysicalBindingsSurviveLogicalLayoutChanges() {
 
     const shortcut_domain::ShortcutBinding ordinaryUp =
         shortcut_domain::bindingFromPortableText(QStringLiteral("Up"));
-    QKeyEvent implicitKeypad(QEvent::KeyPress, Qt::Key_Up, Qt::KeypadModifier, 126, 126, 0);
+    PhysicalKeyEvent implicitKeypad(QEvent::KeyPress, Qt::Key_Up, Qt::KeypadModifier, 126, 126, 0);
     require(shortcut_domain::shortcutMatchesEvent(ordinaryUp, implicitKeypad),
             "Cocoa's implicit keypad modifier on navigation keys must be ignored");
 
     shortcut_domain::ShortcutBinding keypadUp{QStringLiteral("Num+Up")};
     keypadUp.physicalKeys.insert(shortcut_domain::ShortcutPlatform::MacOS, 91);
-    QKeyEvent explicitKeypad(QEvent::KeyPress, Qt::Key_Up, Qt::KeypadModifier, 91, 91, 0);
+    PhysicalKeyEvent explicitKeypad(QEvent::KeyPress, Qt::Key_Up, Qt::KeypadModifier, 91, 91, 0);
     require(shortcut_domain::shortcutMatchesEvent(keypadUp, explicitKeypad) &&
                 !shortcut_domain::shortcutMatchesEvent(ordinaryUp, explicitKeypad),
             "explicit keypad navigation must retain its distinct physical identity");
@@ -1142,6 +1228,7 @@ int main(int argc, char** argv) {
         qputenv("QT_QPA_PLATFORM", "offscreen");
     }
     QApplication application(argc, argv);
+    windowCloseShortcutStaysWithinItsOwnSurface();
     sharedShortcutDomainCanonicalizesIdentityAndDisplay();
     canceledCloseDoesNotStealAnotherManagersFreshPress();
     releaseActivationOwnsTheWholeSequence();

@@ -1,3 +1,4 @@
+#include "physical_key_test_support.h"
 #include "snow_shot/presentation/screenshotqrcontroller.h"
 #include "snow_draw_engine_qt/snow_canvas_runtime.h"
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
@@ -376,7 +377,7 @@ void popoverActionsAndHover() {
     require(!f.popover()->isVisible(), "copy dismisses popover immediately");
     marker->click();
     start.setPosition(2);
-    start.setPosition(payload.size() - 2, QTextCursor::KeepAnchor);
+    start.setPosition(static_cast<int>(payload.size()) - 2, QTextCursor::KeepAnchor);
     text->setTextCursor(start);
     windowClick(copy);
     require(QApplication::clipboard()->text() == payload.mid(2, payload.size() - 4),
@@ -402,7 +403,7 @@ void popoverActionsAndHover() {
     require(!f.popover()->isVisible(), "outside canvas press dismisses the popover");
     windowClick(marker);
     require(f.popover()->isVisible(), "window mouse click reopens the marker popover");
-    QKeyEvent escape(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
+    PhysicalKeyEvent escape(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
     QApplication::sendEvent(text, &escape);
     require(!f.popover()->isVisible() && f.closed == 4, "Escape dismisses popover before editor");
     f.start();
@@ -410,7 +411,7 @@ void popoverActionsAndHover() {
     f.marker(0)->click();
     require(f.controller.ownsInput(text), "read-only popover text owns screenshot shortcuts");
     text->selectAll();
-    QKeyEvent copyKey(QEvent::KeyPress, Qt::Key_C, Qt::ControlModifier);
+    PhysicalKeyEvent copyKey(QEvent::KeyPress, Qt::Key_C, Qt::ControlModifier);
     QApplication::sendEvent(text, &copyKey);
     require(QApplication::clipboard()->text() == QStringLiteral(" https://example.com/a?q=b "),
             "Ctrl+C copies selected decoded text");
@@ -541,7 +542,7 @@ int main(int argc, char** argv) {
     app.setFont(QFont(QStringLiteral("Segoe UI")));
 #endif
     if (app.arguments().contains(QStringLiteral("--preview-dir"))) {
-        const int index = app.arguments().indexOf(QStringLiteral("--preview-dir"));
+        const qsizetype index = app.arguments().indexOf(QStringLiteral("--preview-dir"));
         require(index + 1 < app.arguments().size(), "preview output directory required");
         renderPreviews(app.arguments()[index + 1]);
         return 0;

@@ -1029,6 +1029,7 @@ set_source_files_properties(
     PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON)
 target_include_directories(snow_shot_settings PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_link_libraries(snow_shot_settings PUBLIC
+    snow_shot_window_shortcuts
     snow_shot_translation
     ant_design_icons_qt
     ant_design_qt
@@ -2484,7 +2485,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         target_include_directories(snow-shot-action-popup-native-tests PRIVATE
             "${CMAKE_CURRENT_SOURCE_DIR}/include")
         target_link_libraries(snow-shot-action-popup-native-tests PRIVATE
-            ant_design_qt Qt6::Test "-framework AppKit")
+            ant_design_qt snow_shot_shortcuts Qt6::Test "-framework AppKit")
         add_test(NAME snow-shot-action-popup-native-tests COMMAND snow-shot-action-popup-native-tests)
         set_tests_properties(snow-shot-action-popup-native-tests PROPERTIES
             LABELS "interactive"
@@ -5413,6 +5414,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         "${CMAKE_CURRENT_SOURCE_DIR}/src"
     )
     target_link_libraries(snow-shot-screen-recording-area-window-tests PRIVATE
+        snow_shot_window_shortcuts
         ant_design_qt adqt_icon_core
         Qt6::Widgets
         snow_draw_engine_qt_canvas
@@ -7802,7 +7804,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         include/snow_shot/presentation/screenshotqrcontroller.h
         src/presentation/components/icons/snowshoticons.cpp)
     target_include_directories(snow-shot-qr-controller-tests PRIVATE include)
-    target_link_libraries(snow-shot-qr-controller-tests PRIVATE snow_draw_engine_qt_canvas
+    target_link_libraries(snow-shot-qr-controller-tests PRIVATE snow_shot_shortcuts snow_draw_engine_qt_canvas
         ant_design_qt Qt6::Widgets)
     snow_shot_import_offscreen_platform(snow-shot-qr-controller-tests)
     add_test(NAME snow-shot-qr-controller-tests COMMAND snow-shot-qr-controller-tests)

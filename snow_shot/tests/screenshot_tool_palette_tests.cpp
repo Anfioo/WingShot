@@ -1,3 +1,4 @@
+#include "physical_key_test_support.h"
 #include "snow_shot/presentation/screenshotregiontypecontrol.h"
 #include "snow_shot/presentation/screenshottoolpalette.h"
 #include "snow_shot/presentation/screenshotcanvastoolstyles.h"
@@ -737,7 +738,7 @@ void recordingEffectSettingsModal() {
     form->window()->activateWindow();
     duration->setFocus();
     QCoreApplication::processEvents();
-    QKeyEvent escape(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
+    PhysicalKeyEvent escape(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
     QCoreApplication::sendEvent(QApplication::focusWidget(), &escape);
     QCoreApplication::processEvents();
     // Escape dismisses the dialog, which destroys it; the local pointers are
@@ -4633,8 +4634,8 @@ void ocrControlReflectsLoadingState() {
                 translationButton->busy(),
             "busy translation must remain accessible by mouse");
     ocrButton->click();
-    QKeyEvent keyPress(QEvent::KeyPress, Qt::Key_Space, Qt::NoModifier);
-    QKeyEvent keyRelease(QEvent::KeyRelease, Qt::Key_Space, Qt::NoModifier);
+    PhysicalKeyEvent keyPress(QEvent::KeyPress, Qt::Key_Space, Qt::NoModifier);
+    PhysicalKeyEvent keyRelease(QEvent::KeyRelease, Qt::Key_Space, Qt::NoModifier);
     QCoreApplication::sendEvent(translationButton, &keyPress);
     QCoreApplication::sendEvent(translationButton, &keyRelease);
     require(palette.activeToolForTests() == ScreenshotToolPalette::Tool::TextTranslation,
@@ -9406,11 +9407,11 @@ void serialNumberInputCommitsEditsAndSupportsWheel() {
                      });
     const auto typeText = [input](const QString& text) {
         input->selectAll();
-        QKeyEvent key(QEvent::KeyPress, Qt::Key_unknown, Qt::NoModifier, text);
+        PhysicalKeyEvent key(QEvent::KeyPress, Qt::Key_unknown, Qt::NoModifier, text);
         QApplication::sendEvent(input, &key);
     };
     const auto finish = [input]() {
-        QKeyEvent enter(QEvent::KeyPress, Qt::Key_Return, Qt::NoModifier);
+        PhysicalKeyEvent enter(QEvent::KeyPress, Qt::Key_Return, Qt::NoModifier);
         QApplication::sendEvent(input, &enter);
     };
     const auto wheel = [](QWidget* target, int delta) {
@@ -11582,45 +11583,45 @@ void colorPickerChannelKeyboardInput() {
             require(receiver != nullptr, "color input must acquire keyboard focus");
             const QColor before = picker->value().solidColor;
             editor->selectAll();
-            QKeyEvent erase(QEvent::KeyPress, Qt::Key_Backspace, Qt::NoModifier);
+            PhysicalKeyEvent erase(QEvent::KeyPress, Qt::Key_Backspace, Qt::NoModifier);
             QApplication::sendEvent(receiver, &erase);
             require(picker->value().solidColor == before,
                     "clearing a channel while typing must not replace it with zero");
             const bool hex = editor->objectName() == QStringLiteral("ad-color-picker-hex-input");
             const QString text = hex ? QStringLiteral("12345680") : QStringLiteral("42");
             for (const QChar character : text) {
-                QKeyEvent key(QEvent::KeyPress, character.unicode(), Qt::NoModifier,
-                              QString(character));
+                PhysicalKeyEvent key(QEvent::KeyPress, character.unicode(), Qt::NoModifier,
+                                     QString(character));
                 QApplication::sendEvent(receiver, &key);
                 QApplication::processEvents();
             }
-            QKeyEvent enter(QEvent::KeyPress, Qt::Key_Return, Qt::NoModifier);
+            PhysicalKeyEvent enter(QEvent::KeyPress, Qt::Key_Return, Qt::NoModifier);
             QApplication::sendEvent(receiver, &enter);
             QApplication::processEvents();
             if (auto* number = qobject_cast<adqt::widgets::AdInputNumber*>(receiver)) {
                 require(number->hasValue() && number->value() == 42,
                         "numeric channels must commit the complete typed value");
-                QKeyEvent up(QEvent::KeyPress, Qt::Key_Up, Qt::NoModifier);
+                PhysicalKeyEvent up(QEvent::KeyPress, Qt::Key_Up, Qt::NoModifier);
                 QApplication::sendEvent(receiver, &up);
                 require(number->value() == 43, "Up must step the active numeric channel");
-                QKeyEvent down(QEvent::KeyPress, Qt::Key_Down, Qt::NoModifier);
+                PhysicalKeyEvent down(QEvent::KeyPress, Qt::Key_Down, Qt::NoModifier);
                 QApplication::sendEvent(receiver, &down);
                 require(number->value() == 42, "Down must step the active numeric channel");
                 editor->selectAll();
-                QKeyEvent replacement(QEvent::KeyPress, Qt::Key_5, Qt::NoModifier,
-                                      QStringLiteral("51"));
+                PhysicalKeyEvent replacement(QEvent::KeyPress, Qt::Key_5, Qt::NoModifier,
+                                             QStringLiteral("51"));
                 QApplication::sendEvent(receiver, &replacement);
-                QKeyEvent tab(QEvent::KeyPress, Qt::Key_Tab, Qt::NoModifier);
+                PhysicalKeyEvent tab(QEvent::KeyPress, Qt::Key_Tab, Qt::NoModifier);
                 QApplication::sendEvent(receiver, &tab);
                 QApplication::processEvents();
                 require(number->value() == 51, "Tab must commit pending text before moving focus");
                 editor->setFocus();
-                QKeyEvent selectAll(QEvent::KeyPress, Qt::Key_A, Qt::ControlModifier);
+                PhysicalKeyEvent selectAll(QEvent::KeyPress, Qt::Key_A, Qt::ControlModifier);
                 QApplication::sendEvent(receiver, &selectAll);
                 QApplication::clipboard()->setText(QStringLiteral("24"));
-                QKeyEvent paste(QEvent::KeyPress, Qt::Key_V, Qt::ControlModifier);
+                PhysicalKeyEvent paste(QEvent::KeyPress, Qt::Key_V, Qt::ControlModifier);
                 QApplication::sendEvent(receiver, &paste);
-                QKeyEvent keypadEnter(QEvent::KeyPress, Qt::Key_Enter, Qt::KeypadModifier);
+                PhysicalKeyEvent keypadEnter(QEvent::KeyPress, Qt::Key_Enter, Qt::KeypadModifier);
                 QApplication::sendEvent(receiver, &keypadEnter);
                 require(number->value() == 24,
                         "Select All, paste and keypad Enter must work in every numeric channel");
@@ -12349,7 +12350,7 @@ void moveToolExposesCaptureCursorAndRecaptureOptions() {
     }
     require(unitCommands == 2, "unit clicks dispatch exactly once each");
     auto& language = snow_shot::presentation::LanguageManager::instance();
-    for (const QString locale :
+    for (const QString& locale :
          {QStringLiteral("zh_CN"), QStringLiteral("zh_TW"), QStringLiteral("en_US")}) {
         require(language.setLanguage(locale), "unit tooltip catalogs must load");
         QCoreApplication::processEvents();

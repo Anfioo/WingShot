@@ -1,3 +1,4 @@
+#include "physical_key_test_support.h"
 #include "snow_shot/presentation/screenshotsaveasfiledialog.h"
 #include "snow_shot/presentation/screenshotsavepreviewcanvas.h"
 #include "snow_shot/presentation/screenshotexportartifact.h"
@@ -1000,7 +1001,13 @@ void canvasZoomHint() {
         require(hint->isHidden(), "zoom hint must disappear when its timer expires");
     };
     const auto pressKey = [&](int key) {
-        QKeyEvent event(QEvent::KeyPress, key, Qt::NoModifier);
+        PhysicalKeyEvent hardware(QEvent::KeyPress, key, Qt::NoModifier);
+#ifdef Q_OS_MACOS
+        QKeyEvent event(QEvent::KeyPress, Qt::Key_Q, Qt::NoModifier, 1, hardware.nativeVirtualKey(),
+                        0);
+#else
+        auto& event = hardware;
+#endif
         QApplication::sendEvent(&canvas, &event);
     };
     pressKey(Qt::Key_Plus);
@@ -1781,8 +1788,8 @@ void sizeUnits(QWidget& owner, const QTemporaryDir& temp) {
         editor->setFocus();
         editor->selectAll();
         for (const auto character : text) {
-            QKeyEvent key(QEvent::KeyPress, character.unicode(), Qt::NoModifier,
-                          QString(character));
+            PhysicalKeyEvent key(QEvent::KeyPress, character.unicode(), Qt::NoModifier,
+                                 QString(character));
             QApplication::sendEvent(editor, &key);
         }
     };
@@ -2259,7 +2266,7 @@ void oversizedManualPngStreamsWithoutPopulatingCache(QWidget& owner, const QTemp
     const QImage image = fixture();
     auto artifact = std::make_shared<ScreenshotExportArtifact>(
         ScreenshotExportSource::fromImage(image), ScreenshotCompressionLevel::Low,
-        ScreenshotExportArtifact::PngCachePolicy{1});
+        ScreenshotExportArtifact::PngCachePolicy{1, {}});
     require(!artifact->shouldCachePng(image.size()), "large image should use streaming");
     QString savedPath;
     require(ScreenshotSaveAsFileDialog::open(&owner, &owner, artifact,
@@ -2516,8 +2523,8 @@ void committedControlsAndSave(QWidget& owner, const QTemporaryDir& temp) {
         editor->setFocus();
         editor->selectAll();
         for (const auto character : text) {
-            QKeyEvent key(QEvent::KeyPress, character.unicode(), Qt::NoModifier,
-                          QString(character));
+            PhysicalKeyEvent key(QEvent::KeyPress, character.unicode(), Qt::NoModifier,
+                                 QString(character));
             QApplication::sendEvent(editor, &key);
         }
     };

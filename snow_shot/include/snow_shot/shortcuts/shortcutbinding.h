@@ -2,6 +2,7 @@
 #define SNOW_SHOT_SHORTCUTS_SHORTCUTBINDING_H
 
 #include <QKeyCombination>
+#include <QKeySequence>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QJsonValue>
@@ -54,6 +55,11 @@ struct ShortcutIdentity {
         return !(first == second);
     }
 };
+
+// Command identity only; never use this to derive inserted text.
+[[nodiscard]] Qt::Key commandKey(const QKeyEvent& event);
+[[nodiscard]] Qt::Key commandKey(const ShortcutBinding& binding);
+[[nodiscard]] bool matchesStandardShortcut(const QKeyEvent& event, QKeySequence::StandardKey key);
 
 [[nodiscard]] QString canonicalPortableText(const QString& text,
                                             bool allowModifierOnlyShift = false);

@@ -1,3 +1,5 @@
+#include "snow_shot/storage/settingsadapters.h"
+#include "physical_key_test_support.h"
 #include "snow_shot/presentation/components/shortcutkeyrow.h"
 #include "snow_shot/presentation/windowshortcutmanager.h"
 #include "snow_shot/shortcuts/shortcutdisplayservice.h"
@@ -432,7 +434,7 @@ void recorderAcceptsOnlyBackendSupportedShortcuts() {
     require(modal != nullptr && modal->acceptButton() != nullptr,
             "the recorder modal should exist");
 
-    QKeyEvent unsupportedEvent(QEvent::KeyPress, Qt::Key_F25, Qt::ControlModifier);
+    PhysicalKeyEvent unsupportedEvent(QEvent::KeyPress, Qt::Key_F25, Qt::ControlModifier);
     QCoreApplication::sendEvent(configContent, &unsupportedEvent);
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
     QApplication::processEvents();
@@ -466,7 +468,7 @@ void recorderAcceptsOnlyBackendSupportedShortcuts() {
     require(keyButton->busy(),
             "a backend-rejected key must keep the busy recording indicator so editing continues");
 
-    QKeyEvent supportedNumpadEvent(QEvent::KeyPress, Qt::Key_1, Qt::KeypadModifier);
+    PhysicalKeyEvent supportedNumpadEvent(QEvent::KeyPress, Qt::Key_1, Qt::KeypadModifier);
     QCoreApplication::sendEvent(configContent, &supportedNumpadEvent);
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
     QApplication::processEvents();
@@ -496,7 +498,7 @@ void recorderAcceptsOnlyBackendSupportedShortcuts() {
     keyButton->click();
     QApplication::processEvents();
 
-    QKeyEvent numpadPlusEvent(QEvent::KeyPress, Qt::Key_Plus, Qt::KeypadModifier);
+    PhysicalKeyEvent numpadPlusEvent(QEvent::KeyPress, Qt::Key_Plus, Qt::KeypadModifier);
     QCoreApplication::sendEvent(configContent, &numpadPlusEvent);
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
     QApplication::processEvents();
@@ -511,7 +513,7 @@ void recorderAcceptsOnlyBackendSupportedShortcuts() {
     require(keyButton->text() == displayText(QStringLiteral("Num++")),
             "a keypad plus should not be displayed as two shortcut separators");
 
-    QKeyEvent shiftEvent(QEvent::KeyPress, Qt::Key_Shift, Qt::ShiftModifier);
+    PhysicalKeyEvent shiftEvent(QEvent::KeyPress, Qt::Key_Shift, Qt::ShiftModifier);
     QCoreApplication::sendEvent(configContent, &shiftEvent);
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
     QApplication::processEvents();
@@ -548,6 +550,17 @@ void recorderCapturesMacPhysicalKeysAndRejectsPhysicalDuplicates() {
     config.maxShortcutCount = 2;
     shortcut_domain::ShortcutBinding existing{QStringLiteral("Ctrl+C")};
     existing.physicalKeys.insert(shortcut_domain::ShortcutPlatform::MacOS, 8);
+    auto reserved = existing;
+    reserved.portableText = QStringLiteral("Ctrl+Q");
+    require(snow_shot::storage::ScreenshotShortcutSettings::isReservedShortcut(reserved) &&
+                snow_shot::storage::ScreenshotShortcutSettings::isReservedShortcutAllowed(
+                    QStringLiteral("copy_to_clipboard"), reserved),
+            "physical C must remain reserved for copy regardless of its recorded legend");
+    reserved.portableText = QStringLiteral("Ctrl+C");
+    reserved.physicalKeys[shortcut_domain::ShortcutPlatform::MacOS] = 12;
+    require(!snow_shot::storage::ScreenshotShortcutSettings::isReservedShortcut(reserved),
+            "a C legend at physical Q must not reserve the copy position");
+
     config.shortcuts = {existing};
     int validations = 0;
     shortcut_domain::ShortcutBinding captured;
@@ -568,17 +581,20 @@ void recorderCapturesMacPhysicalKeysAndRejectsPhysicalDuplicates() {
     add->click();
     QApplication::processEvents();
 
-    QKeyEvent duplicate(QEvent::KeyPress, Qt::Key_Q, Qt::ControlModifier, 8, 8, 0);
+    PhysicalKeyEvent duplicate(QEvent::KeyPress, Qt::Key_Q, Qt::ControlModifier, 8, 8, 0);
     QCoreApplication::sendEvent(content, &duplicate);
     QApplication::processEvents();
-    auto* keyButton =
-        row.findChild<adqt::widgets::AdButton*>(QStringLiteral("shortcutConfigKeyButton"));
+    const auto keyButtons =
+        row.findChildren<adqt::widgets::AdButton*>(QStringLiteral("shortcutConfigKeyButton"));
+    const auto recording = std::find_if(keyButtons.cbegin(), keyButtons.cend(),
+                                        [](const auto* button) { return button->busy(); });
+    auto* keyButton = recording == keyButtons.cend() ? nullptr : *recording;
     require(validations == 0 && keyButton != nullptr && keyButton->busy() &&
                 keyButton->property("shortcutValidationState").toString() ==
                     QStringLiteral("invalid"),
             "runtime-identical physical positions must be rejected before backend validation");
 
-    QKeyEvent replacement(QEvent::KeyPress, Qt::Key_Q, Qt::ControlModifier, 12, 12, 0);
+    PhysicalKeyEvent replacement(QEvent::KeyPress, Qt::Key_Q, Qt::ControlModifier, 12, 12, 0);
     QCoreApplication::sendEvent(content, &replacement);
     QApplication::processEvents();
     require(validations == 1 &&
@@ -682,7 +698,7 @@ void globalRecorderSuspensionSurvivesTransientModalHide() {
             "deferred cleanup after a transient hide must not resume a second time");
 }
 
-void printScreenReleaseRecordsModifiers() {
+void printScreenReleaseFollowsPlatformPolicy() {
     const styles::ThemeColorScheme scheme = styles::ThemeManager::instance().themeColorScheme();
     const auto mainWindowMetric = styles::buildMainWindowComponentMetricToken(scheme);
     QString lastValidatedShortcut;
@@ -705,9 +721,10 @@ void printScreenReleaseRecordsModifiers() {
     auto* content = row.findChild<QWidget*>(QStringLiteral("shortcutConfigContent"));
     auto* modal = row.findChild<adqt::widgets::AdModal*>();
     require(content != nullptr && modal != nullptr, "the shortcut recorder must open");
-    QKeyEvent release(QEvent::KeyRelease, Qt::Key_Print, Qt::ControlModifier);
+    PhysicalKeyEvent release(QEvent::KeyRelease, Qt::Key_Print, Qt::ControlModifier);
     QCoreApplication::sendEvent(content, &release);
     QApplication::processEvents();
+#ifdef Q_OS_WIN
     require(lastValidatedShortcut == QStringLiteral("Ctrl+Print") &&
                 modal->acceptButton()->isEnabled() && savedShortcuts.isEmpty(),
             "a Print Screen release without a press must record its modifiers through validation");
@@ -716,6 +733,17 @@ void printScreenReleaseRecordsModifiers() {
     QApplication::processEvents();
     require(portableText(savedShortcuts) == QStringList{QStringLiteral("Ctrl+Print")},
             "OK must persist the recorded Print Screen combination as portable text");
+#else
+    // Release-only Print Screen synthesis belongs to the Windows native
+    // recorder. macOS must not manufacture a binding from this release.
+    require(lastValidatedShortcut.isEmpty() && !modal->acceptButton()->isEnabled() &&
+                savedShortcuts.isEmpty(),
+            "non-Windows recorders must ignore a Print Screen release without a press");
+    modal->reject();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    QApplication::processEvents();
+    require(savedShortcuts.isEmpty(), "canceling an empty recording must not save a shortcut");
+#endif
 }
 
 class PrintScreenRecordingSession {
@@ -765,7 +793,7 @@ class PrintScreenRecordingSession {
     }
 
     void key(QEvent::Type type, int key, Qt::KeyboardModifiers modifiers, bool repeat = false) {
-        QKeyEvent event(type, key, modifiers, {}, repeat);
+        PhysicalKeyEvent event(type, key, modifiers, {}, repeat);
         QCoreApplication::sendEvent(content, &event);
     }
 
@@ -779,6 +807,7 @@ class PrintScreenRecordingSession {
 
 void printScreenRecordingPreservesEventOrderAndLifecycle() {
     PrintScreenRecordingSession session;
+#ifdef Q_OS_WIN
     session.key(QEvent::KeyPress, Qt::Key_Print, Qt::ControlModifier);
     session.key(QEvent::KeyPress, Qt::Key_Print, Qt::ControlModifier, true);
     session.key(QEvent::KeyRelease, Qt::Key_Print, Qt::NoModifier);
@@ -834,6 +863,28 @@ void printScreenRecordingPreservesEventOrderAndLifecycle() {
     session.flush();
     require(portableText(session.saved) == QStringList{QStringLiteral("Meta+Shift+Print")},
             "a new recording session must preserve Windows-key combinations independently");
+#else
+    session.key(QEvent::KeyRelease, Qt::Key_Print, Qt::AltModifier);
+    session.flush();
+    require(session.validated.isEmpty(), "a release cannot start a native macOS recording");
+    session.key(QEvent::KeyPress, Qt::Key_A, Qt::ControlModifier);
+    session.key(QEvent::KeyRelease, Qt::Key_Print, Qt::AltModifier);
+    session.flush();
+    require(session.validated == QStringList{QStringLiteral("Ctrl+A")},
+            "an unrelated release must not replace the physical key being recorded");
+    session.modal->reject();
+    session.flush();
+    require(session.saved.isEmpty(), "Cancel must discard the physical binding");
+    session.open();
+    session.key(QEvent::KeyPress, Qt::Key_C, Qt::ControlModifier);
+    session.flush();
+    session.modal->acceptButton()->click();
+    session.flush();
+    require(portableText(session.saved) == QStringList{QStringLiteral("Ctrl+C")} &&
+                session.saved.first().physicalKeys.value(shortcut_domain::ShortcutPlatform::MacOS,
+                                                         128) == 8,
+            "a new recording session must save the new physical position");
+#endif
 }
 
 #ifdef Q_OS_WIN
@@ -971,18 +1022,18 @@ void nativePrintScreenRecordingPreservesModifiers() {
 
     sendNativeRecorderMessage(window, WM_KEYUP, Qt::ControlModifier | Qt::ShiftModifier,
                               VK_SNAPSHOT, 0, 100);
-    QKeyEvent queuedControl(QEvent::KeyPress, Qt::Key_Control, Qt::ControlModifier);
+    PhysicalKeyEvent queuedControl(QEvent::KeyPress, Qt::Key_Control, Qt::ControlModifier);
     queuedControl.setTimestamp(99);
     QCoreApplication::sendEvent(session.content, &queuedControl);
     session.flush();
-    QKeyEvent queuedShift(QEvent::KeyPress, Qt::Key_Shift, Qt::ShiftModifier);
+    PhysicalKeyEvent queuedShift(QEvent::KeyPress, Qt::Key_Shift, Qt::ShiftModifier);
     queuedShift.setTimestamp(100);
     QCoreApplication::sendEvent(session.content, &queuedShift);
     session.flush();
     require(session.validated.last() == QStringLiteral("Ctrl+Shift+Print") &&
                 session.modal->acceptButton()->isEnabled(),
             "older Qt modifier presses must not cancel or overwrite a native captured chord");
-    QKeyEvent newerKey(QEvent::KeyPress, Qt::Key_A, Qt::ControlModifier);
+    PhysicalKeyEvent newerKey(QEvent::KeyPress, Qt::Key_A, Qt::ControlModifier);
     newerKey.setTimestamp(101);
     QCoreApplication::sendEvent(session.content, &newerKey);
     session.flush();
@@ -1160,9 +1211,9 @@ void cancellingDuplicateScreenshotShortcutReleasesKeyboard() {
         };
         require(manager.addBinding(&screenshotWindow, std::move(binding)) != 0,
                 "screenshot shortcut bindings must register");
-        QKeyEvent press(QEvent::KeyPress, key, Qt::NoModifier);
+        PhysicalKeyEvent press(QEvent::KeyPress, key, Qt::NoModifier);
         QCoreApplication::sendEvent(&screenshotWindow, &press);
-        QKeyEvent release(QEvent::KeyRelease, key, Qt::NoModifier);
+        PhysicalKeyEvent release(QEvent::KeyRelease, key, Qt::NoModifier);
         QCoreApplication::sendEvent(&screenshotWindow, &release);
     }
     require(activations == 3,
@@ -1228,7 +1279,7 @@ void drawingRecorderUsesLocalValidationLanguage() {
 
     auto* configContent = row.findChild<QWidget*>(QStringLiteral("shortcutConfigContent"));
     require(configContent != nullptr, "drawing shortcut recorder should be created");
-    QKeyEvent duplicateEvent(QEvent::KeyPress, Qt::Key_S, Qt::NoModifier);
+    PhysicalKeyEvent duplicateEvent(QEvent::KeyPress, Qt::Key_S, Qt::NoModifier);
     QCoreApplication::sendEvent(configContent, &duplicateEvent);
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
     QApplication::processEvents();
@@ -1456,7 +1507,7 @@ int main(int argc, char** argv) {
     recorderCapturesMacPhysicalKeysAndRejectsPhysicalDuplicates();
     globalRecorderRestoresRegistrationOnEveryExitPath();
     globalRecorderSuspensionSurvivesTransientModalHide();
-    printScreenReleaseRecordsModifiers();
+    printScreenReleaseFollowsPlatformPolicy();
     printScreenRecordingPreservesEventOrderAndLifecycle();
     localShortcutRecordersUseOnlyNormalKeyEvents();
     recordingShortcutRecorderAcceptsControlKeysAndEscape();

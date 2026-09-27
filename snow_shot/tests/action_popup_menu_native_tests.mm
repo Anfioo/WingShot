@@ -1,3 +1,4 @@
+#include "physical_key_test_support.h"
 #include "snow_shot/presentation/components/actionpopupmenu.h"
 #include "widgets/button.h"
 
@@ -101,7 +102,7 @@ int main(int argc, char** argv) {
             require(shown.count() == 1 && hidden.count() == 1 && triggered.isEmpty(),
                     "button cancellation emits one lifecycle pair");
 
-            QKeyEvent key(QEvent::KeyPress, Qt::Key_Return, Qt::NoModifier);
+            PhysicalKeyEvent key(QEvent::KeyPress, Qt::Key_Return, Qt::NoModifier);
             QApplication::sendEvent(&button, &key);
             require(menu.isPopupVisible(), "keyboard opens a native button menu");
             after(0.2, []() { postKey(@"\r", 36); });

@@ -448,6 +448,7 @@ struct SnowCanvasWidget::Impl : public snow_canvas_runtime::Client {
     FontWheelTarget fontWheelTarget() const;
     bool stepSerialNumberFontSize(bool increase);
     bool stepTextFontSize(bool increase);
+    CommandKeyResolver commandKeyResolver;
     bool handleKeyPress(QKeyEvent* event);
     bool handleKeyRelease(QKeyEvent* event);
     bool handleInputMethodEvent(QInputMethodEvent* event);
@@ -2738,10 +2739,37 @@ bool SnowCanvasWidget::Impl::handleKeyPress(QKeyEvent* event) {
         break;
     }
 
-    return dispatchInput(event, snow_canvas_input::makeKeyInput(*event, SNOW_KEY_EVENT_DOWN));
+    auto input = snow_canvas_input::makeKeyInput(*event, SNOW_KEY_EVENT_DOWN);
+    if (commandKeyResolver) {
+        // Engine characters represent commands here; text editing was handled
+        // above with the original text. Never dispatch a layout character as Z.
+        const QString commandText = event->key() >= Qt::Key_A && event->key() <= Qt::Key_Z
+                                        ? QString(QChar(static_cast<ushort>(event->key())))
+                                        : QString();
+        QKeyEvent command(event->type(), event->key(), event->modifiers(), commandText,
+                          event->isAutoRepeat(), static_cast<quint16>(event->count()));
+        input = snow_canvas_input::makeKeyInput(command, SNOW_KEY_EVENT_DOWN);
+    }
+    return dispatchInput(event, input);
+}
+
+void SnowCanvasWidget::setCommandKeyResolver(CommandKeyResolver resolver) {
+    m_impl->commandKeyResolver = std::move(resolver);
 }
 
 void SnowCanvasWidget::keyPressEvent(QKeyEvent* event) {
+    if (m_impl->commandKeyResolver) {
+        QKeyEvent command(event->type(), m_impl->commandKeyResolver(*event), event->modifiers(),
+                          event->nativeScanCode(), event->nativeVirtualKey(),
+                          event->nativeModifiers(), event->text(), event->isAutoRepeat(),
+                          static_cast<quint16>(event->count()));
+        if (m_impl->handleKeyPress(&command)) {
+            event->accept();
+            return;
+        }
+        QWidget::keyPressEvent(event);
+        return;
+    }
     if (m_impl->handleKeyPress(event)) {
         return;
     }
@@ -2766,10 +2794,33 @@ bool SnowCanvasWidget::Impl::handleKeyRelease(QKeyEvent* event) {
         accept(*event);
         return true;
     }
-    return dispatchInput(event, snow_canvas_input::makeKeyInput(*event, SNOW_KEY_EVENT_UP));
+    auto input = snow_canvas_input::makeKeyInput(*event, SNOW_KEY_EVENT_UP);
+    if (commandKeyResolver) {
+        // Engine characters represent commands here; text editing was handled
+        // above with the original text. Never dispatch a layout character as Z.
+        const QString commandText = event->key() >= Qt::Key_A && event->key() <= Qt::Key_Z
+                                        ? QString(QChar(static_cast<ushort>(event->key())))
+                                        : QString();
+        QKeyEvent command(event->type(), event->key(), event->modifiers(), commandText,
+                          event->isAutoRepeat(), static_cast<quint16>(event->count()));
+        input = snow_canvas_input::makeKeyInput(command, SNOW_KEY_EVENT_UP);
+    }
+    return dispatchInput(event, input);
 }
 
 void SnowCanvasWidget::keyReleaseEvent(QKeyEvent* event) {
+    if (m_impl->commandKeyResolver) {
+        QKeyEvent command(event->type(), m_impl->commandKeyResolver(*event), event->modifiers(),
+                          event->nativeScanCode(), event->nativeVirtualKey(),
+                          event->nativeModifiers(), event->text(), event->isAutoRepeat(),
+                          static_cast<quint16>(event->count()));
+        if (m_impl->handleKeyRelease(&command)) {
+            event->accept();
+            return;
+        }
+        QWidget::keyReleaseEvent(event);
+        return;
+    }
     if (m_impl->handleKeyRelease(event)) {
         return;
     }

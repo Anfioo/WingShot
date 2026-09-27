@@ -1,3 +1,4 @@
+#include "physical_key_test_support.h"
 #include <QLineEdit>
 #include "snow_shot/image/screenshotregionpoints.h"
 #include "snow_shot/presentation/screenshotselectorworkflow.h"
@@ -63,11 +64,12 @@ void require(bool condition, const char* message) {
 
 bool dispatchShortcut(QWidget& receiver, Qt::Key key,
                       Qt::KeyboardModifiers modifiers = Qt::NoModifier, bool autoRepeat = false) {
-    QKeyEvent shortcutOverride(QEvent::ShortcutOverride, key, modifiers, QString(), autoRepeat);
+    PhysicalKeyEvent shortcutOverride(QEvent::ShortcutOverride, key, modifiers, QString(),
+                                      autoRepeat);
     shortcutOverride.setAccepted(false);
     QCoreApplication::sendEvent(&receiver, &shortcutOverride);
 
-    QKeyEvent keyPress(QEvent::KeyPress, key, modifiers, QString(), autoRepeat);
+    PhysicalKeyEvent keyPress(QEvent::KeyPress, key, modifiers, QString(), autoRepeat);
     keyPress.setAccepted(false);
     QCoreApplication::sendEvent(&receiver, &keyPress);
     return keyPress.isAccepted();
@@ -76,7 +78,7 @@ bool dispatchShortcut(QWidget& receiver, Qt::Key key,
 bool dispatchShortcutRelease(QWidget& receiver, Qt::Key key,
                              Qt::KeyboardModifiers modifiers = Qt::NoModifier,
                              bool autoRepeat = false) {
-    QKeyEvent keyRelease(QEvent::KeyRelease, key, modifiers, QString(), autoRepeat);
+    PhysicalKeyEvent keyRelease(QEvent::KeyRelease, key, modifiers, QString(), autoRepeat);
     keyRelease.setAccepted(false);
     QCoreApplication::sendEvent(&receiver, &keyRelease);
     return keyRelease.isAccepted();

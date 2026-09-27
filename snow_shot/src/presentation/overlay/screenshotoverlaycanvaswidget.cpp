@@ -1,3 +1,4 @@
+#include "snow_shot/shortcuts/shortcutbinding.h"
 #include "screenshotoverlaycanvaswidget.h"
 
 #include "../capture/screenshotcaptureperfinstrumentation.h"
@@ -19,7 +20,12 @@ qint64 paintRegionArea(const QRegion& region) {
 
 ScreenshotOverlayCanvasWidget::ScreenshotOverlayCanvasWidget(SnowCanvasRuntime& runtime,
                                                              QWidget* parent)
-    : SnowCanvasWidget(runtime, parent) {}
+    : SnowCanvasWidget(runtime, parent) {
+#ifdef Q_OS_MACOS
+    setCommandKeyResolver(
+        [](const QKeyEvent& event) { return snow_shot::shortcuts::commandKey(event); });
+#endif
+}
 
 void ScreenshotOverlayCanvasWidget::paintEvent(QPaintEvent* event) {
     SNOW_SHOT_CAPTURE_PERF_SCOPE("presentation.window.canvas.paint_event");

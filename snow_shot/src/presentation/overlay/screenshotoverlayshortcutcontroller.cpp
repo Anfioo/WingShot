@@ -1,3 +1,4 @@
+#include "snow_shot/shortcuts/shortcutbinding.h"
 #include "snow_shot/presentation/screenshotoverlayshortcutcontroller.h"
 
 #include "snow_shot/presentation/screenshotinteractionstate.h"
@@ -309,7 +310,8 @@ struct ScreenshotOverlayShortcutController::Impl {
                     const Qt::KeyboardModifiers eventModifiers =
                         context.event != nullptr ? context.event->modifiers() : Qt::NoModifier;
                     const bool plainShiftColorFormatFallback =
-                        context.event != nullptr && context.event->key() == Qt::Key_Shift &&
+                        context.event != nullptr &&
+                        snow_shot::shortcuts::commandKey(*context.event) == Qt::Key_Shift &&
                         (eventModifiers == Qt::NoModifier || eventModifiers == Qt::ShiftModifier) &&
                         interaction.moveToolActive();
                     return inputHandler.activateKeepSelectionAspectRatioShortcut(

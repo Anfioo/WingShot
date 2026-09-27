@@ -1,3 +1,4 @@
+#include "snow_shot/shortcuts/shortcutbinding.h"
 #include "snow_shot/presentation/pinnedgeometry.h"
 #include "snow_shot/presentation/screenshotautofiltercontroller.h"
 #include "snow_shot/presentation/screenshotpinnededitcontroller.h"
@@ -225,7 +226,7 @@ bool ScreenshotPinnedEditController::eventFilter(QObject* watched, QEvent* event
             return true;
         case QEvent::KeyPress: {
             auto* keyEvent = static_cast<QKeyEvent*>(event);
-            if (keyEvent->key() == Qt::Key_Escape) {
+            if (snow_shot::shortcuts::commandKey(*keyEvent) == Qt::Key_Escape) {
                 cancelCanvasColorSampling();
                 keyEvent->accept();
                 return true;

@@ -1,3 +1,4 @@
+#include "snow_shot/shortcuts/shortcutbinding.h"
 #include "snow_shot/presentation/windowcloseshortcut.h"
 #include "snow_shot/presentation/screenrecordingareawindow.h"
 
@@ -70,6 +71,10 @@ ScreenRecordingAreaWindow::ScreenRecordingAreaWindow(QWidget* parent)
       m_canvasRuntime(std::make_unique<SnowCanvasRuntime>(
           SnowCanvasRuntimeConfig{snow_shot::presentation::screenshotCanvasToolStyleDefaults()})),
       m_canvas(new SnowCanvasWidget(*m_canvasRuntime, this)) {
+#ifdef Q_OS_MACOS
+    m_canvas->setCommandKeyResolver(
+        [](const QKeyEvent& event) { return snow_shot::shortcuts::commandKey(event); });
+#endif
     snow_shot::presentation::installWindowCloseShortcut(this, [this] { close(); });
     setAttribute(Qt::WA_TranslucentBackground, true);
     setAttribute(Qt::WA_NoSystemBackground, true);
@@ -346,7 +351,7 @@ bool ScreenRecordingAreaWindow::eventFilter(QObject* watched, QEvent* event) {
     }
     case QEvent::KeyPress: {
         auto* key = static_cast<QKeyEvent*>(event);
-        if (key->key() != Qt::Key_Escape || key->isAutoRepeat()) {
+        if (snow_shot::shortcuts::commandKey(*key) != Qt::Key_Escape || key->isAutoRepeat()) {
             break;
         }
         if (m_canvas->hasActiveTextEditing()) {

@@ -1,3 +1,4 @@
+#include "physical_key_test_support.h"
 #include "window_close_shortcut_test_support.h"
 #include "snow_draw_engine_qt/snow_canvas_path_geometry.h"
 #include "snow_shot/presentation/screenshotselectionpin.h"
@@ -723,7 +724,7 @@ void releaseCloseGesture(QWidget& receiver, Qt::MouseButton button) {
 
 void sendShortcut(QWidget& receiver, Qt::Key key, Qt::KeyboardModifiers modifiers = Qt::NoModifier,
                   bool autoRepeat = false) {
-    QKeyEvent event(QEvent::KeyPress, key, modifiers, QString(), autoRepeat);
+    PhysicalKeyEvent event(QEvent::KeyPress, key, modifiers, QString(), autoRepeat);
     QCoreApplication::sendEvent(&receiver, &event);
 }
 
@@ -881,12 +882,12 @@ void pinnedQrResultCopiesWithKeyboardShortcut() {
             "pinned QR recognition should render all decoded payloads");
 
     QApplication::clipboard()->setText(QStringLiteral("stale clipboard text"));
-    QKeyEvent copy(QEvent::KeyPress, Qt::Key_C, Qt::ControlModifier);
+    PhysicalKeyEvent copy(QEvent::KeyPress, Qt::Key_C, Qt::ControlModifier);
     QApplication::sendEvent(browser, &copy);
     require(copy.isAccepted() && clipboardReceivesText(expected),
             "Ctrl+C should copy all pinned QR result text");
 
-    QKeyEvent selectAll(QEvent::KeyPress, Qt::Key_A, Qt::ControlModifier);
+    PhysicalKeyEvent selectAll(QEvent::KeyPress, Qt::Key_A, Qt::ControlModifier);
     QApplication::sendEvent(browser, &selectAll);
     require(selectAll.isAccepted() && browser->textCursor().hasSelection(),
             "Ctrl+A should select the pinned QR result text");
@@ -1695,7 +1696,7 @@ void pinnedRecognitionContextMenuCopiesLocally() {
     require(table != nullptr && table->isVisible(),
             "cached pinned table should be visible before opening its edit menu");
     table->setCurrentIndex(table->model()->index(0, 0));
-    QKeyEvent editEvent(QEvent::KeyPress, Qt::Key_F2, Qt::NoModifier);
+    PhysicalKeyEvent editEvent(QEvent::KeyPress, Qt::Key_F2, Qt::NoModifier);
     QApplication::sendEvent(table, &editEvent);
     QApplication::processEvents();
     auto* cellEditor = table->findChild<QPlainTextEdit*>(QStringLiteral("snowShotTableCellEditor"));
@@ -4221,17 +4222,20 @@ void pinnedDestroyShortcutUsesDestructiveMenuColor() {
                 destroyAction != nullptr && !menu->actionDanger(closeAction) &&
                 menu->actionDanger(destroyAction),
             "recoverable Close should use normal styling and permanent Destroy should be danger");
-    require(destroyAction->text().endsWith(QStringLiteral("\tShift+Esc")),
+    require(destroyAction->text().endsWith(
+                QStringLiteral("\t") +
+                snow_shot::shortcuts::formatShortcutDisplayText(
+                    snow_shot::shortcuts::bindingFromPortableText(QStringLiteral("Shift+Esc")))),
             "Destroy must show its default shortcut in the pinned menu");
     sendShortcut(*canvas, Qt::Key_Escape, Qt::ControlModifier);
-    QKeyEvent oldRelease(QEvent::KeyRelease, Qt::Key_Escape, Qt::ControlModifier);
+    PhysicalKeyEvent oldRelease(QEvent::KeyRelease, Qt::Key_Escape, Qt::ControlModifier);
     QCoreApplication::sendEvent(canvas, &oldRelease);
     QCoreApplication::processEvents();
     require(!guardedWindow.isNull() && pinnedWindow->isVisible(),
             "Ctrl+Esc must no longer destroy the pinned window");
     sendShortcut(*canvas, Qt::Key_Escape, Qt::ShiftModifier);
     require(!guardedWindow.isNull(), "Destroy must activate on shortcut release");
-    QKeyEvent destroyRelease(QEvent::KeyRelease, Qt::Key_Escape, Qt::ShiftModifier);
+    PhysicalKeyEvent destroyRelease(QEvent::KeyRelease, Qt::Key_Escape, Qt::ShiftModifier);
     QCoreApplication::sendEvent(canvas, &destroyRelease);
     require(processUntilDeleted(guardedWindow, 2000), "Shift+Esc must destroy the pinned window");
 }
@@ -4787,9 +4791,9 @@ void pinnedMiddleClickActions() {
         // Entering drawing mode starts on the Resize window tool, where window
         // gestures stay enabled by design; switch to the Select drawing tool
         // so the canvas owns the input, as a user drawing would.
-        QKeyEvent selectPress(QEvent::KeyPress, Qt::Key_M, Qt::NoModifier);
+        PhysicalKeyEvent selectPress(QEvent::KeyPress, Qt::Key_M, Qt::NoModifier);
         QCoreApplication::sendEvent(canvas, &selectPress);
-        QKeyEvent selectRelease(QEvent::KeyRelease, Qt::Key_M, Qt::NoModifier);
+        PhysicalKeyEvent selectRelease(QEvent::KeyRelease, Qt::Key_M, Qt::NoModifier);
         QCoreApplication::sendEvent(canvas, &selectRelease);
         waitForUi(50);
         press(canvas);
@@ -5114,9 +5118,9 @@ void pinnedDoubleClickActions() {
     // Entering drawing mode starts on the Resize window tool, where window
     // gestures stay enabled by design; switch to the Select drawing tool so
     // the canvas owns the input, as a user drawing would.
-    QKeyEvent selectPress(QEvent::KeyPress, Qt::Key_M, Qt::NoModifier);
+    PhysicalKeyEvent selectPress(QEvent::KeyPress, Qt::Key_M, Qt::NoModifier);
     QCoreApplication::sendEvent(canvas, &selectPress);
-    QKeyEvent selectRelease(QEvent::KeyRelease, Qt::Key_M, Qt::NoModifier);
+    PhysicalKeyEvent selectRelease(QEvent::KeyRelease, Qt::Key_M, Qt::NoModifier);
     QCoreApplication::sendEvent(canvas, &selectRelease);
     waitForUi(50);
     send(canvas, canvas->rect().center());
@@ -5861,7 +5865,7 @@ void pinnedEscapeBurst(bool nativeKeys = false) {
                 sendShortcut(*canvas, Qt::Key_Escape);
                 sendShortcut(*canvas, Qt::Key_Escape, Qt::NoModifier, true);
                 require(*it && (*it)->isVisible(), "Escape repeats must keep the pin open");
-                QKeyEvent release(QEvent::KeyRelease, Qt::Key_Escape, Qt::NoModifier);
+                PhysicalKeyEvent release(QEvent::KeyRelease, Qt::Key_Escape, Qt::NoModifier);
                 QCoreApplication::sendEvent(canvas, &release);
             }
             if (batch % 2 != 0) {
@@ -7216,7 +7220,7 @@ void pinnedHideToTopIntegration(bool native) {
     hoverHandle(false);
     require(!window.isVisible(), "leaving the real window must hide it after the delay");
     hoverHandle(true);
-    QKeyEvent move(QEvent::KeyPress, Qt::Key_D, Qt::NoModifier);
+    PhysicalKeyEvent move(QEvent::KeyPress, Qt::Key_D, Qt::NoModifier);
     QCoreApplication::sendEvent(&window, &move);
     require(!controller.active() && window.isVisible(), "keyboard movement must exit the mode");
 #ifdef Q_OS_WIN
@@ -7272,9 +7276,9 @@ void pinnedHideToTopIntegration(bool native) {
                     QStringLiteral("H"),
             "remapping must update the menu shortcut display");
     const auto sendKey = [&](Qt::KeyboardModifiers modifiers) {
-        QKeyEvent press(QEvent::KeyPress, Qt::Key_H, modifiers);
+        PhysicalKeyEvent press(QEvent::KeyPress, Qt::Key_H, modifiers);
         QCoreApplication::sendEvent(&window, &press);
-        QKeyEvent release(QEvent::KeyRelease, Qt::Key_H, modifiers);
+        PhysicalKeyEvent release(QEvent::KeyRelease, Qt::Key_H, modifiers);
         QCoreApplication::sendEvent(&window, &release);
     };
     sendKey(Qt::ControlModifier | Qt::AltModifier);
@@ -9068,9 +9072,9 @@ void pinnedDrawingShortcutsToggleActiveTool() {
     auto* palette = controller->toolbarWindow()->palette();
     require(palette != nullptr, "drawing shortcut fixture should expose its palette");
     const auto pressKey = [canvas](Qt::Key key) {
-        QKeyEvent press(QEvent::KeyPress, key, Qt::NoModifier);
+        PhysicalKeyEvent press(QEvent::KeyPress, key, Qt::NoModifier);
         QCoreApplication::sendEvent(canvas, &press);
-        QKeyEvent release(QEvent::KeyRelease, key, Qt::NoModifier);
+        PhysicalKeyEvent release(QEvent::KeyRelease, key, Qt::NoModifier);
         QCoreApplication::sendEvent(canvas, &release);
     };
     require(controller->resizeWindowToolActive() &&
@@ -9216,11 +9220,11 @@ void pinnedEditToolbarControlsCanvasHistory(SnowCanvasRuntime&) {
 
     SnowCanvasWidget* canvas = pinnedWindow->findChild<SnowCanvasWidget*>();
     require(canvas != nullptr, "pinned screenshot canvas was not found");
-    QKeyEvent brushShortcut(QEvent::KeyPress, Qt::Key_P, Qt::NoModifier);
+    PhysicalKeyEvent brushShortcut(QEvent::KeyPress, Qt::Key_P, Qt::NoModifier);
     QCoreApplication::sendEvent(canvas, &brushShortcut);
     require(canvas->canvasTool() == SnowCanvasTool::FreeDraw,
             "the configured Brush shortcut should activate in pinned drawing mode");
-    QKeyEvent shapeShortcut(QEvent::KeyPress, Qt::Key_1, Qt::NoModifier);
+    PhysicalKeyEvent shapeShortcut(QEvent::KeyPress, Qt::Key_1, Qt::NoModifier);
     QCoreApplication::sendEvent(canvas, &shapeShortcut);
     require(canvas->canvasTool() == SnowCanvasTool::Shape,
             "the configured Shape shortcut should activate in pinned drawing mode");
@@ -11625,7 +11629,7 @@ void pinnedControlledInteractionAndGestures() {
             "Escape fixture could not begin");
     ScreenshotPinnedWindowTestAccess::updateControlled(window, cursor + QPointF(12, 8));
     sendShortcut(window, Qt::Key_Escape);
-    QKeyEvent escapeRelease(QEvent::KeyRelease, Qt::Key_Escape, Qt::NoModifier);
+    PhysicalKeyEvent escapeRelease(QEvent::KeyRelease, Qt::Key_Escape, Qt::NoModifier);
     QCoreApplication::sendEvent(&window, &escapeRelease);
     require(!ScreenshotPinnedWindowTestAccess::interactionActive(window) && window.isVisible() &&
                 window.currentNativeGeometry() == original,

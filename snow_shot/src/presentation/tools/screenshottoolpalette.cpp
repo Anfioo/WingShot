@@ -1,3 +1,4 @@
+#include "snow_shot/shortcuts/shortcutbinding.h"
 #include "snow_shot/presentation/screenshottoolpalette.h"
 #include "snow_shot/presentation/shortcutdisplaytext.h"
 
@@ -3681,7 +3682,7 @@ bool ScreenshotToolPalette::eventFilter(QObject* watched, QEvent* event) {
     }
     if (m_options.recordingDrawingMode && event != nullptr && event->type() == QEvent::KeyPress) {
         auto* key = static_cast<QKeyEvent*>(event);
-        if (key->key() == Qt::Key_Escape && !key->isAutoRepeat()) {
+        if (snow_shot::shortcuts::commandKey(*key) == Qt::Key_Escape && !key->isAutoRepeat()) {
             bool dismissedTransient = false;
             if (m_recordOutputFormatSelect != nullptr &&
                 m_recordOutputFormatSelect->popupVisible()) {
@@ -3736,8 +3737,9 @@ bool ScreenshotToolPalette::eventFilter(QObject* watched, QEvent* event) {
             }
         } else if (event->type() == QEvent::KeyPress || event->type() == QEvent::KeyRelease) {
             const auto* key = static_cast<QKeyEvent*>(event);
-            if (key->key() == Qt::Key_Space || key->key() == Qt::Key_Return ||
-                key->key() == Qt::Key_Enter) {
+            if (snow_shot::shortcuts::commandKey(*key) == Qt::Key_Space ||
+                snow_shot::shortcuts::commandKey(*key) == Qt::Key_Return ||
+                snow_shot::shortcuts::commandKey(*key) == Qt::Key_Enter) {
                 if (!key->isAutoRepeat()) {
                     const bool pressed = event->type() == QEvent::KeyPress;
                     const bool activate = !pressed && watchedButton->isDown();

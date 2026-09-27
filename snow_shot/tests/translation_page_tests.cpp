@@ -1,3 +1,4 @@
+#include "physical_key_test_support.h"
 #include "translation_test_support.h"
 #include "snow_shot/presentation/components/screenshottranslationsettingsdialog.h"
 #include "widgets/modal.h"
@@ -67,9 +68,9 @@ template <typename T> T* child(QObject& owner, const char* name) {
 }
 
 void key(QWidget* widget, int value, Qt::KeyboardModifiers modifiers = Qt::NoModifier) {
-    QKeyEvent press(QEvent::KeyPress, value, modifiers);
+    PhysicalKeyEvent press(QEvent::KeyPress, value, modifiers);
     QApplication::sendEvent(widget, &press);
-    QKeyEvent release(QEvent::KeyRelease, value, modifiers);
+    PhysicalKeyEvent release(QEvent::KeyRelease, value, modifiers);
     QApplication::sendEvent(widget, &release);
     flushEvents();
 }
@@ -498,7 +499,7 @@ void editorAndShortcutBehavior() {
     source->setPlainText(boundary + QStringLiteral("overflow"));
     require(source->toPlainText() == boundary, "limit counts code points without splitting emoji");
     source->moveCursor(QTextCursor::End);
-    QKeyEvent typed(QEvent::KeyPress, Qt::Key_X, Qt::NoModifier, QStringLiteral("x"));
+    PhysicalKeyEvent typed(QEvent::KeyPress, Qt::Key_X, Qt::NoModifier, QStringLiteral("x"));
     QApplication::sendEvent(source, &typed);
     require(source->toPlainText() == boundary, "typing cannot exceed the Unicode limit");
     source->selectAll();
@@ -549,6 +550,17 @@ void editorAndShortcutBehavior() {
     key(&owner, Qt::Key_C, Qt::ControlModifier);
     require(QApplication::clipboard()->text() == result->toPlainText(),
             "active page shortcuts also work with focus outside its editors");
+#ifdef Q_OS_MACOS
+    QApplication::clipboard()->setText(QStringLiteral("physical copy sentinel"));
+    QKeyEvent wrongCopy(QEvent::KeyPress, Qt::Key_C, Qt::ControlModifier, 1, 9, 0);
+    QApplication::sendEvent(&owner, &wrongCopy);
+    require(QApplication::clipboard()->text() == QStringLiteral("physical copy sentinel"),
+            "a C legend at physical V must not trigger result copy");
+    QKeyEvent physicalCopy(QEvent::KeyPress, Qt::Key_Q, Qt::ControlModifier, 1, 8, 0);
+    QApplication::sendEvent(&owner, &physicalCopy);
+    require(QApplication::clipboard()->text() == result->toPlainText(),
+            "physical C must copy the result across layout changes");
+#endif
     result->selectAll();
     const QString selected = result->textCursor().selectedText();
     server.delta(0, QStringLiteral("世界！\n\nSecond paragraph."));

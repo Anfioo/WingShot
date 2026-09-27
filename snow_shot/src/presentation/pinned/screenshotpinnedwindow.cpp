@@ -1,3 +1,4 @@
+#include "snow_shot/shortcuts/shortcutbinding.h"
 #include "snow_shot/presentation/windowcloseshortcut.h"
 #include "snow_shot/presentation/screenshotencodingsettings.h"
 #include "widgets/detail/pointer_region.h"
@@ -775,7 +776,12 @@ class ScreenshotPinnedCanvasWidget final : public SnowCanvasWidget {
   public:
     ScreenshotPinnedCanvasWidget(SnowCanvasRuntime& runtime, QWidget* parent,
                                  std::function<void()> afterPaint)
-        : SnowCanvasWidget(runtime, parent), m_afterPaint(std::move(afterPaint)) {}
+        : SnowCanvasWidget(runtime, parent), m_afterPaint(std::move(afterPaint)) {
+#ifdef Q_OS_MACOS
+        setCommandKeyResolver(
+            [](const QKeyEvent& event) { return snow_shot::shortcuts::commandKey(event); });
+#endif
+    }
 
   protected:
     void paintEvent(QPaintEvent* event) override {
