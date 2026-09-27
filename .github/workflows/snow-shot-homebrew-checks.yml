@@ -1,0 +1,49 @@
+name: Check Snow Shot Homebrew support
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/snow-shot-homebrew*.yml
+      - scripts/snow-shot-homebrew.py
+      - scripts/test-snow-shot-homebrew.py
+      - scripts/install-snow-shot-macos.sh
+      - scripts/test-macos-installer.py
+      - homebrew/**
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: macos-15
+    env:
+      HOMEBREW_NO_ANALYTICS: 1
+      HOMEBREW_NO_AUTO_UPDATE: 1
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Check focused installer and release behavior
+        run: |
+          bash -n scripts/install-snow-shot-macos.sh
+          python3 scripts/test-macos-installer.py
+          python3 scripts/test-snow-shot-homebrew.py
+      - name: Generate an unpublished cask fixture
+        run: |
+          export CASK_FIXTURE="$(brew --repository)/Library/Taps/mg-chao/homebrew-preflight/Casks/snow-shot.rb"
+          python3 - <<'PY'
+          import importlib.util
+          import os
+          from pathlib import Path
+          spec = importlib.util.spec_from_file_location('homebrew', 'scripts/snow-shot-homebrew.py')
+          helper = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(helper)
+          path = Path(os.environ['CASK_FIXTURE'])
+          path.parent.mkdir(parents=True)
+          # Syntax/metadata fixture only: never uploaded, installed, or audited online.
+          path.write_text(helper.cask('1.2.3', '0' * 64), encoding='utf-8')
+          PY
+      - name: Check Homebrew style and offline metadata
+        run: |
+          brew style --cask mg-chao/preflight/snow-shot
+          brew audit --cask mg-chao/preflight/snow-shot
