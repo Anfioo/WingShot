@@ -121,8 +121,14 @@ upper bounds for every call.
 
 ## Recording and export
 
-`NativeRecordingSession` records direct MP4 and writes `<output>.snowmedia` with
-color, cursor mode, geometry/destination changes and timeline discontinuities.
+`NativeRecordingSession` writes only the requested media output (MP4, AVI, GIF,
+APNG or WebP). Color, cursor mode, geometry/destination changes and timeline
+discontinuities are returned in memory in `NativeRecordingReport::media`; no
+standalone sidecar is created. Editable recordings embed this metadata in their
+bundle, whose path is returned in `NativeEditableReport::artifact.bundle_path`.
+The former `NativeRecordingReport::manifest_path` field is removed. Rust callers
+needing a standalone manifest can explicitly use `RecordedMedia::write_to` with
+a caller-owned path. Existing sidecar files are neither overwritten nor deleted.
 Source resize preserves the configured even output dimensions and aspect ratio
 against black. Default cursor mode is ScreenCaptureKit embedded.
 

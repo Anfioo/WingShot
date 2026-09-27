@@ -6,7 +6,7 @@ use crate::macos_effects::Effects;
 pub use crate::macos_effects::NativeEffectsConfig;
 use crate::{ScreenRecorderError, error::Result};
 use snow_audio_recorder::{AudioEvent, AudioSession, AudioStreamConfig, AudioStreamHandle};
-use snow_core::recording_clock::RecordingClock;
+use snow_core::{cancellation::CancellationToken, recording_clock::RecordingClock};
 use snow_macos::{
     MacError,
     compositor::{Compositor, Layer},
@@ -57,8 +57,9 @@ pub enum NativeRecordingEvent {
 #[derive(Clone, Debug)]
 pub struct NativeRecordingReport {
     pub encoder: StreamingEncoderReport,
+    /// In-memory metadata; editable recordings embed this in their bundle.
+    /// Direct outputs do not implicitly create a standalone manifest.
     pub media: snow_recording_model::media::RecordedMedia,
-    pub manifest_path: PathBuf,
     pub geometry_changes: Vec<(u64, DesktopTransform)>,
     pub interruptions: Vec<(u64, String)>,
     pub cpu_readbacks: u64,
@@ -521,25 +522,34 @@ impl NativeRecordingSession {
         let end = self
             .prepare_finish()
             .map_err(|error| self.preserve_failure(error))?;
-        let mut encoder = self
-            .encoder
-            .finish_at_pts_cancelable(end, &self.config.capture.cancellation)?;
-        encoder.hardware_fallback |= self.config.execution
-            == ExportExecutionMode::HardwarePreferred
-            && !encoder.used_hardware_video_encoder;
-        let mut manifest_path = self.config.output_path.as_os_str().to_os_string();
-        manifest_path.push(".snowmedia");
-        let manifest_path = PathBuf::from(manifest_path);
-        self.media.write_to(&manifest_path)?;
+        let encoder = finish_recording_output(
+            self.encoder,
+            end,
+            self.config.execution,
+            &self.config.capture.cancellation,
+        )?;
         Ok(NativeRecordingReport {
-            manifest_path,
-            media: self.media,
             encoder,
+            media: self.media,
             geometry_changes: self.geometry_changes,
             interruptions: self.interruptions,
             cpu_readbacks: self.cpu_readbacks,
         })
     }
+}
+
+// The encoder owns the output path. Metadata persistence belongs to the caller
+// (or the editable bundle layer), never to media finalization.
+fn finish_recording_output(
+    encoder: StreamingEncoder,
+    end: u64,
+    execution: ExportExecutionMode,
+    cancellation: &CancellationToken,
+) -> Result<StreamingEncoderReport> {
+    let mut report = encoder.finish_at_pts_cancelable(end, cancellation)?;
+    report.hardware_fallback |=
+        execution == ExportExecutionMode::HardwarePreferred && !report.used_hardware_video_encoder;
+    Ok(report)
 }
 
 fn encoder_accepts_source(
@@ -629,6 +639,93 @@ pub use editable::{NativeEditableReport, NativeEditableSession};
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn direct_outputs_do_not_create_or_touch_sidecars() {
+        for format in [
+            ExportFormat::Gif,
+            ExportFormat::Apng,
+            ExportFormat::Webp,
+            ExportFormat::Mp4,
+            ExportFormat::Avi,
+        ] {
+            for sidecar_kind in ["absent", "file", "directory", "symlink"] {
+                let directory = tempfile::tempdir().unwrap();
+                let output_path = directory
+                    .path()
+                    .join(format!("SnowShot.{}", format.file_extension()));
+                let sidecar =
+                    output_path.with_extension(format!("{}.snowmedia", format.file_extension()));
+                let sentinel = b"caller-owned metadata";
+                let symlink_target = directory.path().join("caller-metadata");
+                match sidecar_kind {
+                    "file" => std::fs::write(&sidecar, sentinel).unwrap(),
+                    "directory" => std::fs::create_dir(&sidecar).unwrap(),
+                    "symlink" => {
+                        std::fs::write(&symlink_target, sentinel).unwrap();
+                        std::os::unix::fs::symlink(&symlink_target, &sidecar).unwrap();
+                    }
+                    _ => {}
+                }
+                let mut encoder = StreamingEncoder::builder(StreamingEncoderConfig {
+                    output_path: output_path.clone(),
+                    format,
+                    width: 16,
+                    height: 16,
+                    fps: 10,
+                    codec: VideoCodec::H264,
+                    prefer_hardware_h264: false,
+                    execution_mode: ExportExecutionMode::SoftwareOnly,
+                    software_h264_priority: SoftwareH264Priority::X264First,
+                    video: Default::default(),
+                    encode_threads: 1,
+                    audio: None,
+                    loop_animated_images: false,
+                })
+                .software_only()
+                .create()
+                .unwrap();
+                encoder
+                    .push_rgba_frame_at_pts(0, &[255; 16 * 16 * 4])
+                    .unwrap();
+                encoder
+                    .push_rgba_frame_at_pts(1, &[128; 16 * 16 * 4])
+                    .unwrap();
+                let report = finish_recording_output(
+                    encoder,
+                    2,
+                    ExportExecutionMode::SoftwareOnly,
+                    &CancellationToken::default(),
+                )
+                .unwrap();
+                assert!(report.encoded_frames > 0);
+                assert!(std::fs::metadata(&output_path).unwrap().len() > 0);
+                match sidecar_kind {
+                    "file" | "symlink" => {
+                        assert_eq!(std::fs::read(&sidecar).unwrap(), sentinel);
+                        if sidecar_kind == "symlink" {
+                            assert_eq!(std::fs::read_link(&sidecar).unwrap(), symlink_target);
+                        }
+                    }
+                    "directory" => {
+                        assert!(sidecar.is_dir());
+                        assert_eq!(std::fs::read_dir(&sidecar).unwrap().count(), 0);
+                    }
+                    _ => assert!(!sidecar.exists(), "{format:?}"),
+                }
+                let expected_count = match sidecar_kind {
+                    "absent" => 1,
+                    "symlink" => 3,
+                    _ => 2,
+                };
+                assert_eq!(
+                    std::fs::read_dir(directory.path()).unwrap().count(),
+                    expected_count,
+                    "{format:?}: {sidecar_kind}"
+                );
+            }
+        }
+    }
+
     #[test]
     fn audio_gap_metadata_excludes_paused_time() {
         let start = Instant::now();
