@@ -1,6 +1,7 @@
 #ifndef SNOW_SHOT_PLATFORM_MACOS_CAPTUREWINDOWLAYERS_P_H
 #define SNOW_SHOT_PLATFORM_MACOS_CAPTUREWINDOWLAYERS_P_H
 
+#include <CoreGraphics/CoreGraphics.h>
 #include <QVariant>
 #include <QWindow>
 #include <algorithm>
@@ -34,6 +35,16 @@ struct CaptureLayer {
                    : layer;
     }
 };
+
+// Keep system chrome < pins < the entire recording band < screenshots.
+// Derive the pin level from the recording floor so changes to the reserved band
+// cannot accidentally let pins cover a capture surface.
+inline CGWindowLevel captureWindowLevel(CaptureLayer role) {
+    return CGWindowLevelForKey(kCGScreenSaverWindowLevelKey) + role.offset();
+}
+inline CGWindowLevel pinnedWindowLevel() {
+    return captureWindowLevel({CaptureFamily::Recording, kOverlayLayer}) - 1;
+}
 
 // Explicit roles survive on QWidget; inherited roles follow the current Qt
 // transient owner, including pooled popups moving between capture families.

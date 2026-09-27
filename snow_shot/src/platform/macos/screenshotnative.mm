@@ -172,7 +172,7 @@ void applyScreenshotLayer(QWidget* widget, const ModalFloors& floors) {
         releaseNativeWindowPolicy(window);
         return;
     }
-    const NSInteger level = CGWindowLevelForKey(kCGScreenSaverWindowLevelKey) + role.offset();
+    const NSInteger level = captureWindowLevel(role);
     applyNativeWindowPolicy(window, level);
 }
 

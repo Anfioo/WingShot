@@ -1,4 +1,5 @@
 #include "presentation/pinned/pinnedwindowplatform.h"
+#include "platform/macos/capturewindowlayers_p.h"
 #include "snow_shot/presentation/mousereleaseactioncontroller.h"
 #import <AppKit/AppKit.h>
 #import <CoreGraphics/CoreGraphics.h>
@@ -105,9 +106,8 @@ void hiddenPlacementCommitsBeforeShow() {
             require(platform->applyStablePlacement(requested, screen),
                     "hidden placement must commit to the native window before verification");
             const auto actual = platform->placement();
-            QPoint expectedOrigin =
+            const QPoint expectedOrigin =
                 (QPointF(screen->geometry().topLeft()) + requested.position).toPoint();
-            expectedOrigin.setY(qMax(screen->availableGeometry().top(), expectedOrigin.y()));
             const QRect expected(expectedOrigin, requested.windowSize);
             require(actual && platform->windowGeometry() == expected &&
                         widget.geometry() == expected && !widget.isVisible(),
@@ -186,6 +186,10 @@ void nativePolicies(bool focus) {
     require(!window.hasShadow, "pin must not use the native window shadow");
     widget.show();
     events();
+    require(window.level > CGWindowLevelForKey(kCGMainMenuWindowLevelKey) &&
+                window.level > CGWindowLevelForKey(kCGDockWindowLevelKey) &&
+                !window.hidesOnDeactivate,
+            "always-on-top pin must stay above the menu bar and Dock when inactive");
     QScreen* screen = widget.screen();
     PinnedPlacement placement{
         screen->name(), screen->serialNumber(),
@@ -215,14 +219,22 @@ void nativePolicies(bool focus) {
     require(platform->applyPlacement(edgePlacement, screen),
             "pin movement must remain valid at the menu-bar boundary");
     const auto constrained = platform->placement();
-    require(constrained && constrained->windowSize == edgePlacement.windowSize &&
-                constrained->position == QPointF(70, usableTop) &&
+    require(
+        constrained && constrained->windowSize == edgePlacement.windowSize &&
+            constrained->position == edgePlacement.position &&
+            widget.geometry().topLeft() ==
+                screen->geometry().topLeft() + constrained->position.toPoint(),
+        "topmost pins must overlap the menu bar with matching Qt geometry and placement readback");
+    auto dockPlacement = originalPlacement;
+    dockPlacement.position = QPointF(70, screen->geometry().height() - 20);
+    require(platform->applyPlacement(dockPlacement, screen),
+            "topmost pin placement must allow overlapping the Dock");
+    const auto dockActual = platform->placement();
+    require(dockActual && dockActual->position == dockPlacement.position &&
                 widget.geometry().topLeft() ==
-                    screen->geometry().topLeft() + constrained->position.toPoint(),
-            "native menu-bar constraints must be reflected in Qt geometry and placement readback");
+                    screen->geometry().topLeft() + dockPlacement.position.toPoint(),
+            "Dock overlap must preserve native and Qt geometry");
     require(platform->applyPlacement(originalPlacement, screen), "restore edge placement");
-    require(window.level == NSModalPanelWindowLevel && !window.hidesOnDeactivate,
-            "always-on-top pin must stay above floating tools and remain visible when inactive");
     QWidget floatingTool(nullptr, Qt::Tool | Qt::FramelessWindowHint);
     NSWindow* tool = reinterpret_cast<NSView*>(floatingTool.winId()).window;
     require(window.level > tool.level,
@@ -231,8 +243,14 @@ void nativePolicies(bool focus) {
             "disabling always-on-top must restore the normal window band");
     require(platform->attach() && window.level == NSNormalWindowLevel,
             "reattaching must preserve the always-on-top opt-out");
+    require(platform->applyPlacement(edgePlacement, screen),
+            "normal pins must still accept placement near the menu bar");
+    const auto normalPlacement = platform->placement();
+    require(normalPlacement && normalPlacement->position == QPointF(70, usableTop),
+            "disabling always-on-top must retain AppKit's normal menu-bar constraint");
     require(platform->setStaysOnTop(true) && window.level > tool.level,
             "re-enabling always-on-top must move the pin above floating tools");
+    require(platform->applyPlacement(originalPlacement, screen), "restore topmost placement");
     require((window.collectionBehavior & NSWindowCollectionBehaviorCanJoinAllSpaces) &&
                 (window.collectionBehavior & NSWindowCollectionBehaviorFullScreenAuxiliary),
             "pin must join desktop and full-screen Spaces");
@@ -263,7 +281,7 @@ void nativePolicies(bool focus) {
         auxiliary.show();
         events();
         NSWindow* panel = reinterpret_cast<NSView*>(auxiliary.winId()).window;
-        require(panel.level == NSModalPanelWindowLevel &&
+        require(panel.level == snow_shot::platform::detail::pinnedWindowLevel() &&
                     (panel.collectionBehavior & NSWindowCollectionBehaviorFullScreenAuxiliary) &&
                     window.keyWindow && editor.hasFocus(),
                 "passive auxiliary controls must share Space policy without taking focus");
@@ -285,7 +303,8 @@ void nativePolicies(bool focus) {
     require(platform->attach() && platform->setInputTransparent(true),
             "surface recreation must restore platform ownership");
     NSWindow* recreated = [reinterpret_cast<NSView*>(widget.winId()).window retain];
-    require(recreated.level == NSModalPanelWindowLevel && !recreated.hidesOnDeactivate,
+    require(recreated.level == snow_shot::platform::detail::pinnedWindowLevel() &&
+                !recreated.hidesOnDeactivate,
             "surface recreation must preserve the always-on-top native policy");
     int notifications = 0;
     platform->environmentChanged = [&](bool) { ++notifications; };

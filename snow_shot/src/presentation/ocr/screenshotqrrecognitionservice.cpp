@@ -139,7 +139,7 @@ ScreenshotQrRecognitionResult recognizeImage(QImage source, const std::atomic_bo
 
         const BarcodeDecoders& decoders = threadDecoders(modelsDirectoryPath);
         if (decoders.qr.empty()) {
-            return {{}, decoders.loadError};
+            return {{}, decoders.loadError, {}};
         }
 
         const cv::Mat view(source.height(), source.width(), CV_8UC1,
@@ -206,7 +206,7 @@ ScreenshotQrRecognitionResult recognizeImage(QImage source, const std::atomic_bo
     } catch (...) {
         qWarning() << "Barcode recognition failed with an unknown error";
     }
-    return {{}, recognitionFailedMessage()};
+    return {{}, recognitionFailedMessage(), {}};
 }
 } // namespace
 

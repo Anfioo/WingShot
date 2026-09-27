@@ -11,6 +11,7 @@
 #include <QApplication>
 #include <QAbstractEventDispatcher>
 #include <QEventLoop>
+#include <QElapsedTimer>
 #include <QFileDialog>
 #include <QTimer>
 #include <QEvent>
@@ -84,6 +85,14 @@ void finishNativeModalTransition() {
 
 void captureFamiliesFollowOwnership() {
     using namespace snow_shot::platform::detail;
+    const auto pinLevel = pinnedWindowLevel();
+    require(pinLevel > CGWindowLevelForKey(kCGMainMenuWindowLevelKey) &&
+                pinLevel > CGWindowLevelForKey(kCGDockWindowLevelKey),
+            "topmost pins must cover both the menu bar and Dock");
+    require(pinLevel < captureWindowLevel({CaptureFamily::Recording, kOverlayLayer}) &&
+                captureWindowLevel({CaptureFamily::Recording, 1000}) <
+                    captureWindowLevel({CaptureFamily::Screenshot, kOverlayLayer}),
+            "native bands must preserve screenshot > recording descendants > pin");
     QWindow screenshot;
     screenshot.setProperty(kScreenshotLayer, kOverlayLayer);
     QWindow recording;
@@ -143,14 +152,20 @@ void captureFamiliesKeepNativeOrder() {
     popup.windowHandle()->setTransientParent(toolbar.windowHandle());
     nested.windowHandle()->setTransientParent(popup.windowHandle());
     auto native = [](QWidget& widget) { return reinterpret_cast<NSView*>(widget.winId()).window; };
+    bool pinTopmost = true;
     auto verify = [&] {
-        QCoreApplication::processEvents();
+        // Let Cocoa commit newly shown windows before querying WindowServer order.
+        finishNativeModalTransition();
         require(native(pin).level < native(recording).level &&
                     native(recording).level < native(toolbar).level &&
                     native(toolbar).level < native(popup).level &&
                     native(popup).level < native(nested).level &&
                     native(nested).level < native(screenshot).level,
                 "native levels must enforce screenshot > recording and its popups > pin");
+        if (pinTopmost)
+            require(native(pin).level > CGWindowLevelForKey(kCGMainMenuWindowLevelKey) &&
+                        native(pin).level > CGWindowLevelForKey(kCGDockWindowLevelKey),
+                    "raising capture windows must leave topmost pins above system chrome");
         require(native(recording).level > CGWindowLevelForKey(kCGMainMenuWindowLevelKey) &&
                     native(recording).level > CGWindowLevelForKey(kCGDockWindowLevelKey),
                 "recording must retain its position above system chrome");
@@ -169,11 +184,37 @@ void captureFamiliesKeepNativeOrder() {
             return CFIndex(-1);
         };
         require(windows != nullptr, "WindowServer must provide window ordering");
+        // Showing/activating is asynchronous on Cocoa. Wait only for WindowServer
+        // registration, never for the expected order: a wrong order must fail below.
+        const auto allRegistered = [&] {
+            for (QWidget* widget :
+                 {static_cast<QWidget*>(&screenshot), static_cast<QWidget*>(&nested),
+                  static_cast<QWidget*>(&popup), static_cast<QWidget*>(&toolbar),
+                  static_cast<QWidget*>(&recording), static_cast<QWidget*>(&pin)}) {
+                if (position(native(*widget)) < 0)
+                    return false;
+            }
+            return true;
+        };
+        QElapsedTimer registrationDeadline;
+        registrationDeadline.start();
+        while (!allRegistered() && registrationDeadline.elapsed() < 5000) {
+            QEventLoop loop;
+            QTimer::singleShot(10, &loop, &QEventLoop::quit);
+            loop.exec();
+            CFRelease(windows);
+            windows = CGWindowListCopyWindowInfo(kCGWindowListOptionOnScreenOnly, kCGNullWindowID);
+            require(windows != nullptr, "WindowServer must provide window ordering");
+        }
         CFIndex previous = -1;
         for (QWidget* widget : {static_cast<QWidget*>(&screenshot), static_cast<QWidget*>(&nested),
                                 static_cast<QWidget*>(&popup), static_cast<QWidget*>(&toolbar),
                                 static_cast<QWidget*>(&recording), static_cast<QWidget*>(&pin)}) {
             const CFIndex current = position(native(*widget));
+            if (!(current >= 0 && current > previous))
+                std::cerr << "capture ordering: level=" << native(*widget).level
+                          << " position=" << current << " previous=" << previous
+                          << " pinTopmost=" << pinTopmost << '\n';
             require(current >= 0 && current > previous,
                     "WindowServer must preserve the capture hierarchy after raising windows");
             previous = current;
@@ -193,6 +234,7 @@ void captureFamiliesKeepNativeOrder() {
             verify();
         }
         for (bool topmost : {false, true}) {
+            pinTopmost = topmost;
             require(pinnedPlatform->setStaysOnTop(topmost), "pin topmost toggle must succeed");
             verify();
         }

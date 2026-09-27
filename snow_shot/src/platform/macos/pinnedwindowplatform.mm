@@ -1,4 +1,5 @@
 #include "../../presentation/pinned/pinnedwindowplatform.h"
+#include "capturewindowlayers_p.h"
 
 #import <AppKit/AppKit.h>
 #import <CoreGraphics/CoreGraphics.h>
@@ -83,9 +84,10 @@ class CocoaPinnedWindowPlatform final : public PinnedWindowPlatform {
             window.movableByWindowBackground = NO;
             window.hasShadow = NO;
         }
-        // Match Qt's WindowStaysOnTopHint: floating tools occupy a lower band
-        // and must not cover pins or their auxiliary controls.
-        window.level = m_staysOnTop ? NSModalPanelWindowLevel : NSNormalWindowLevel;
+        // Pins and their auxiliary controls cover system chrome, while capture
+        // windows retain their higher recording and screenshot bands.
+        window.level =
+            m_staysOnTop ? snow_shot::platform::detail::pinnedWindowLevel() : NSNormalWindowLevel;
         window.collectionBehavior =
             (window.collectionBehavior & ~(NSWindowCollectionBehaviorMoveToActiveSpace |
                                            NSWindowCollectionBehaviorFullScreenPrimary)) |
@@ -144,9 +146,10 @@ class CocoaPinnedWindowPlatform final : public PinnedWindowPlatform {
         if (!attach())
             return false;
         // QWidget owns an integer logical frame. Quantize the pointer-derived
-        // origin once, then apply Cocoa's menu-bar constraint before committing
-        // through Qt. A second, fractional NSWindow write makes Qt and AppKit
-        // disagree about the frame and can cancel an otherwise valid drag.
+        // origin once, then apply Cocoa's level-aware frame constraints (topmost
+        // pins may overlap system chrome) before committing through Qt. A second, fractional
+        // NSWindow write makes Qt and AppKit disagree about the frame and can cancel an otherwise
+        // valid drag.
         const QRectF requested = pinnedDesktopRect(placement, *screen);
         const QRect logicalFrame(requested.topLeft().toPoint(), placement.windowSize);
         const NSRect frame = [m_native constrainFrameRect:cocoaRect(logicalFrame)
@@ -194,7 +197,8 @@ class CocoaPinnedWindowPlatform final : public PinnedWindowPlatform {
         m_staysOnTop = staysOnTop;
         if (!attach())
             return false;
-        return m_native.level == (staysOnTop ? NSModalPanelWindowLevel : NSNormalWindowLevel);
+        return m_native.level == (staysOnTop ? snow_shot::platform::detail::pinnedWindowLevel()
+                                             : NSNormalWindowLevel);
     }
     bool activate() override {
         if (m_transparent || !attach())

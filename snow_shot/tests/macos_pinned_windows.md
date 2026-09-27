@@ -199,3 +199,30 @@ display geometry/scaling, and pass/fail:
 
 Windows native move/resize and mixed-DPI regression tests must be run on Windows.
 An arm64 build or an x64 syntax check does not establish Intel runtime qualification.
+
+## System chrome stacking regression — 2026-09-28
+
+Topmost pins and their auxiliary controls now occupy the level immediately below
+recording's reserved band, above both the menu bar and Dock. The shared native
+level calculation preserves `screenshot > recording (including popups) > pin`.
+Disabling always-on-top still selects the normal window level.
+
+AppKit's frame constraints depend on the window level: topmost pins can now
+cross the menu bar, while normal pins retain the constraint described in the
+older geometry audits above. Placement still commits through Qt and verifies
+native readback, including hidden preparation and reuse.
+
+The native pin regression failed at the system-chrome level assertion before
+the correction. Coverage checks menu-bar and Dock overlap, the normal-level
+opt-out, auxiliary focus, and surface recreation. The offscreen layer test checks
+the band boundaries; the Cocoa stacking test checks WindowServer ordering after
+raising windows, toggling topmost, reparenting popups, and recreating surfaces.
+
+The WindowServer-order test also reproduced a startup registration race on the
+original implementation. It now waits up to five seconds for all fixture windows
+to enter the on-screen list, then asserts their order without retrying a wrong
+order. The native stacking check passed three consecutive runs after this change.
+All five focused Debug checks passed (pin ownership, native pin policies, focus,
+offscreen overlay/layer policy, and native capture stacking). Changed-line format
+and diff whitespace checks passed; this build has clang-tidy disabled. No full
+suite was run.
