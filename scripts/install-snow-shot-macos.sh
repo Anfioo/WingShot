@@ -5,6 +5,9 @@ set -Eeuo pipefail
 language=auto
 launch=1
 local_dmg=''
+prepare_app=''
+prepare_owned=0
+prepare_committed=0
 work=''
 mount_dir=''
 package_mounted=0
@@ -21,8 +24,8 @@ previous_destination=''
 message() {
     local en cn tw
     case "$1" in
-        usage) en='Usage: install-snow-shot-macos.sh [--lang auto|en|zh-CN|zh-TW] [--no-launch] [--dmg PATH] [--help]'; cn='用法：install-snow-shot-macos.sh [--lang auto|en|zh-CN|zh-TW] [--no-launch] [--dmg 路径] [--help]'; tw='用法：install-snow-shot-macos.sh [--lang auto|en|zh-CN|zh-TW] [--no-launch] [--dmg 路徑] [--help]' ;;
-        help) en='Downloads, verifies, locally signs, and installs Snow Shot. --dmg requires PATH.sha256. --no-launch skips launching. --lang overrides automatic language selection. First installation requires macOS privacy authorization.'; cn='下载、验证、本地签名并安装 Snow Shot。--dmg 需要对应的 PATH.sha256 文件。--no-launch 跳过启动。--lang 指定界面语言。首次安装需要授予 macOS 隐私权限。'; tw='下載、驗證、本機簽署並安裝 Snow Shot。--dmg 需要對應的 PATH.sha256 檔案。--no-launch 跳過啟動。--lang 指定介面語言。首次安裝需要授予 macOS 隱私權限。' ;;
+        usage) en='Usage: install-snow-shot-macos.sh [--lang auto|en|zh-CN|zh-TW] [--no-launch] [--dmg PATH] [--prepare-app PATH] [--help]'; cn='用法：install-snow-shot-macos.sh [--lang auto|en|zh-CN|zh-TW] [--no-launch] [--dmg 路径] [--prepare-app 路径] [--help]'; tw='用法：install-snow-shot-macos.sh [--lang auto|en|zh-CN|zh-TW] [--no-launch] [--dmg 路徑] [--prepare-app 路徑] [--help]' ;;
+        help) en='Downloads, verifies, locally signs, and installs Snow Shot. --dmg requires PATH.sha256. --prepare-app requires --dmg and a fresh absolute .app path; it stages a signed app without installing or launching. --no-launch skips launching. --lang overrides automatic language selection. First installation requires macOS privacy authorization.'; cn='下载、验证、本地签名并安装 Snow Shot。--dmg 需要对应的 PATH.sha256 文件。--prepare-app 需要 --dmg 和尚不存在的绝对 .app 路径；仅暂存签名后的应用，不安装或启动。--no-launch 跳过启动。--lang 指定界面语言。首次安装需要授予 macOS 隐私权限。'; tw='下載、驗證、本機簽署並安裝 Snow Shot。--dmg 需要對應的 PATH.sha256 檔案。--prepare-app 需要 --dmg 和尚不存在的絕對 .app 路徑；僅暫存簽署後的應用程式，不安裝或啟動。--no-launch 跳過啟動。--lang 指定介面語言。首次安裝需要授予 macOS 隱私權限。' ;;
         arguments) en='Invalid or incomplete option. Run with --help.'; cn='选项无效或不完整。请使用 --help 查看帮助。'; tw='選項無效或不完整。請使用 --help 查看說明。' ;;
         platform) en='Snow Shot requires macOS 15 or later on Apple Silicon or Intel.'; cn='Snow Shot 需要运行 macOS 15 或更新版本的 Apple Silicon 或 Intel Mac。'; tw='Snow Shot 需要執行 macOS 15 或更新版本的 Apple Silicon 或 Intel Mac。' ;;
         root) en='Run this script as your desktop user, without sudo. Administrator access is requested only when needed.'; cn='请以当前桌面用户运行脚本，不要直接使用 root。仅在需要时请求管理员权限。'; tw='請以目前桌面使用者執行指令碼，不要直接使用 root。僅在需要時請求管理員權限。' ;;
@@ -40,7 +43,7 @@ message() {
         quit) en='Closing the installed Snow Shot…'; cn='正在关闭已安装的 Snow Shot…'; tw='正在關閉已安裝的 Snow Shot…' ;;
         running) en='Snow Shot did not quit. Finish any recording, quit the app manually, and run the installer again.'; cn='Snow Shot 未退出。请结束录制并手动退出应用，然后重新运行安装器。'; tw='Snow Shot 未結束。請結束錄製並手動結束應用程式，然後重新執行安裝程式。' ;;
         done) en='[5/5] Snow Shot is installed.'; cn='[5/5] Snow Shot 安装完成。'; tw='[5/5] Snow Shot 安裝完成。' ;;
-        permissions) en='On first installation or migration from an older signature, grant Screen Recording and Accessibility in System Settings → Privacy & Security when requested. Use this installer for future updates to retain the local identity. Permission retention has not yet been qualified across supported macOS versions; macOS may still request consent.'; cn='首次安装或从旧签名迁移时，请按提示在“系统设置 → 隐私与安全性”中授予屏幕录制和辅助功能权限。今后请使用此安装器更新，以保留本地身份。跨 macOS 版本的权限保留尚未完成验证；系统仍可能要求授权。'; tw='首次安裝或從舊簽署遷移時，請依提示在「系統設定 → 隱私權與安全性」中授予螢幕錄製和輔助使用權限。之後請使用此安裝程式更新，以保留本機身分。跨 macOS 版本的權限保留尚未完成驗證；系統仍可能要求授權。' ;;
+        permissions) en='On first installation or migration from an older signature, grant Screen Recording and Accessibility in System Settings → Privacy & Security when requested. Use this installer or Homebrew for future updates to retain the local identity. Permission retention has not yet been qualified across supported macOS versions; macOS may still request consent.'; cn='首次安装或从旧签名迁移时，请按提示在“系统设置 → 隐私与安全性”中授予屏幕录制和辅助功能权限。今后请使用此安装器或 Homebrew 更新，以保留本地身份。跨 macOS 版本的权限保留尚未完成验证；系统仍可能要求授权。'; tw='首次安裝或從舊簽署遷移時，請依提示在「系統設定 → 隱私權與安全性」中授予螢幕錄製和輔助使用權限。之後請使用此安裝程式或 Homebrew 更新，以保留本機身分。跨 macOS 版本的權限保留尚未完成驗證；系統仍可能要求授權。' ;;
         failed) en='Installation failed. Check the diagnostic below, resolve the issue, and retry.'; cn='安装失败。请检查下方诊断信息，解决问题后重试。'; tw='安裝失敗。請檢查下方診斷資訊，解決問題後重試。' ;;
         rollback) en='Restoring the previous application…'; cn='正在恢复原应用…'; tw='正在還原原應用程式…' ;;
         recovery) en='Automatic cleanup or recovery failed. Keep the following directory; it may contain your previous app. Restore previous.app to the installation path printed below before retrying:'; cn='自动清理或恢复失败。请保留以下目录，其中可能包含原应用。重试前请将 previous.app 恢复到下方显示的安装路径：'; tw='自動清理或還原失敗。請保留以下目錄，其中可能包含原應用程式。重試前請將 previous.app 還原至下方顯示的安裝路徑：' ;;
@@ -306,6 +309,31 @@ JXA
     die running
 }
 
+# Homebrew owns the final app move and uninstall. Reserve only a fresh staging
+# directory so cleanup can never remove a caller's existing application.
+validate_prepare_output() {
+    [[ -n "$local_dmg" && "$prepare_app" == /*.app ]] || die arguments
+    local parent="${prepare_app%/*}"
+    [[ -d "$parent" && ! -L "$parent" && -w "$parent" && ! -e "$prepare_app" && ! -L "$prepare_app" ]] || die invalid
+}
+
+save_requirement() {
+    printf '%s\n' "$requirement" > "$state/requirement.tmp"
+    mv -f "$state/requirement.tmp" "$state/requirement"
+}
+
+prepare_application() {
+    validate_prepare_output
+    mkdir "$prepare_app"
+    prepare_owned=1
+    run ditto "$work/snow_shot.app" "$prepare_app"
+    run codesign --verify --deep --strict "$prepare_app"
+    run codesign --verify --strict -R "=$requirement" "$prepare_app"
+    save_requirement
+    prepare_committed=1
+    say permissions
+}
+
 install_application() {
     say install
     local applications_dir="${destination%/*}"
@@ -333,8 +361,7 @@ install_application() {
     as_install mv "$slot/new.app" "$destination"
     run codesign --verify --deep --strict "$destination"
     run codesign --verify --strict -R "=$requirement" "$destination"
-    printf '%s\n' "$requirement" > "$state/requirement.tmp"
-    mv -f "$state/requirement.tmp" "$state/requirement"
+    save_requirement
     committed=1
     say done
     say permissions
@@ -347,6 +374,9 @@ cleanup() {
     set +e
     if [[ "$status" != 0 && -n "$work" && -s "$work/diagnostic.log" ]]; then
         tail -n 15 "$work/diagnostic.log" >&2
+    fi
+    if [[ "$prepare_owned" == 1 && "$prepare_committed" == 0 ]]; then
+        rm -rf -- "$prepare_app" || status=1
     fi
     if [[ -n "$slot" && "$committed" == 0 ]]; then
         if [[ -d "$slot/previous.app" ]]; then
@@ -382,6 +412,7 @@ main() {
             --lang) [[ $# -ge 2 ]] || die arguments; language="$2"; shift 2 ;;
             --no-launch) launch=0; shift ;;
             --dmg) [[ $# -ge 2 && -n "$2" ]] || die arguments; local_dmg="$2"; shift 2 ;;
+            --prepare-app) [[ $# -ge 2 && -n "$2" ]] || die arguments; prepare_app="$2"; shift 2 ;;
             --help|-h) help=1; shift ;;
             *) select_language; die arguments ;;
         esac
@@ -389,6 +420,7 @@ main() {
     case "$language" in auto|en|zh-CN|zh-TW) ;; *) die arguments ;; esac
     select_language
     if [[ "$help" == 1 ]]; then message usage; message help; return; fi
+    if [[ -n "$prepare_app" ]]; then validate_prepare_output; fi
     [[ "$(uname -s)" == Darwin ]] || die platform
     if [[ "$(id -u)" == 0 ]]; then
         [[ -n "${SUDO_USER:-}" && "$SUDO_USER" != root && "$(id -u "$SUDO_USER")" != 0 && "$SUDO_USER" == "$(stat -f %Su /dev/console)" ]] || die root
@@ -407,7 +439,11 @@ main() {
     prepare_state
     obtain_package
     sign_application
-    install_application
+    if [[ -n "$prepare_app" ]]; then
+        prepare_application
+    else
+        install_application
+    fi
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then main "$@"; fi

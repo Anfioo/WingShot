@@ -1,0 +1,65 @@
+name: Publish Snow Shot Homebrew cask
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Published stable Snow Shot tag (v<version>_snow-shot)
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+# Serialize all versions so an older run cannot overwrite a newer cask.
+concurrency:
+  group: snow-shot-homebrew
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (!github.event.release.draft && !github.event.release.prerelease &&
+       endsWith(github.event.release.tag_name, '_snow-shot'))
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate tag and tap configuration
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.event.release.tag_name }}
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          python3 - <<'PY'
+          import os, re
+          tag = os.environ['RELEASE_TAG']
+          if not re.fullmatch(r'v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)_snow-shot', tag):
+              raise SystemExit('A stable v<version>_snow-shot tag is required.')
+          if not os.environ['TAP_TOKEN']:
+              raise SystemExit('Configure HOMEBREW_TAP_TOKEN with contents write access to mg-chao/homebrew-tap.')
+          PY
+      - name: Check out matching release source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.event.release.tag_name }}
+          path: release-source
+          persist-credentials: false
+      - name: Check out tap
+        uses: actions/checkout@v4
+        with:
+          repository: mg-chao/homebrew-tap
+          ref: main
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: homebrew-tap
+      - name: Verify focused release contracts
+        run: python3 scripts/test-snow-shot-homebrew.py
+      - name: Publish archive and cask
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag || github.event.release.tag_name }}
+        run: >-
+          python3 scripts/snow-shot-homebrew.py publish
+          --tag "$RELEASE_TAG" --source release-source
+          --tap homebrew-tap --output artifacts/homebrew

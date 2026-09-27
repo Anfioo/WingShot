@@ -198,7 +198,7 @@ class InstallerTests(unittest.TestCase):
             self.assertNotIn('\x1b', result.stdout)
 
     def test_invalid_arguments(self):
-        for args in [['--lang'], ['--lang', 'fr'], ['--dmg'], ['--unexpected']]:
+        for args in [['--lang'], ['--lang', 'fr'], ['--dmg'], ['--prepare-app'], ['--prepare-app', '/tmp/snow-shot-test.app'], ['--unexpected']]:
             self.assertNotEqual(subprocess.run(['/bin/bash', str(SCRIPT)] + args, capture_output=True).returncode, 0)
 
     def test_language_detection(self):
@@ -428,6 +428,77 @@ sign_application''', success=False)
         self.shell('trap cleanup EXIT; prepare_state', success=False)
         self.assertFalse((self.root / 'outside').exists())
         self.assertFalse((self.state / 'lock').exists())
+
+    def prepare_code(self):
+        return '''trap cleanup EXIT
+local_dmg="$FIXTURE/package.dmg"
+prepare_app="$FIXTURE/Prepared Snow Shot.app"
+validate_prepare_output
+prepare_state
+obtain_package
+sign_application
+prepare_application
+'''
+
+    def test_prepare_app_reuses_identity_without_install_or_launch(self):
+        self.previous()
+        self.identity()
+        self.shell(self.prepare_code())
+        output = self.root / 'Prepared Snow Shot.app'
+        self.assertTrue((output / 'Contents/MacOS/snow_shot').exists())
+        self.assertTrue((self.destination / 'old-marker').exists())
+        self.assertEqual((self.state / 'requirement').read_text().strip(), REQUIREMENT)
+        for name in ('curl', 'open', 'sudo', 'osascript', 'pgrep', 'openssl'):
+            self.assertFalse(self.calls(name), name)
+        for path in ['Contents/MacOS/snow-ocr-process', 'Contents/Resources/assets/ocr/asset-manifest.json']:
+            self.assertEqual((self.bundle / path).read_bytes(), (output / path).read_bytes())
+        self.assertFalse(self.work.exists())
+        self.assertFalse((self.state / 'lock').exists())
+
+    def test_prepare_app_requires_local_dmg_and_fresh_absolute_path(self):
+        self.previous()
+        for output in (str(self.destination), 'relative.app', str(self.root / 'missing/Output.app')):
+            self.shell('local_dmg="$FIXTURE/package.dmg"; prepare_app="$OUTPUT"; validate_prepare_output',
+                       success=False, OUTPUT=output)
+        self.shell('prepare_app="$FIXTURE/New.app"; validate_prepare_output', success=False)
+        (self.root / 'link.app').symlink_to(self.root / 'missing')
+        self.shell('local_dmg="$FIXTURE/package.dmg"; prepare_app="$FIXTURE/link.app"; validate_prepare_output', success=False)
+        self.assertTrue((self.destination / 'old-marker').exists())
+        self.assertFalse(self.calls('security'))
+
+    def test_prepare_failure_keeps_installed_app_and_cleans_staging(self):
+        self.previous()
+        self.identity()
+        (self.state / 'requirement').write_text(REQUIREMENT)
+        self.shell(self.prepare_code(), success=False, FAIL_REQUIREMENT='1')
+        self.assertTrue((self.destination / 'old-marker').exists())
+        self.assertFalse((self.root / 'Prepared Snow Shot.app').exists())
+        self.assertFalse(self.work.exists())
+        self.assertFalse((self.state / 'lock').exists())
+        self.assertEqual((self.state / 'requirement').read_text(), REQUIREMENT)
+
+    def test_prepare_copy_failure_removes_owned_output(self):
+        self.previous()
+        self.identity()
+        code = self.prepare_code().replace('prepare_application', '''ditto() { return 1; }
+prepare_application''')
+        self.shell(code, success=False)
+        self.assertFalse((self.root / 'Prepared Snow Shot.app').exists())
+        self.assertFalse((self.state / 'requirement').exists())
+        self.assertTrue((self.destination / 'old-marker').exists())
+
+    def test_prepare_bad_checksum_never_signs(self):
+        self.sum.write_text('0' * 64)
+        self.shell(self.prepare_code(), success=False)
+        self.assertFalse(self.calls('security'))
+        self.assertFalse((self.root / 'Prepared Snow Shot.app').exists())
+        self.assertFalse((self.state / 'lock').exists())
+
+    def test_prepare_concurrent_install_retains_other_lock(self):
+        (self.state / 'lock').mkdir()
+        self.shell(self.prepare_code(), success=False)
+        self.assertTrue((self.state / 'lock').exists())
+        self.assertFalse(self.calls('security'))
 
     def test_legacy_installation_migrates_to_product_name(self):
         self.stage()

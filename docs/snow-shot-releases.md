@@ -377,3 +377,72 @@ website URL. About retains the available version. Background failures stay quiet
 failures display a retry action.
 macOS does not build or bundle the Windows updater helper and never downloads or installs an
 update in-app. The Windows signed-metadata and installation flow is unchanged.
+
+## Homebrew tap publication
+
+The separate `snow-shot-homebrew.yml` workflow updates
+`mg-chao/homebrew-tap` (`main`, `Casks/snow-shot.rb`) from published **stable**
+GitHub releases. It does not change the Windows packaging workflow or website
+publisher. The tag must be `v<major>.<minor>.<patch>_snow-shot`, matching
+`SNOW_SHOT_VERSION` in its source checkout. That source must contain the installer
+with `--prepare-app` support. Old releases lacking it cannot be backfilled using
+an installer from `main`.
+
+One-time setup:
+
+1. Create the public `mg-chao/homebrew-tap` repository with an initial `main`
+   commit. Copy `homebrew/README.md` as its README. The workflow generates the
+   first `Casks/snow-shot.rb`; do not publish a placeholder checksum or cask.
+2. Configure `HOMEBREW_TAP_TOKEN` as a secret in `mg-chao/snow-apps`. Use a
+   fine-grained token restricted to the tap repository with Contents read/write.
+   Its branch policy must allow the automation to push to `main`.
+3. Include the matching `snow-shot-<version>-macos-arm64.dmg` and `.dmg.sha256`
+   assets before publishing the stable GitHub release. macOS packaging/upload
+   remains a separate release operation; the existing Windows CI does not build
+   these assets. Do not mark a beta version stable to enable Homebrew.
+
+The workflow validates release metadata, source version, checksums, and the current
+tap version, then produces `snow-shot-<version>-macos-arm64-homebrew.tar.gz`.
+This archive contains the DMG, a normalized checksum sidecar, and the installer
+from that tag. Archive entry metadata and gzip timestamps are fixed for repeatable
+builds. The generated cask pins the archive's SHA-256 and uses the versioned
+GitHub release URL. Intel assets are not required or advertised by this cask.
+
+The archive is uploaded before committing the cask. An existing identical archive
+is reused; differing bytes are an error and are never overwritten. An identical
+cask needs no commit. Same-version cask changes and version downgrades are rejected.
+All workflow versions share one concurrency group, and pushes are never forced.
+If a push fails, rerun after resolving the tap's branch policy or concurrent edits.
+An archive may remain published after a failed tap push; retry safely reuses it.
+
+Missing macOS assets fail without updating the tap. After uploading the missing
+pair, retry with Actions → Publish Snow Shot Homebrew cask → Run workflow, supplying
+the stable tag. With GitHub CLI:
+
+```sh
+gh workflow run snow-shot-homebrew.yml --repo mg-chao/snow-apps \
+  -f tag=v1.2.3_snow-shot
+```
+
+If another workflow publishes a release using `GITHUB_TOKEN`, GitHub may suppress
+the release-triggered workflow; explicitly dispatch this workflow in that case.
+The release token uploads assets only in `snow-apps`; the separate tap token is
+used only for checking out and pushing the tap.
+
+For an offline review or initial tap scaffold, save GitHub's release JSON, download
+the matching DMG/checksum pair, and check out its tag into a separate source path:
+
+```sh
+python3 scripts/snow-shot-homebrew.py package \
+  --release-json release.json --assets downloaded-assets \
+  --source release-source --current-cask homebrew-tap/Casks/snow-shot.rb \
+  --output artifacts/homebrew
+```
+
+A nonexistent `--current-cask` means first publication. The output includes the
+archive and `Casks/snow-shot.rb`; it performs no network or Git writes. Run
+`python3 scripts/test-snow-shot-homebrew.py` for the release helper's focused tests.
+With Homebrew installed and the generated cask in the tap, run
+`brew style --cask mg-chao/tap/snow-shot` and
+`brew audit --cask mg-chao/tap/snow-shot`. Native installation/upgrade qualification
+is described in `docs-macos-build.md` and is required separately from these tests.
