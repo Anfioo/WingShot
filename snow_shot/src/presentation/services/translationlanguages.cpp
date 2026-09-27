@@ -52,9 +52,6 @@ int translationModelIndex(const QVector<SnowShotChatModel>& models, const QStrin
     int general = -1;
     for (int index = 0; index < models.size(); ++index) {
         const auto& model = models.at(index);
-        if (!model.supportsTranslation()) {
-            continue;
-        }
         if (model.id == preferredId) {
             return index;
         }

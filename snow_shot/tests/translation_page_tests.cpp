@@ -142,10 +142,12 @@ void sharedServiceSelectors() {
         }
     }
     const auto options = pageSelect->options();
-    require(options.size() == 3 && options[0].value == QStringLiteral("general") &&
-                options[1].value == model.selectionId() && options[0].group == options[1].group &&
-                options[2].value == QStringLiteral("specialist"),
-            "custom models share the server general model group");
+    require(options.size() == 4 && options[0].value == QStringLiteral("general") &&
+                options[1].value == QStringLiteral("vision") &&
+                options[2].value == model.selectionId() && options[0].group == options[1].group &&
+                options[1].group == options[2].group &&
+                options[3].value == QStringLiteral("specialist"),
+            "both selectors show server vision-capable general models alongside custom models");
     require(service.savePreferences(
                 {QStringLiteral("en"), QStringLiteral("fr"), QStringLiteral("specialist")}),
             "change shared preferences while the settings dialog is open");

@@ -30,15 +30,15 @@ void sharedLanguageAndModelHelpers() {
          QStringLiteral("qwen-mt")},
         {QStringLiteral("general"), QStringLiteral("General"), false, QStringLiteral("default")}};
     require(translationModelIndex(models, QStringLiteral("specialist")) == 1 &&
-                translationModelIndex(models, QStringLiteral("missing")) == 2 &&
-                translationModelIndex(models, QStringLiteral("vision")) == 2 &&
-                translationModelIndex(models.mid(0, 2), {}) == 1 &&
-                translationModelIndex(models.mid(0, 1), {}) == -1,
-            "eligible services prefer saved, general, then translation, excluding vision");
+                translationModelIndex(models, QStringLiteral("missing")) == 0 &&
+                translationModelIndex(models, QStringLiteral("vision")) == 0 &&
+                translationModelIndex(models.mid(0, 2), {}) == 0 &&
+                translationModelIndex(models.mid(0, 1), {}) == 0 &&
+                translationModelIndex({}, {}) == -1,
+            "eligible services prefer saved then general, including vision-capable models");
     auto customModels = models;
     auto customVision = models.first();
     customVision.id = QStringLiteral("custom:vision");
-    customVision.origin = SnowShotModelOrigin::Custom;
     customModels.append(customVision);
     require(translationModelIndex(customModels, customVision.id) == 3 &&
                 translationModelIndex({customVision}, {}) == 0,
@@ -131,7 +131,7 @@ void streamLifecycleAndSharedPreferences(const QString& directory) {
     waitUntil([&]() { return server.streams.size() == 1; }, "translate latest debounced source");
     require(server.streams[0].body.value(QStringLiteral("model")).toString() ==
                 QStringLiteral("general"),
-            "default selection excludes vision and prefers general");
+            "default selection uses the vision-capable general model");
     const auto messages = server.streams[0].body.value(QStringLiteral("messages")).toArray();
     require(messages.last().toObject().value(QStringLiteral("content")).toString() ==
                 QStringLiteral("Hello\n\nworld"),
@@ -199,12 +199,12 @@ void modelFailureAndDestroyedReceiver(const QString& directory) {
     waitUntil([&]() { return !controller.errorText().isEmpty(); }, "model error is actionable");
     require(server.streams.isEmpty(), "failed discovery cannot start a translation");
     server.rejectModels = false;
-    server.models = QJsonArray{server.models.first()};
+    server.models = QJsonArray{};
     controller.retry();
     waitUntil([&]() { return server.modelRequests == 2 && !controller.loadingModels(); },
-              "retry discovery with a vision-only catalog");
+              "retry discovery with an empty catalog");
     require(!controller.errorText().isEmpty() && server.streams.isEmpty(),
-            "vision-only catalog is unavailable for translation");
+            "empty catalog is unavailable for translation");
     controller.deactivate();
     server.holdModels = true;
     SnowShotApiClient pendingClient(server.url());

@@ -103,11 +103,7 @@ bool TranslationService::savePreferences(const TranslationPreferences& preferenc
 void TranslationService::publishModels(bool resolveSelection) {
     if (m_client == nullptr)
         return;
-    m_models.clear();
-    for (const auto& model : m_client->cachedChatModels()) {
-        if (model.supportsTranslation())
-            m_models.append(model);
-    }
+    m_models = m_client->cachedChatModels();
     // Select renders a header for each contiguous group. Keep custom and server general
     // models together while preserving their order within each translation category.
     std::stable_partition(m_models.begin(), m_models.end(), [](const auto& model) {

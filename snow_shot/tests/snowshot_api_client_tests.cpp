@@ -512,7 +512,10 @@ void apiClientUsesModelCatalogAndStreamingChatContracts() {
     }
     require(emptyFinished && emptyResult.succeeded() && emptyResult.models.size() == 1 &&
                 emptyResult.models.first().supportsVision,
-            "the network model catalog should retain visual models for presentation filtering");
+            "the network model catalog retains vision-capable chat models");
+    require(emptyClient.fallbackModel(false) == QStringLiteral("vision-model") &&
+                emptyClient.fallbackModel(true) == QStringLiteral("vision-model"),
+            "a vision-capable server model supports text and image workflows");
     auto* manager = client.findChild<QNetworkAccessManager*>();
     require(manager != nullptr && manager->proxy().type() == QNetworkProxy::NoProxy &&
                 manager->proxyFactory() == nullptr && !client.usesSystemProxy(),
@@ -725,7 +728,6 @@ void customModelsUseIndependentOpenAiConnections() {
     SnowShotApiClient client(QStringLiteral("http://127.0.0.1:1"));
     client.setCustomModels({model});
     require(client.cachedChatModels().size() == 1 &&
-                client.cachedChatModels().first().supportsTranslation() &&
                 client.cachedChatModels().first().supportsVision &&
                 !client.cachedChatModels().first().supportsReasoning,
             "custom vision models support both workflows");

@@ -492,15 +492,12 @@ void SnowShotApiClient::rebuildAvailableModels() {
     m_availableModels = m_cachedChatModels;
     for (const auto& model : m_customModels) {
         m_availableModels.push_back({model.selectionId(), model.name, model.supportsReasoning,
-                                     QStringLiteral("default"), model.supportsVision,
-                                     SnowShotModelOrigin::Custom});
+                                     QStringLiteral("default"), model.supportsVision});
     }
 }
 
 QString SnowShotApiClient::fallbackModel(bool vision) const {
-    const auto eligible = [vision](const auto& model) {
-        return vision ? model.supportsVision : model.supportsTranslation();
-    };
+    const auto eligible = [vision](const auto& model) { return !vision || model.supportsVision; };
     for (const auto& model : m_cachedChatModels) {
         if (eligible(model) && model.translationMode == QStringLiteral("default")) {
             return model.id;
