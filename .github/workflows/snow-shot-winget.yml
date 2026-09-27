@@ -1,0 +1,103 @@
+name: Snow Shot WinGet
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Published Snow Shot release tag (including v and optional _snow-shot)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  resolve:
+    runs-on: windows-2025
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+      version: ${{ steps.release.outputs.version }}
+      eligible: ${{ steps.release.outputs.eligible }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+      - name: Test manifest and submission behavior
+        shell: pwsh
+        run: ./scripts/test-snow-shot-winget.ps1
+      - name: Resolve Snow Shot tag
+        id: release
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.event.release.tag_name }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          . ./scripts/snow-shot-winget.ps1
+          try { $version = Get-SnowShotWingetVersion $env:RELEASE_TAG }
+          catch {
+            if ($env:EVENT_NAME -eq 'workflow_dispatch') { throw }
+            'eligible=false' >> $env:GITHUB_OUTPUT
+            Write-Output 'Ignoring an unrelated release tag.'
+            exit 0
+          }
+          "tag=$env:RELEASE_TAG" >> $env:GITHUB_OUTPUT
+          "version=$version" >> $env:GITHUB_OUTPUT
+          'eligible=true' >> $env:GITHUB_OUTPUT
+
+  submit:
+    needs: resolve
+    if: needs.resolve.outputs.eligible == 'true'
+    runs-on: windows-2025
+    concurrency:
+      group: winget-mg-chao.snow-shot-${{ needs.resolve.outputs.version }}
+      cancel-in-progress: false
+    env:
+      RELEASE_TAG: ${{ needs.resolve.outputs.tag }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+      - name: Generate manifests from the published offline installer
+        id: manifests
+        shell: pwsh
+        run: |
+          $directory = ./scripts/new-snow-shot-winget-manifest.ps1 -Tag $env:RELEASE_TAG
+          "directory=$directory" >> $env:GITHUB_OUTPUT
+      - name: Preserve manifests for review and manual submission
+        uses: actions/upload-artifact@v4
+        with:
+          name: winget-mg-chao.snow-shot-${{ needs.resolve.outputs.version }}
+          path: build/winget/manifests
+          if-no-files-found: error
+      - name: Prepare WinGet validation
+        shell: pwsh
+        run: |
+          $path = ./scripts/initialize-snow-shot-winget.ps1
+          "WINGET_EXE=$path" >> $env:GITHUB_ENV
+      - name: Validate manifests
+        shell: pwsh
+        env:
+          MANIFEST_DIRECTORY: ${{ steps.manifests.outputs.directory }}
+        run: |
+          & $env:WINGET_EXE validate --manifest $env:MANIFEST_DIRECTORY --disable-interactivity
+          if ($LASTEXITCODE -ne 0) { throw 'WinGet manifest validation failed.' }
+      - name: Download pinned WinGetCreate
+        shell: pwsh
+        run: |
+          $url = 'https://github.com/microsoft/winget-create/releases/download/v1.12.13.0/wingetcreate.exe'
+          Invoke-WebRequest -Uri $url -OutFile build/winget/wingetcreate.exe
+          $expected = '24042BD37915805615E6CF969AC57C6439124C3FE85823327F5F3FB24BD9FFEA'
+          if ((Get-FileHash build/winget/wingetcreate.exe -Algorithm SHA256).Hash -cne $expected) {
+            throw 'WinGetCreate SHA-256 mismatch.'
+          }
+      - name: Submit unless already merged or pending
+        shell: pwsh
+        env:
+          MANIFEST_DIRECTORY: ${{ steps.manifests.outputs.directory }}
+          WINGET_CREATE_GITHUB_TOKEN: ${{ secrets.WINGET_CREATE_GITHUB_TOKEN }}
+        run: |
+          ./scripts/submit-snow-shot-winget.ps1 -Tag $env:RELEASE_TAG `
+            -ManifestDirectory $env:MANIFEST_DIRECTORY -WingetCreate ./build/winget/wingetcreate.exe

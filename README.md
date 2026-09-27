@@ -4,6 +4,19 @@ Snow Apps repository, providing source code for Snow Shot and Snow Image Viewer.
 
 <div style="font-size: 128px">🏗️🚧🦺</div>
 
+## Install Snow Shot on Windows
+
+Download the installer from [Snow Shot releases](https://github.com/mg-chao/snow-apps/releases).
+Install the offline Windows x64 package from the WinGet community repository with:
+
+```powershell
+winget install --exact --id mg-chao.snow-shot --source winget
+```
+
+This package includes published beta versions and the default OCR resources. See
+[WinGet release support](docs/snow-shot-releases.md#winget) for upgrades, removal,
+and maintainer setup.
+
 ## Install Snow Shot on macOS
 
 After the first stable Homebrew release is published, Apple Silicon Macs running

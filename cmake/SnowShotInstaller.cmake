@@ -106,6 +106,14 @@ snow_shot_nsis_replace([=[CreateShortCut "$SMPROGRAMS\$STARTMENU_FOLDER\$(SnowSh
 snow_shot_nsis_replace([=[Delete "$SMPROGRAMS\$MUI_TEMP\Uninstall.lnk"]=]
     [=[!insertmacro SnowShotDeleteUninstallShortcuts "$SMPROGRAMS\$MUI_TEMP"]=])
 # Carry upgrade intent through the old uninstaller; final uninstall removes startup registrations.
+snow_shot_nsis_replace([=[  Push "UninstallString"
+  Push "$\"$INSTDIR\@CPACK_NSIS_UNINSTALL_NAME@.exe$\""
+  Call ConditionalAddToRegistry]=] [=[  Push "UninstallString"
+  Push "$\"$INSTDIR\@CPACK_NSIS_UNINSTALL_NAME@.exe$\""
+  Call ConditionalAddToRegistry
+  Push "QuietUninstallString"
+  Push "$\"$INSTDIR\@CPACK_NSIS_UNINSTALL_NAME@.exe$\" /S"
+  Call ConditionalAddToRegistry]=])
 snow_shot_nsis_replace([=[ExecWait '"$0" /S _?=$3']=]
     [=[StrCpy $SnowShotPreviousRoot $3
   ExecWait '"$0" /S /SNOWUPGRADE _?=$3' $2

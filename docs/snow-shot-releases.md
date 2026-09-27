@@ -113,6 +113,128 @@ service reports updates unavailable and does not expose a self-update channel th
 
 ## Operator setup and commands
 
+### WinGet
+
+The independent **Snow Shot WinGet** GitHub Actions workflow submits the offline
+Windows x64 installer as `mg-chao.snow-shot` to `microsoft/winget-pkgs`. Stable and
+beta releases share this identifier; published betas are eligible even when GitHub
+does not mark them as prereleases. Draft releases are never submitted.
+
+Reuse the existing community identifier `mg-chao.snow-shot`; `1.1.5-beta` is already
+published upstream. Do not introduce a second identifier for the same application.
+
+The workflow runs on `release: published`, or manually with a published tag such as
+`v1.1.5-beta` or `v1.1.5-beta_snow-shot`. It reads automation from the default branch
+so existing release tags can be backfilled after this support is merged. Tags and
+installer filenames must agree. Manifests reference versioned GitHub release assets,
+not the website's mutable `/setup/` URLs. Do not replace an asset after submission;
+publish a new version instead.
+
+Maintainer setup:
+
+1. Use a GitHub account with a fork of `microsoft/winget-pkgs` (WinGetCreate can also
+   create the fork). Complete any upstream contributor requirements when prompted.
+2. Create a **classic** personal access token with `public_repo` scope. Fine-grained
+   tokens are not supported by WinGetCreate. Store it as the repository Actions secret
+   `WINGET_CREATE_GITHUB_TOKEN`; the default Actions token cannot submit cross-repository PRs.
+3. Publish a release or manually run **Snow Shot WinGet** with its tag. The workflow
+   uploads manifests before validation/submission, validates them using WinGet, and
+   submits with WinGetCreate 1.12.13.0 (verified against its pinned SHA-256).
+4. Follow the upstream PR through validation and review. Submission does not imply
+   acceptance or immediate availability in the community source.
+
+Missing credentials fail with setup instructions and leave the manifest artifact
+available. Retry the workflow after correcting credentials or validation errors.
+Runs are serialized per version across both tag styles. Already merged versions and
+matching open PRs are reported and skipped; closed, unmerged submissions can be retried.
+GitHub lookup failures stop submission instead of treating a failed lookup as absence.
+This workflow neither publishes application releases nor changes the website feed.
+
+For local generation and validation (PowerShell 7, WinGet 1.29.380 or newer, and
+WinGetCreate 1.12.13.0):
+
+```powershell
+$tag = 'v1.1.5-beta'
+$manifests = ./scripts/new-snow-shot-winget-manifest.ps1 -Tag $tag
+winget validate --manifest $manifests --disable-interactivity
+if ($LASTEXITCODE -ne 0) { throw 'Manifest validation failed.' }
+# Set WINGET_CREATE_GITHUB_TOKEN through your local secret manager; never commit it.
+./scripts/submit-snow-shot-winget.ps1 -Tag $tag -ManifestDirectory $manifests
+```
+
+The generator accepts `-OutputDirectory` and defaults to ignored `build/winget`.
+`GH_TOKEN` optionally authenticates release metadata and duplicate lookups. The submission
+token is read from the environment, never passed as a command-line argument. Generated
+manifests use schema 1.12.0, preserve the release version including beta suffixes, and
+calculate SHA-256 from the downloaded offline installer.
+
+The existing community package can be installed and updated now:
+
+```powershell
+winget install --exact --id mg-chao.snow-shot --source winget
+winget upgrade --exact --id mg-chao.snow-shot --source winget
+winget uninstall --exact --id mg-chao.snow-shot --source winget
+```
+
+Installation is machine-wide and requires elevation. Close Snow Shot before a silent
+upgrade or uninstall: installer exit code 10 maps to WinGet's `packageInUse` response.
+The existing in-app updater remains enabled and updates the uninstall registration.
+WinGet uses that registration to identify the installed version.
+
+Focused verification:
+
+```powershell
+./scripts/test-snow-shot-winget.ps1
+./scripts/test-snow-shot-installer-directory.ps1
+./scripts/test-snow-shot-installer.ps1
+```
+
+Before submitting a new version, use a disposable Windows VM for the real package:
+enable local manifests with `winget settings --enable LocalManifestFiles`, install with
+`winget install --manifest <manifest-directory> --silent`, and confirm detection with
+`winget list --exact --id mg-chao.snow-shot`. Install an older version first to exercise
+an upgrade, including a custom installation directory and a user-settings sentinel.
+Confirm the version changes, directory/settings survive, the app does not launch during
+silent installation, and an upgrade while the app is running refuses without killing it.
+Finally uninstall silently and verify owned files/registration are removed and user data
+is preserved. Fixture tests and manifest validation do not substitute for this VM check.
+
+The **Snow Shot WinGet verification** workflow automates this lifecycle on a disposable
+GitHub-hosted Windows runner. It runs installation checks for WinGet changes in pull
+requests; manual runs accept `tag` and `previous_tag`. Pushes to `codex/winget-*`
+preparation branches run fixture and credential checks only, avoiding duplicate installs.
+Installation checks need no submission token and never open upstream PRs. Trusted
+preparation-branch pushes and manual runs also perform a read-only check of the
+submission token's scope and fork access; pull requests skip that credential check.
+Both workflows provision WinGet 1.29.380 from Microsoft's signed release bundle when
+the installed client is older, avoiding the incomplete preinstalled runner bundle.
+The default installation fixtures are
+`v1.1.5-beta` and `v1.1.4-beta`; select newer published versions when validating later
+releases. Logs and generated manifests are retained in the
+`snow-shot-winget-verification` workflow artifact. The underlying
+`scripts/test-snow-shot-winget-install.ps1` refuses to run outside a GitHub-hosted
+Windows runner or when Snow Shot is already installed.
+
+The published beta installers are unsigned and may trigger a SmartScreen reputation
+prompt when testing local manifests. The verification workflow explicitly enables
+`-AllowUnrecognizedRelease`: after validating the release manifests, the test temporarily
+disables SmartScreen reputation checks only inside its disposable VM and restores the
+prior policy in its cleanup path. WinGet's SHA-256 verification and antivirus scanning
+remain enabled. Without this switch, an interactive launch prompt fails the test and is
+captured in the diagnostic artifact. This consent is separate from the installer's
+silent-mode checks and does not guarantee SmartScreen reputation on end-user PCs.
+The test also acknowledges Windows' standard file-launch warning only after matching
+the displayed installer filename and rechecking the cached executable's SHA-256.
+
+The immutable `1.1.5-beta` installer does not register `QuietUninstallString`, so
+`winget uninstall --silent` can still display its wizard. Use the normal interactive
+uninstall for that release. Newly built installers register the quoted `/S` command;
+the hosted CPack fixture test verifies silent removal through WinGet and preservation
+of unowned files. The historical-release lifecycle test invokes the legacy NSIS `/S`
+uninstaller directly rather than claiming its missing registration is supported.
+
+### Publisher prerequisites
+
 Use PowerShell 7 and the repository's documented Windows release toolchain. The tracked
 publisher accepts all machine-specific values as parameters. Copy
 `scripts/publish-snow-shot-release.local.example.ps1` to the ignored
