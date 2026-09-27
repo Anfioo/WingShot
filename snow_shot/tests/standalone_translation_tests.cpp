@@ -1,3 +1,4 @@
+#include "window_close_shortcut_test_support.h"
 #include "translation_test_support.h"
 #include "snow_shot/network/snowshotapiclient.h"
 #include "snow_shot/presentation/selectedtexttranslationcoordinator.h"
@@ -70,6 +71,36 @@ int visibleTranslationWindows() {
     }
     return count;
 }
+
+#ifdef Q_OS_MACOS
+void standardCloseAndReopen() {
+    Server server;
+    SnowShotApiClient client(server.url());
+    auto state = std::make_shared<CaptureState>();
+    SelectedTextTranslationCoordinator coordinator(
+        storage::ApplicationStorage::instance().configuration(), &client, nullptr,
+        std::make_unique<FakeCaptureBackend>(state));
+    const storage::ExtendedFeaturesSettings settings;
+    require(settings.setTranslationPageEnabled(true) &&
+                settings.setStandaloneTranslationWindow(true),
+            "enable standalone window");
+    auto* modal = coordinator.findChild<AdModal*>();
+    QWidget otherWindow;
+    otherWindow.show();
+    for (int i = 0; i < 2; ++i) {
+        coordinator.presentText(QStringLiteral("translate"));
+        auto* page = qobject_cast<TranslationPageWidget*>(modal->contentWidget());
+        require(page && modal->isOpen(), "standalone translation opens and reopens");
+        QPointer<TranslationPageWidget> retired = page;
+        require(triggerWindowCloseShortcut(page->window(), page->findChild<QWidget*>(QStringLiteral(
+                                                               "translationSourceText"))),
+                "standalone surface has exactly one standard Close binding");
+        flushEvents();
+        require(!modal->isOpen() && !retired && otherWindow.isVisible(),
+                "standard Close releases the translation page and preserves other windows");
+    }
+}
+#endif
 
 void directTextRouting() {
     Server server;
@@ -446,6 +477,9 @@ int main(int argc, char** argv) {
         storage.shutdown();
         return 0;
     }
+#ifdef Q_OS_MACOS
+    standardCloseAndReopen();
+#endif
     directTextRouting();
     routingAndCancellation();
     pageActionsAndLifecycle();

@@ -1,3 +1,4 @@
+#include "window_close_shortcut_test_support.h"
 #include "snow_draw_engine_qt/snow_canvas_path_geometry.h"
 #include "snow_shot/presentation/screenshotselectionpin.h"
 #include "snow_shot/presentation/pinnedgeometry.h"
@@ -11748,7 +11749,11 @@ void pinnedManagementLifecycle() {
     const QString first = repository.summaries().front().id;
     QPointer<ScreenshotPinnedWindow> firstWindow(live(first));
     require(firstWindow, "find first live pin");
+#ifdef Q_OS_MACOS
+    require(triggerWindowCloseShortcut(firstWindow), "pin registers standard Close");
+#else
     pinnedMenuActionNamed(*firstWindow, QStringLiteral("screenshotPinnedCloseAction"))->trigger();
+#endif
     require(processUntilDeleted(firstWindow, 2000), "close first pin");
     require(repository.loadRecord(first)->ignored &&
                 groups.windowCount(QStringLiteral("default")) == 0,

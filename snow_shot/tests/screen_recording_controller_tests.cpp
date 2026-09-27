@@ -1,3 +1,4 @@
+#include "window_close_shortcut_test_support.h"
 #include <QFontDatabase>
 #include "recording_effect_test_source.h"
 #include "../src/presentation/recording/recordingeffectstyle.h"
@@ -216,6 +217,21 @@ void stopAndCopyBusyIndicatorsStayOnTheInitiatingControl() {
     }
 }
 
+#ifdef Q_OS_MACOS
+void standardCloseFromRecordingArea() {
+    ScreenRecordingController controller(testEffectsSource);
+    controller.open({40, 40, 320, 240});
+    ScreenRecordingAreaWindow* area = nullptr;
+    for (auto* widget : QApplication::topLevelWidgets())
+        if (auto* candidate = qobject_cast<ScreenRecordingAreaWindow*>(widget))
+            area = candidate;
+    require(area && triggerWindowCloseShortcut(area), "recording area registers standard Close");
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    require(!controller.isOpen() && recordingWindowCount() == 0,
+            "standard Close on the area retires both recording windows");
+}
+#endif
+
 void closeAndStopHaveIndependentUiLifetimes() {
     ErrorObserver errors;
     qApp->installEventFilter(&errors);
@@ -241,7 +257,12 @@ void closeAndStopHaveIndependentUiLifetimes() {
                     "subsequent recordings must snapshot disabled looping");
             if (close) {
                 // Exercise the native close path as well as the toolbar command.
+#ifdef Q_OS_MACOS
+                require(triggerWindowCloseShortcut(toolbar),
+                        "recording toolbar registers standard Close");
+#else
                 toolbar->close();
+#endif
             } else {
                 palette()->recordingStopRequested();
             }
@@ -2001,6 +2022,9 @@ int main(int argc, char** argv) {
     QCoreApplication::processEvents();
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
     require(starts == 1, "destroying the controller must cancel a queued recording start");
+#ifdef Q_OS_MACOS
+    standardCloseFromRecordingArea();
+#endif
     closeAndStopHaveIndependentUiLifetimes();
     require(snow_shot::storage::RecordingSettings().setLoopAnimatedImages(true),
             "restore recording loop preference");

@@ -1,3 +1,4 @@
+#include "snow_shot/presentation/windowcloseshortcut.h"
 #include "snow_shot/presentation/mainwindow.h"
 
 #include "snow_shot/platform/windows/windowchrome.h"
@@ -87,6 +88,8 @@ MainWindow::MainWindow(const snow_shot::presentation::settings::SettingsRegistry
     QFont interfaceFont = font();
     interfaceFont.setHintingPreference(QFont::PreferNoHinting);
     setFont(interfaceFont);
+
+    snow_shot::presentation::installWindowCloseShortcut(this, [this] { close(); });
 
     menuBar()->hide();
     statusBar()->hide();

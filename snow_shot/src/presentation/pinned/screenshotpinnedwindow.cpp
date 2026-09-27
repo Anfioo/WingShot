@@ -1,3 +1,4 @@
+#include "snow_shot/presentation/windowcloseshortcut.h"
 #include "snow_shot/presentation/screenshotencodingsettings.h"
 #include "widgets/detail/pointer_region.h"
 #include "snow_shot/presentation/pinnedgeometry.h"
@@ -841,6 +842,7 @@ ScreenshotPinnedWindow::ScreenshotPinnedWindow(QWidget* parent)
       m_shortcutManager(std::make_unique<snow_shot::presentation::WindowShortcutManager>()),
       m_physicalCursor(std::make_unique<snow_shot::platform::PhysicalCursor>()), m_exportArtifact(),
       m_nativeGeometryController(std::make_unique<ScreenshotPinnedNativeGeometryController>()) {
+    snow_shot::presentation::installWindowCloseShortcut(this, [this] { requestUserClose(); });
     m_platform->setResizeInteractionState(&m_systemSizingActive);
     m_platform->environmentChanged = [this](bool layoutChanged) {
         reconcilePlatformEnvironment(layoutChanged);

@@ -1,3 +1,4 @@
+#include <QLineEdit>
 #include "snow_shot/image/screenshotregionpoints.h"
 #include "snow_shot/presentation/screenshotselectorworkflow.h"
 #include "snow_shot/presentation/screenshotregionpreferences.h"
@@ -2530,6 +2531,68 @@ void configuredScreenshotShortcutsControlMoveAndCursorNavigation() {
             "restored cursor shortcut must use the persisted configuration");
 }
 
+#ifdef Q_OS_MACOS
+void standardCloseExitsScreenshotSession() {
+    ScreenshotCaptureState captureState;
+    ScreenshotDisplaySession displays;
+    ScreenshotGeometryMapper geometry;
+    ScreenshotSelectionModel selection;
+    ScreenshotIntelligentSelectionModel intelligent;
+    ScreenshotInteractionState interaction;
+    QWidget overlay;
+    QWidget toolbar;
+    QWidget unrelated;
+    QLineEdit editor(&overlay);
+    overlay.show();
+    toolbar.show();
+    unrelated.show();
+    snow_shot::presentation::WindowShortcutManager manager;
+    manager.addScopeWindow(&overlay);
+    manager.addScopeWindow(&toolbar);
+    int exits = 0;
+    bool confirm = false;
+    snow_shot::presentation::ScreenshotShortcutExitConfirmation confirmation(
+        manager, [&] { ++exits; }, [](QWidget*) {});
+    ScreenshotOverlayInputActions actions;
+    actions.localShortcutInputAllowed = [] { return false; }; // A text editor owns input.
+    actions.cancelCaptureViaShortcut = [&] { return confirmation.request(confirm, &overlay); };
+    ScreenshotOverlayInputHandler handler(
+        {captureState, interaction, selection, intelligent, geometry, displays, actions});
+    ScreenshotOverlayShortcutController controller(manager, handler, interaction, intelligent,
+                                                   actions);
+    // Qt maps ControlModifier to Command on macOS.
+    const auto press = [&](QWidget& receiver) {
+        return dispatchShortcut(receiver, Qt::Key_W, Qt::ControlModifier);
+    };
+    const auto release = [&](QWidget& receiver) {
+        return dispatchShortcutRelease(receiver, Qt::Key_W, Qt::ControlModifier);
+    };
+    for (QWidget* receiver : {&overlay, &toolbar, static_cast<QWidget*>(&editor)}) {
+        const int previous = exits;
+        require(press(*receiver) && exits == previous,
+                "standard Close must reserve the screenshot command until key release");
+        require(release(*receiver) && exits == previous + 1,
+                "overlay, toolbar and text editor must close through the session exit action");
+    }
+    const int previous = exits;
+    static_cast<void>(press(unrelated));
+    static_cast<void>(release(unrelated));
+    require(exits == previous, "standard Close must not exit capture from unrelated windows");
+    interaction.enterScrollingCapture();
+    confirm = true;
+    require(press(overlay) && release(overlay) && exits == previous,
+            "standard Close must respect screenshot exit confirmation while scrolling");
+    auto* modal = overlay.findChild<adqt::widgets::AdModal*>(
+        QStringLiteral("screenshotShortcutExitConfirmation"));
+    require(modal && modal->isOpen(), "standard Close opens the existing confirmation");
+    static_cast<void>(press(toolbar));
+    static_cast<void>(release(toolbar));
+    require(exits == previous, "confirmation must suspend capture shortcuts");
+    modal->acceptButton()->click();
+    require(exits == previous + 1, "accepting confirmation exits capture exactly once");
+}
+#endif
+
 void shortcutExitConfirmationGatesCancellation() {
     QWidget owner;
     owner.show();
@@ -3788,6 +3851,9 @@ int main(int argc, char** argv) {
     }
     if (QCoreApplication::arguments().contains(QStringLiteral("--shortcut-input-only"))) {
         startupInputWaitsForRevealAndIgnoresSyntheticEvents();
+#ifdef Q_OS_MACOS
+        standardCloseExitsScreenshotSession();
+#endif
         shortcutExitConfirmationGatesCancellation();
         rightClickSeparatesDismissalFromSelectionChanges();
         areaTypesExitFromPreselectionButKeepDraftCancellation();

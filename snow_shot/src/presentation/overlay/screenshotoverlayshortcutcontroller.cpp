@@ -9,6 +9,7 @@
 #include "snow_shot/storage/settingsadapters.h"
 
 #include <QKeyEvent>
+#include <QKeySequence>
 #include <QMap>
 
 #include <utility>
@@ -112,6 +113,18 @@ struct ScreenshotOverlayShortcutController::Impl {
     }
 
     void registerFixedBindings() {
+#ifdef Q_OS_MACOS
+        QList<QKeyCombination> closeKeys;
+        for (const auto& sequence : QKeySequence::keyBindings(QKeySequence::Close))
+            closeKeys.append(sequence[0]);
+        auto close = fixedBinding(QStringLiteral("screenshot.close"), std::move(closeKeys),
+                                  ShortcutManager::StandardPriority::WindowCommand, {},
+                                  [this] { return actions.cancelCaptureViaShortcut(); });
+        // Retire the complete capture, including every display and the toolbar, after
+        // key release. Text editing must not suppress this standard window command.
+        close.activationTrigger = ShortcutManager::Binding::ActivationTrigger::Release;
+        static_cast<void>(shortcutManager.addBinding(&q, std::move(close)));
+#endif
         for (bool reverse : {false, true}) {
             static_cast<void>(shortcutManager.addBinding(
                 &q, fixedBinding(

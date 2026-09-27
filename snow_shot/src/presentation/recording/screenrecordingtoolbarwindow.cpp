@@ -1,3 +1,4 @@
+#include "snow_shot/presentation/windowcloseshortcut.h"
 #include "snow_shot/presentation/screenrecordingtoolbarwindow.h"
 
 #include "snow_shot/presentation/screenshotgeometry.h"
@@ -51,6 +52,7 @@ ScreenshotToolPalette::Options recordingToolbarOptions() {
 
 ScreenRecordingToolbarWindow::ScreenRecordingToolbarWindow(QWidget* parent)
     : ScreenshotFloatingToolPaletteWindow(recordingToolbarOptions(), parent) {
+    snow_shot::presentation::installWindowCloseShortcut(this, [this] { close(); });
     setWindowFlag(Qt::WindowDoesNotAcceptFocus, false);
     setAttribute(Qt::WA_ShowWithoutActivating, false);
     setFocusPolicy(Qt::StrongFocus);

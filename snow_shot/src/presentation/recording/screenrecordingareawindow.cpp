@@ -1,3 +1,4 @@
+#include "snow_shot/presentation/windowcloseshortcut.h"
 #include "snow_shot/presentation/screenrecordingareawindow.h"
 
 #include "snow_shot/presentation/screenshotgeometry.h"
@@ -69,6 +70,7 @@ ScreenRecordingAreaWindow::ScreenRecordingAreaWindow(QWidget* parent)
       m_canvasRuntime(std::make_unique<SnowCanvasRuntime>(
           SnowCanvasRuntimeConfig{snow_shot::presentation::screenshotCanvasToolStyleDefaults()})),
       m_canvas(new SnowCanvasWidget(*m_canvasRuntime, this)) {
+    snow_shot::presentation::installWindowCloseShortcut(this, [this] { close(); });
     setAttribute(Qt::WA_TranslucentBackground, true);
     setAttribute(Qt::WA_NoSystemBackground, true);
     setMouseTracking(true);
