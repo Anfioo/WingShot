@@ -234,7 +234,7 @@ void coordinateHintFollowsCopyColor() {
         });
         require(copy != rows.cend() && copy + 1 != rows.cend() &&
                     (copy + 1)->label == QStringLiteral("Toggle Global/Relative Coordinates") &&
-                    (copy + 1)->shortcut == shortcutDisplay({QStringLiteral("Shift+P")}),
+                    (copy + 1)->shortcut == shortcutDisplay({QStringLiteral("Ctrl+P")}),
                 "coordinate toggle must follow Copy color in both selection modes");
         const snow_shot::shortcuts::ShortcutBindingMap disabled{
             {QStringLiteral("toggle_coordinate_mode"), {}}};

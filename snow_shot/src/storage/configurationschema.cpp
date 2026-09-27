@@ -584,7 +584,7 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
      {},
      2},
     {QStringLiteral("screenshot_shortcuts/toggle_coordinate_mode"),
-     QJsonArray{QStringLiteral("Shift+P")},
+     QJsonArray{QStringLiteral("Ctrl+P")},
      ConfigurationValueKind::StringList,
      std::nullopt,
      {},

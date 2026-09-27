@@ -2142,13 +2142,16 @@ void configuredSelectionShortcutsRouteTabHistoryAndColorActions(bool targetSwitc
     require(dispatchShortcut(shortcutWindow, Qt::Key_R) && previousSelectionCalls == 2 &&
                 !intelligent.pressActive(),
             "R did not request the previously selected area in Move mode");
-    require(dispatchShortcut(shortcutWindow, Qt::Key_P, Qt::ShiftModifier) &&
+    require(!dispatchShortcut(shortcutWindow, Qt::Key_P, Qt::ShiftModifier) &&
+                coordinateToggles == 0,
+            "Shift+P must not toggle coordinates by default");
+    require(dispatchShortcut(shortcutWindow, Qt::Key_P, Qt::ControlModifier) &&
                 coordinateToggles == 1 && coordinateCancelCalls == 0 && copyColorCalls == 0,
-            "Shift+P must toggle coordinates without copying or ending capture");
-    static_cast<void>(dispatchShortcut(shortcutWindow, Qt::Key_P, Qt::ShiftModifier, true));
+            "Ctrl+P must toggle coordinates without copying or ending capture");
+    static_cast<void>(dispatchShortcut(shortcutWindow, Qt::Key_P, Qt::ControlModifier, true));
     require(coordinateToggles == 1, "coordinate toggle must ignore auto-repeat");
     coordinateInputAllowed = false;
-    require(!dispatchShortcut(shortcutWindow, Qt::Key_P, Qt::ShiftModifier) &&
+    require(!dispatchShortcut(shortcutWindow, Qt::Key_P, Qt::ControlModifier) &&
                 coordinateToggles == 1,
             "coordinate shortcut must respect local input restrictions");
     coordinateInputAllowed = true;
@@ -2159,7 +2162,7 @@ void configuredSelectionShortcutsRouteTabHistoryAndColorActions(bool targetSwitc
             "C did not copy the color-picker color in Move mode");
 
     interaction.setCanvasTool(ScreenshotActiveTool::Shape);
-    require(!dispatchShortcut(shortcutWindow, Qt::Key_P, Qt::ShiftModifier) &&
+    require(!dispatchShortcut(shortcutWindow, Qt::Key_P, Qt::ControlModifier) &&
                 coordinateToggles == 1,
             "coordinate toggle must be inactive in drawing modes");
     require(!dispatchShortcut(shortcutWindow, Qt::Key_R) &&
@@ -2194,10 +2197,10 @@ void configuredSelectionShortcutsRouteTabHistoryAndColorActions(bool targetSwitc
                 dispatchShortcut(shortcutWindow, Qt::Key_J) && selectorHitTestRequests == 6,
             "remapped Tab shortcut did not replace the default key");
     interaction.confirmSelection();
-    require(!dispatchShortcut(shortcutWindow, Qt::Key_P, Qt::ShiftModifier) &&
+    require(!dispatchShortcut(shortcutWindow, Qt::Key_P, Qt::ControlModifier) &&
                 dispatchShortcut(shortcutWindow, Qt::Key_P, Qt::AltModifier) &&
                 coordinateToggles == 2,
-            "configured coordinate shortcut must replace Shift+P");
+            "configured coordinate shortcut must replace Ctrl+P");
     require(shortcutSettings.setShortcuts(QStringLiteral("toggle_coordinate_mode"), {}),
             "failed to disable coordinate shortcut");
     shortcutController.reloadConfiguredShortcuts();

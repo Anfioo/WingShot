@@ -975,7 +975,7 @@ void shortcutHintStagesUseTheExactRequiredLines() {
     const QStringList commonLines{
         QStringLiteral("Select previously selected area: R"),
         QStringLiteral("Copy color: C"),
-        QStringLiteral("Toggle Global/Relative Coordinates: Shift+P"),
+        QStringLiteral("Toggle Global/Relative Coordinates: Ctrl+P"),
         QStringLiteral("Switch color format: Shift"),
         QStringLiteral("Switch screenshot history: , / ."),
     };
