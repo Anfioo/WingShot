@@ -550,7 +550,7 @@ $symbolOptions = @{
 }
 & (Join-Path $PSScriptRoot "collect-snow-shot-symbols.ps1") -BuildDirectory $buildDirectory -InstallDirectory $installDirectory @symbolOptions
 
-$linkMapPath = Join-Path $buildDirectory "snow_shot\Release\snow_shot.map"
+$linkMapPath = Join-Path $buildDirectory "snow_shot\Release\WingShot.map"
 if (-not (Test-Path -LiteralPath $linkMapPath -PathType Leaf)) {
     throw "The Snow Shot Release link map was not found: $linkMapPath"
 }

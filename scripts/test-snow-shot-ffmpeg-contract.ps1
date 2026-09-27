@@ -53,7 +53,7 @@ foreach ($audit in @(
         throw "FFmpeg $($audit.Name) audit differs from the compiled component set: $($difference | Out-String)"
     }
 }
-$linkMap = Join-Path $repoRoot "build/snow-shot-msvc-release/snow_shot/Release/snow_shot.map"
+$linkMap = Join-Path $repoRoot "build/snow-shot-msvc-release/snow_shot/Release/WingShot.map"
 $linked = @(Select-String -LiteralPath $linkMap -Pattern (
     '^\s+[0-9A-Fa-f]+:[0-9A-Fa-f]+\s+(ff_[A-Za-z0-9_]+_(?:bsf|decoder|encoder|hwaccel|parser|demuxer|muxer|protocol))\s+[0-9A-Fa-f]+\s{2,}\S'
 ) | ForEach-Object { $_.Matches[0].Groups[1].Value } | Sort-Object)
