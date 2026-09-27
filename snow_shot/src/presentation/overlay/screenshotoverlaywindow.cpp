@@ -496,6 +496,11 @@ void ScreenshotOverlayWindow::restoreNativeSurface() {
 }
 
 void ScreenshotOverlayWindow::initializeScreenshotSurface() {
+    // Capture coordinates cover the full display, including the macOS menu bar
+    // and notch band. Qt's default safe-area margins would inset the canvas and
+    // break its alignment with the captured pixels and pointer coordinates.
+    setAttribute(Qt::WA_ContentsMarginsRespectsSafeArea, false);
+
     // Keep the native surface mode stable after winId/show. Runtime toggling of
     // WA_TranslucentBackground is unreliable for top-level layered windows on Windows.
     setAttribute(Qt::WA_TranslucentBackground, true);

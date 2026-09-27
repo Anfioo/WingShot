@@ -39,6 +39,7 @@
 #include <QGraphicsView>
 #include <QImage>
 #include <QLabel>
+#include <QLayout>
 #include <QMouseEvent>
 #include <QObject>
 #include <QPainter>
@@ -46,9 +47,12 @@
 #include <QPointer>
 #include <QPushButton>
 #include <QRegion>
+#include <QScopedValueRollback>
 #include <QScrollBar>
 #include <QTextBoundaryFinder>
 #include <QWheelEvent>
+#include <private/qwindow_p.h>
+#include <qpa/qplatformwindow.h>
 
 #include <algorithm>
 #include <array>
@@ -429,6 +433,57 @@ void physicalViewportRenderingPreservesEveryPixelAtFractionalDprs() {
                         "fractional-DPI physical rendering should preserve every raw pixel");
             }
         }
+    }
+}
+
+void overlayCanvasCoversDisplaySafeAreas() {
+    // Supply the same QPA inset Cocoa reports for a notched screen, without
+    // requiring that hardware or a desktop session. Only synchronous layout
+    // runs with this handle; native painting and teardown use the real handle.
+    class SafeAreaWindow final : public QPlatformWindow {
+      public:
+        explicit SafeAreaWindow(QWindow* window) : QPlatformWindow(window) {}
+        QMargins margins;
+        QMargins safeAreaMargins() const override {
+            return margins;
+        }
+    };
+
+    NoopOverlayEventSink eventSink;
+    auto* canvas = new SnowCanvasWidget;
+    ScreenshotOverlayWindow overlay(eventSink, canvas);
+    overlay.setGeometry(-640, -480, 640, 480);
+    for (int surface = 0; surface < 2; ++surface) {
+        overlay.restoreNativeSurface();
+        for (int reveal = 0; reveal < 2; ++reveal) {
+            overlay.show();
+            QApplication::processEvents();
+            {
+                QWindow* window = overlay.windowHandle();
+                SafeAreaWindow platform(window);
+                platform.setGeometry(window->geometry());
+                const QScopedValueRollback handle(QWindowPrivate::get(window)->platformWindow,
+                                                  static_cast<QPlatformWindow*>(&platform));
+                for (const QMargins margins :
+                     {QMargins(0, 38, 0, 0), QMargins(), QMargins(0, 24, 0, 0)}) {
+                    platform.margins = margins;
+                    require(window->safeAreaMargins() == margins,
+                            "the fixture must expose the display safe area through QPA");
+                    QEvent changed(QEvent::SafeAreaMarginsChange);
+                    QCoreApplication::sendEvent(window, &changed);
+                    overlay.layout()->invalidate();
+                    overlay.layout()->activate();
+                    require(canvas->geometry() == overlay.rect(),
+                            "display safe areas must not inset or shrink the screenshot canvas");
+                    require(canvas->mapTo(&overlay, QPoint(0, 0)) == QPoint(0, 0) &&
+                                canvas->mapTo(&overlay, canvas->rect().bottomRight()) ==
+                                    overlay.rect().bottomRight(),
+                            "canvas coordinates must stay aligned with both display corners");
+                }
+            }
+            overlay.hide();
+        }
+        overlay.releaseNativeSurface();
     }
 }
 
@@ -4860,6 +4915,10 @@ void nonRectangularSelectionDraftLeavesInteriorUnchanged() {
 
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
+    if (application.arguments().contains(QStringLiteral("--overlay-safe-area"))) {
+        overlayCanvasCoversDisplaySafeAreas();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--region-rendering-only"))) {
         sessionTeardownClearsThreadCachesWithoutOverlays();
         translatedRasterCachesMatchDirectPainting();
@@ -4999,6 +5058,7 @@ int main(int argc, char** argv) {
     rendererCoversTheWidgetRectOnceAScreenshotFillsTheViewport();
     overlayPaintSkipsRedundantTransparentClearWhenRendererCoversTheRect();
     layeredImageSourceMatchesMaterializedOutput();
+    overlayCanvasCoversDisplaySafeAreas();
     overlayCameraPreservesDesktopPixels();
     physicalViewportRenderingPreservesEveryPixelAtFractionalDprs();
     pinnedResultDownscaleUsesLinearFiltering();

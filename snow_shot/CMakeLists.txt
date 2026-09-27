@@ -3291,6 +3291,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         snow_shot_diagnostics
         ant_design_qt
         Qt6::Widgets
+        Qt6::GuiPrivate
         snow_shot_storage
         snow_shot_window_shortcuts
         snow_draw_engine_qt_canvas
@@ -3309,6 +3310,8 @@ if(SNOW_SHOT_BUILD_TESTS)
     )
     add_test(NAME snow-shot-scrolling-overlay-tests
         COMMAND snow-shot-screenshot-canvas-renderer-tests --scrolling-overlay -platform offscreen)
+    add_test(NAME snow-shot-overlay-safe-area-tests
+        COMMAND snow-shot-screenshot-canvas-renderer-tests --overlay-safe-area -platform offscreen)
     set_tests_properties(snow-shot-scrolling-overlay-tests PROPERTIES LABELS "unit")
     add_test(NAME snow-shot-overlay-close-release-tests
         COMMAND snow-shot-screenshot-canvas-renderer-tests --close-release-only -platform offscreen)
