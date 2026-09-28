@@ -146,9 +146,9 @@ jobs:
           $null = Set-SnowBuildEnvironment -Preset 'snow-shot-msvc-release'
           cmake --preset snow-shot-msvc-release -DSNOW_SHOT_BUILD_UPDATE_TESTS=ON
           if ($LASTEXITCODE -ne 0) { throw "Updater test configuration failed." }
-          cmake --build --preset build-snow-shot-msvc-release --target snow-shot-update-tests snow-shot-update-about-tests snow-shot-update-settings-tests --parallel 4
+          cmake --build --preset build-snow-shot-msvc-release --target snow-shot-update-adapter-tests snow-shot-update-about-tests snow-shot-update-settings-tests --parallel 4
           if ($LASTEXITCODE -ne 0) { throw "Updater test build failed." }
-          ctest --test-dir build/snow-shot-msvc-release/snow_shot -C Release -R '^snow-shot-update-(tests|about-tests|settings-tests)$' --output-on-failure
+          ctest --test-dir build/snow-shot-msvc-release/snow_shot -C Release -R '^snow-shot-update-(adapter-tests|about-tests|settings-tests)$' --output-on-failure
           if ($LASTEXITCODE -ne 0) { throw "Updater tests failed." }
           & scripts/test-snow-shot-update-helper.ps1
 
