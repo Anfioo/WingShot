@@ -171,7 +171,6 @@ constexpr int TOOLBAR_ITEM_SPACING = 8;
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Delay recording (scroll to adjust)"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Copy recording"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Animated recording formats do not contain audio"),
-    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Unavailable while recording"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Recording format"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Transparent"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Red"),
@@ -1653,8 +1652,7 @@ void ScreenshotToolPalette::setActiveTool(Tool tool) {
     if (m_releasingSecondaryResources) {
         return;
     }
-    if (m_options.recordingDrawingMode && m_recordExportSettingsVisible &&
-        !isRecordingUnavailableTool(tool)) {
+    if (m_options.recordingDrawingMode && m_recordExportSettingsVisible) {
         setRecordingExportSettingsVisible(false);
     }
     const bool activeToolNoop = m_activeTool.has_value() && *m_activeTool == tool &&
@@ -4136,30 +4134,6 @@ void ScreenshotToolPalette::activateDrawingTool(Tool tool) {
     }
 }
 
-bool ScreenshotToolPalette::isRecordingUnavailableTool(Tool tool) const {
-    if (!m_options.recordingDrawingMode) {
-        return false;
-    }
-    return tool == Tool::RectangleHighlight || tool == Tool::PenHighlight ||
-           tool == Tool::AutoFilter || tool == Tool::RectangleFilter || tool == Tool::PenFilter;
-}
-
-void ScreenshotToolPalette::refreshRecordingToolAvailability(adqt::widgets::AdButton* button,
-                                                             Tool tool, const QString& label) {
-    if (button == nullptr || !m_options.recordingDrawingMode) {
-        return;
-    }
-    const bool unavailable = isRecordingUnavailableTool(tool);
-    setScreenshotToolPaletteToolButtonIconDisabled(button, unavailable);
-    if (!unavailable) {
-        button->setAccessibleDescription(QString());
-        return;
-    }
-    button->setToolTip(tr("Unavailable while recording"));
-    button->setAccessibleName(label);
-    button->setAccessibleDescription(tr("Unavailable while recording"));
-}
-
 ScreenshotToolPalette::Tool ScreenshotToolPalette::rememberedDrawingMode(Tool tool) const {
     const auto isHighlightVariant = [](Tool candidate) {
         return candidate == Tool::RectangleHighlight || candidate == Tool::PenHighlight;
@@ -4230,7 +4204,7 @@ void ScreenshotToolPalette::recordUserDrawingToolIntent(Tool tool) {
 }
 
 bool ScreenshotToolPalette::drawingToolCanBeActivated(Tool tool) const {
-    if (drawingToolItemId(tool).isEmpty() || isRecordingUnavailableTool(tool)) {
+    if (drawingToolItemId(tool).isEmpty()) {
         return false;
     }
     adqt::widgets::AdButton* button = drawingToolEntryButton(tool);
@@ -4276,7 +4250,7 @@ adqt::widgets::AdButton* ScreenshotToolPalette::toolShortcutButton(Tool tool) co
 bool ScreenshotToolPalette::canActivateToolShortcut(Tool tool) const {
     tool = rememberedDrawingMode(tool);
     const auto* button = toolShortcutButton(tool);
-    return !isRecordingUnavailableTool(tool) && button != nullptr && button->isEnabled();
+    return button != nullptr && button->isEnabled();
 }
 
 bool ScreenshotToolPalette::activateToolFromToolbar(Tool tool, bool toggleVisibleButton) {
@@ -4384,10 +4358,7 @@ void ScreenshotToolPalette::refreshDrawingToolGroup(int groupIndex) {
     setScreenshotToolPaletteToolButtonIcon(group.trigger, toolbar_layout::icon(descriptor->icon));
     group.trigger->setProperty("screenshotToolbarItemId", itemId);
     group.trigger->setProperty("screenshotToolbarPositionItems", group.itemIds);
-    if (const auto* drawing = toolbar_layout::descriptor(itemId)) {
-        refreshRecordingToolAvailability(group.trigger, drawingToolFromItem(drawing->item),
-                                         QString::fromUtf8(descriptor->label));
-    } else {
+    if (toolbar_layout::descriptor(itemId) == nullptr) {
         group.trigger->setEnabled(group.itemIds.size() > 1 || historyActionEnabled(itemId));
     }
     for (adqt::widgets::AdButton* optionButton : group.optionButtons) {
@@ -4473,8 +4444,6 @@ void ScreenshotToolPalette::ensureDrawingToolGroupPopover(adqt::widgets::AdButto
             const toolbar_layout::Descriptor* descriptor = toolbar_layout::descriptor(itemId);
             if (descriptor != nullptr) {
                 applyDrawingShortcutTooltip(button, QString::fromUtf8(descriptor->label), itemId);
-                refreshRecordingToolAvailability(button, drawingToolFromItem(descriptor->item),
-                                                 QString::fromUtf8(descriptor->label));
             } else if (itemId == QStringLiteral("undo") || itemId == QStringLiteral("redo")) {
                 applyScreenshotShortcutTooltip(button,
                                                itemId == QStringLiteral("undo")
