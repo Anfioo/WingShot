@@ -91,7 +91,7 @@ def cask(version, sha256, tag=None):
     if tag_version(tag) != version:
         raise ValueError('Cask version does not match its release tag.')
     url_tag = tag.replace(version, '#{version}', 1)
-    conflict = '  conflicts_with cask: "snow-shot"\n\n' if '-beta' in version else ''
+    conflict = '  conflicts_with cask: "snow-shot"\n' if '-beta' in version else ''
     return f'''cask "{cask_name(version)}" do
   version "{version}"
   sha256 "{sha256}"
