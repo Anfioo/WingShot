@@ -102,11 +102,48 @@ load ARGV[0]
         self.assertTrue(options['must_succeed'])
         self.assertNotIn('sudo', options)
 
-    def test_stable_release_only(self):
-        for change in (dict(draft=True), dict(prerelease=True), dict(tag_name='v1.2.3-beta_snow-shot'),
-                       dict(tag_name='v01.2.3_snow-shot'), dict(tag_name='v1.2.3'), dict(tag_name='../../bad')):
+    def test_invalid_releases(self):
+        for change in (dict(draft=True), dict(prerelease=True), dict(tag_name='v1.2.3-rc.1_snow-shot'),
+                       dict(tag_name='v01.2.3_snow-shot'), dict(tag_name='v1.2.3-beta.01'), dict(tag_name='../../bad')):
             with self.subTest(change=change), self.assertRaises(ValueError):
                 brew.release_version(self.release | change)
+
+    def test_supported_tags_and_beta_flags(self):
+        for version in ('1.2.3', '1.2.3-beta', '1.2.3-beta.10'):
+            for suffix in ('', '_snow-shot'):
+                for prerelease in ((False, True) if '-beta' in version else (False,)):
+                    release = self.release | dict(tag_name=f'v{version}{suffix}', prerelease=prerelease)
+                    self.assertEqual(brew.release_version(release), version)
+                    generated = brew.cask(version, self.sha, release['tag_name'])
+                    self.assertIn(f'/v#{{version}}{suffix}/', generated)
+
+    def test_beta_publish_preserves_stable_cask(self):
+        self.current_version('1.2.3')
+        stable = self.current.read_bytes()
+        version = '1.2.4-beta.2'
+        (self.source / 'CMakeLists.txt').write_text(f'set(SNOW_SHOT_VERSION "{version}")')
+        name = f'snow-shot-{version}-macos-arm64.dmg'
+        for suffix in ('', '.sha256'):
+            (self.assets / (self.name + suffix)).rename(self.assets / (name + suffix))
+        self.release.update(tag_name=f'v{version}', assets=[dict(name=name), dict(name=name + '.sha256')])
+        with patch.object(brew, 'run', side_effect=self.fake_run) as run:
+            brew.publish(self.release['tag_name'], self.source, self.tap, self.output)
+        self.assertEqual(self.current.read_bytes(), stable)
+        beta = (self.tap / 'Casks/snow-shot@beta.rb').read_text()
+        self.assertIn('cask "snow-shot@beta"', beta)
+        self.assertIn('conflicts_with cask: "snow-shot"', beta)
+        self.assertIn(('git', 'add', 'Casks/snow-shot@beta.rb', 'README.md'),
+                      [call.args for call in run.call_args_list])
+
+    def test_beta_ordering_and_channel_guard(self):
+        self.current_version('1.2.3-beta.10')
+        for version in ('1.2.3-beta', '1.2.3-beta.2', '1.2.2-beta.99'):
+            with self.assertRaisesRegex(ValueError, 'downgrade'):
+                brew.check_current(self.current, version)
+        brew.check_current(self.current, '1.2.3-beta.11')
+        brew.check_current(self.current, '1.2.4-beta')
+        with self.assertRaisesRegex(ValueError, 'channel'):
+            brew.check_current(self.current, '1.2.4')
 
     def test_missing_and_duplicate_assets(self):
         for assets in ([], [dict(name=self.name)], self.release['assets'] + [dict(name=self.name)]):

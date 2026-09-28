@@ -6,9 +6,10 @@ vcpkg and Cargo; universal builds are not supported by these presets.
 
 ## Homebrew installation
 
-The project tap is `mg-chao/homebrew-tap`; its first cask becomes available after
-a stable GitHub release containing the Homebrew support is published. Beta and
-other prerelease tags (including `1.1.5-beta`) do not update this tap. Initially,
+The project tap is `mg-chao/homebrew-tap`. Stable releases update `snow-shot`;
+beta releases update `snow-shot@beta`, independently of the stable channel.
+Tags accept `v<version>` with an optional `_snow-shot` suffix; beta versions use
+`-beta` or `-beta.<number>`. Other prerelease versions are not supported. Initially,
 Homebrew installation supports Apple Silicon and macOS 15 or later only. Keep
 Homebrew current with `brew update`.
 
@@ -18,6 +19,12 @@ brew install --cask mg-chao/tap/snow-shot
 brew upgrade --cask snow-shot
 brew uninstall --cask snow-shot
 ```
+
+For beta releases, use `brew install --cask mg-chao/tap/snow-shot@beta` and
+`brew upgrade --cask snow-shot@beta`. Quit the app and uninstall the current cask
+before switching channels because both install `Snow Shot.app`. User data and
+the signing identity are retained. Each release needs its versioned DMG and
+matching `.sha256` asset; the workflow packages only verified release assets.
 
 Finish recordings and quit Snow Shot before upgrading or uninstalling. Homebrew
 owns the final application placement and removal; the cask's preflight verifies

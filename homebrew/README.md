@@ -9,6 +9,16 @@ brew upgrade --cask snow-shot
 brew uninstall --cask snow-shot
 ```
 
+Beta releases use a separate cask:
+
+```sh
+brew install --cask mg-chao/tap/snow-shot@beta
+brew upgrade --cask snow-shot@beta
+```
+
+Both channels install `Snow Shot.app`. Quit the app and uninstall the current
+cask before switching channels; uninstall preserves user data and signing state.
+
 Homebrew manages the app; installation reuses Snow Shot's local signing identity.
 The first installation may request Keychain access and macOS privacy permissions.
 Keep `~/Library/Application Support/Snow Shot/Installer` and the original Keychain

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build and publish the Snow Shot tap from immutable stable GitHub release assets."""
+"""Build and publish stable and beta casks from immutable GitHub release assets."""
 import argparse
 import gzip
 import hashlib
@@ -13,6 +13,23 @@ import tempfile
 
 REPOSITORY = 'mg-chao/snow-apps'
 STABLE = r'(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)'
+VERSION = STABLE + r'(?:-beta(?:\.(?:0|[1-9][0-9]*))?)?'
+
+
+def tag_version(tag):
+    match = re.fullmatch('v(' + VERSION + r')(?:_snow-shot)?', tag)
+    if not match:
+        raise ValueError('Expected a stable or beta Snow Shot tag (v<version>[_snow-shot]).')
+    return match[1]
+
+
+def cask_name(version):
+    return 'snow-shot@beta' if '-beta' in version else 'snow-shot'
+
+
+def version_key(version):
+    base, _, beta = version.partition('-beta')
+    return (*map(int, base.split('.')), int(beta[1:]) if beta else -1)
 
 
 def digest(path):
@@ -25,21 +42,25 @@ def digest(path):
 
 def release_version(release):
     tag = release.get('tag_name', '')
-    match = re.fullmatch('v(' + STABLE + ')_snow-shot', tag)
-    if not match or release.get('draft') is not False or release.get('prerelease') is not False:
-        raise ValueError('Homebrew requires a published stable v<version>_snow-shot release.')
-    return match[1]
+    version = tag_version(tag)
+    if release.get('draft') is not False or release.get('prerelease') not in (True, False):
+        raise ValueError('Homebrew requires a published release.')
+    if release['prerelease'] and cask_name(version) != 'snow-shot@beta':
+        raise ValueError('A stable version cannot be marked as a prerelease.')
+    return version
 
 
 def check_current(current, version, generated=None):
     if not current.exists():
         return
     text = current.read_text(encoding='utf-8')
-    match = re.search(r'^  version "(' + STABLE + r')"$', text, re.MULTILINE)
+    match = re.search(r'^  version "(' + VERSION + r')"$', text, re.MULTILINE)
     if not match:
-        raise ValueError('The existing tap cask has no recognized stable version.')
+        raise ValueError('The existing tap cask has no recognized version.')
     previous = match[1]
-    if tuple(map(int, previous.split('.'))) > tuple(map(int, version.split('.'))):
+    if cask_name(previous) != cask_name(version):
+        raise ValueError('Refusing to change the release channel of a cask.')
+    if version_key(previous) > version_key(version):
         raise ValueError('Refusing to downgrade the Homebrew tap.')
     if previous == version and generated is not None and text != generated:
         raise ValueError('Refusing to change the contents of an already published cask version.')
@@ -65,17 +86,22 @@ def github_digest(release, name):
     return value.split(':', 1)[1].lower()
 
 
-def cask(version, sha256):
-    return f'''cask "snow-shot" do
+def cask(version, sha256, tag=None):
+    tag = tag or f'v{version}_snow-shot'
+    if tag_version(tag) != version:
+        raise ValueError('Cask version does not match its release tag.')
+    url_tag = tag.replace(version, '#{version}', 1)
+    conflict = '  conflicts_with cask: "snow-shot"\n\n' if '-beta' in version else ''
+    return f'''cask "{cask_name(version)}" do
   version "{version}"
   sha256 "{sha256}"
 
-  url "https://github.com/{REPOSITORY}/releases/download/v#{{version}}_snow-shot/snow-shot-#{{version}}-macos-arm64-homebrew.tar.gz"
+  url "https://github.com/{REPOSITORY}/releases/download/{url_tag}/snow-shot-#{{version}}-macos-arm64-homebrew.tar.gz"
   name "Snow Shot"
   desc "Screenshot and screen recording application"
   homepage "https://snowshot.top/"
 
-  depends_on arch: :arm64
+{conflict}  depends_on arch: :arm64
   depends_on macos: :sequoia
 
   app "Snow Shot.app"
@@ -143,11 +169,11 @@ def package(release, source, assets, output, current):
                 info.size = path.stat().st_size if path else len(content)
                 with path.open('rb') if path else io.BytesIO(content) as stream:
                     tar.addfile(info, stream)
-    generated = cask(version, digest(archive))
+    generated = cask(version, digest(archive), release['tag_name'])
     check_current(current, version, generated)
     casks = output / 'Casks'
     casks.mkdir(exist_ok=True)
-    (casks / 'snow-shot.rb').write_text(generated, encoding='utf-8')
+    (casks / f'{cask_name(version)}.rb').write_text(generated, encoding='utf-8')
     return archive, generated
 
 
@@ -170,13 +196,12 @@ def ensure_asset(release, archive):
 
 
 def publish(tag, source, tap, output):
-    if not re.fullmatch('v' + STABLE + '_snow-shot', tag):
-        raise ValueError('Expected a stable v<version>_snow-shot tag.')
+    tag_version(tag)
     release = json.loads(run('gh', 'api', f'repos/{REPOSITORY}/releases/tags/{tag}'))
     if release['tag_name'] != tag:
         raise ValueError('Unexpected release tag returned by GitHub.')
     version = release_version(release)
-    current = tap / 'Casks/snow-shot.rb'
+    current = tap / f'Casks/{cask_name(version)}.rb'
     check_current(current, version)
     name = required_assets(release, version)
     with tempfile.TemporaryDirectory(prefix='snow-homebrew-assets-') as directory:
@@ -193,7 +218,7 @@ def publish(tag, source, tap, output):
     readme = tap / 'README.md'
     if not readme.exists():
         readme.write_text((Path(__file__).resolve().parent.parent / 'homebrew/README.md').read_text(encoding='utf-8'), encoding='utf-8')
-    run('git', 'add', 'Casks/snow-shot.rb', 'README.md', cwd=tap)
+    run('git', 'add', f'Casks/{cask_name(version)}.rb', 'README.md', cwd=tap)
     if run('git', 'diff', '--cached', '--name-only', cwd=tap).strip():
         run('git', '-c', 'user.name=github-actions[bot]', '-c',
             'user.email=41898282+github-actions[bot]@users.noreply.github.com',
