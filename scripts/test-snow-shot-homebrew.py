@@ -120,6 +120,31 @@ load ARGV[0]
                 self.package()
         self.assertFalse(self.output.exists())
 
+    def test_github_digest_without_sidecar(self):
+        self.release['assets'] = [dict(name=self.name, digest='sha256:' + self.sha)]
+        (self.assets / (self.name + '.sha256')).unlink()
+        archive, _ = self.package()
+        with tarfile.open(archive) as tar:
+            self.assertEqual(tar.extractfile(self.name + '.sha256').read(),
+                             (self.sha + '  ' + self.name + '\n').encode())
+        with patch.object(brew, 'run', side_effect=self.fake_run) as run:
+            brew.publish(self.release['tag_name'], self.source, self.tap, self.output)
+        download = next(call.args for call in run.call_args_list if call.args[:3] == ('gh', 'release', 'download'))
+        self.assertNotIn(self.name + '.sha256', download)
+
+    def test_github_digest_is_always_verified(self):
+        for value in ('sha256:' + '0' * 64, 'sha512:' + self.sha, ''):
+            self.release['assets'][0]['digest'] = value
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                self.package()
+        self.assertFalse(self.output.exists())
+
+    def test_sidecar_cannot_disagree_with_github_digest(self):
+        self.release['assets'][0]['digest'] = 'sha256:' + self.sha
+        (self.assets / (self.name + '.sha256')).write_text('0' * 64)
+        with self.assertRaisesRegex(ValueError, 'checksum mismatch'):
+            self.package()
+
     def test_source_must_match_and_support_staging(self):
         (self.source / 'CMakeLists.txt').write_text('set(SNOW_SHOT_VERSION "1.2.4")')
         with self.assertRaises(ValueError):

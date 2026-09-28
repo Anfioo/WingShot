@@ -48,10 +48,21 @@ def check_current(current, version, generated=None):
 def required_assets(release, version):
     dmg = f'snow-shot-{version}-macos-arm64.dmg'
     names = [asset['name'] for asset in release.get('assets', [])]
-    for name in (dmg, dmg + '.sha256'):
-        if names.count(name) != 1:
-            raise ValueError(f'Missing or duplicate {name}. Upload the macOS DMG/checksum pair and retry the workflow.')
+    if names.count(dmg) != 1 or names.count(dmg + '.sha256') > 1:
+        raise ValueError(f'Missing or duplicate {dmg} or checksum asset.')
+    if dmg + '.sha256' not in names and github_digest(release, dmg) is None:
+        raise ValueError(f'Missing checksum for {dmg}. Upload a SHA-256 sidecar or use an asset with a GitHub SHA-256 digest.')
     return dmg
+
+
+def github_digest(release, name):
+    asset = next(asset for asset in release['assets'] if asset['name'] == name)
+    value = asset.get('digest')
+    if value is None:
+        return None
+    if not re.fullmatch(r'sha256:[0-9a-fA-F]{64}', value):
+        raise ValueError('Invalid GitHub asset SHA-256 digest.')
+    return value.split(':', 1)[1].lower()
 
 
 def cask(version, sha256):
@@ -106,11 +117,16 @@ def package(release, source, assets, output, current):
         raise ValueError('The Homebrew preflight must use LF line endings.')
     dmg = assets / name
     checksum = assets / (name + '.sha256')
-    lines = [line.strip() for line in checksum.read_text(encoding='utf-8').splitlines() if line.strip()]
-    if len(lines) != 1 or not re.fullmatch(r'[0-9a-fA-F]{64}(?:\s+.*)?', lines[0]):
-        raise ValueError('Invalid DMG checksum sidecar.')
-    if digest(dmg) != lines[0][:64].lower():
-        raise ValueError('DMG checksum mismatch.')
+    actual = digest(dmg)
+    expected = github_digest(release, name)
+    if expected is not None and actual != expected:
+        raise ValueError('DMG checksum mismatch with GitHub asset digest.')
+    if any(asset['name'] == checksum.name for asset in release['assets']):
+        lines = [line.strip() for line in checksum.read_text(encoding='utf-8').splitlines() if line.strip()]
+        if len(lines) != 1 or not re.fullmatch(r'[0-9a-fA-F]{64}(?:\s+.*)?', lines[0]):
+            raise ValueError('Invalid DMG checksum sidecar.')
+        if actual != lines[0][:64].lower():
+            raise ValueError('DMG checksum mismatch.')
     output.mkdir(parents=True, exist_ok=True)
     archive = output / f'snow-shot-{version}-macos-arm64-homebrew.tar.gz'
     # Fixed metadata and gzip header make retries byte-identical across hosts.
@@ -164,8 +180,11 @@ def publish(tag, source, tap, output):
     check_current(current, version)
     name = required_assets(release, version)
     with tempfile.TemporaryDirectory(prefix='snow-homebrew-assets-') as directory:
+        patterns = ['--pattern', name]
+        if any(asset['name'] == name + '.sha256' for asset in release['assets']):
+            patterns += ['--pattern', name + '.sha256']
         run('gh', 'release', 'download', tag, '--repo', REPOSITORY,
-            '--pattern', name, '--pattern', name + '.sha256', '--dir', directory)
+            *patterns, '--dir', directory)
         archive, generated = package(release, source, Path(directory), output, current)
     # Complete every validation before either public destination is changed.
     ensure_asset(release, archive)

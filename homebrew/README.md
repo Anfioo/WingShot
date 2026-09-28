@@ -25,3 +25,8 @@ another application directory (create it first). Use the same desktop account fo
 upgrades. Quit Snow Shot and finish recordings before upgrading or uninstalling.
 
 Release and recovery details: [Snow Shot macOS documentation](https://github.com/mg-chao/snow-apps/blob/main/docs-macos-build.md).
+
+The publisher verifies the downloaded DMG against GitHub's asset SHA-256 digest
+and the `.sha256` sidecar when present. At least one checksum source is required;
+if both exist, both must match. The Homebrew archive always includes a checksum
+sidecar for the installer, even when the original release uses only GitHub's digest.
