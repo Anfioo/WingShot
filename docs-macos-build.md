@@ -23,8 +23,9 @@ brew uninstall --cask snow-shot
 For beta releases, use `brew install --cask mg-chao/tap/snow-shot@beta` and
 `brew upgrade --cask snow-shot@beta`. Quit the app and uninstall the current cask
 before switching channels because both install `Snow Shot.app`. User data and
-the signing identity are retained. Each release needs its versioned DMG and
-matching `.sha256` asset; the workflow packages only verified release assets.
+the signing identity are retained. Each release needs its versioned DMG and a
+GitHub SHA-256 digest or matching `.sha256` asset. When both are present, both
+must match; the workflow packages only verified release assets.
 
 Finish recordings and quit Snow Shot before upgrading or uninstalling. Homebrew
 owns the final application placement and removal; the cask's preflight verifies
