@@ -2052,7 +2052,7 @@ void SnowCanvasWidget::Impl::refreshToolCursorStyle() {
     const auto& stroke = cursorStyle.shape_style.stroke;
     QColor cursorColor(stroke.r, stroke.g, stroke.b, stroke.a);
     if (displayState.snapshot().activeTool == SNOW_ACTIVE_TOOL_PEN_HIGHLIGHT) {
-        cursorColor.setAlphaF(cursorColor.alphaF() * 0.5);
+        cursorColor.setAlphaF(cursorColor.alphaF() * 0.5F);
     }
     cursorController.configureStrokeCursor((filterCursor ? cursorStyle.filter_style.stroke_width
                                                          : cursorStyle.shape_style.stroke_width) *

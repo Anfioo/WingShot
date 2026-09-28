@@ -1709,6 +1709,10 @@
             <translation>全螢幕</translation>
         </message>
         <message>
+            <source>Full-screen canvas (enable/disable click-through)</source>
+            <translation>全螢幕畫布（開啟/關閉滑鼠穿透）</translation>
+        </message>
+        <message>
             <source>Fullscreen suppression</source>
             <translation>全螢幕抑制</translation>
         </message>
@@ -1731,6 +1735,10 @@
         <message>
             <source>General system integration settings</source>
             <translation>一般系統整合設定</translation>
+        </message>
+        <message>
+            <source>Global Canvas</source>
+            <translation>全域畫布</translation>
         </message>
         <message>
             <source>Global hotkey activation behavior</source>
@@ -2147,6 +2155,10 @@
         <message>
             <source>Open Login Items Settings</source>
             <translation>開啟登入項目設定</translation>
+        </message>
+        <message>
+            <source>Open a canvas on the current display or toggle click-through</source>
+            <translation>在目前顯示器上開啟畫布或切換滑鼠穿透</translation>
         </message>
         <message>
             <source>Open selected text translation in a standalone window.</source>
