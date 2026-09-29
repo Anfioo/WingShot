@@ -284,7 +284,7 @@ void builtInCatalogIsCompleteAndValid() {
         require(itemIds.remove(id), "catalog must contain each platform-specific setting");
     for (const auto& id : excludedPlatformItems)
         require(!itemIds.contains(id), "catalog must omit settings exclusive to another platform");
-    require(itemIds.size() == 198, "catalog must contain 198 shared settings on every platform");
+    require(itemIds.size() == 199, "catalog must contain 199 shared settings on every platform");
     require(foundUpdates, "catalog must contain the update mode item");
     const auto* pinnedEditor =
         catalog.item({QStringLiteral("interface-settings"), QStringLiteral("pin-to-screen"),
@@ -623,6 +623,15 @@ void builtInCatalogIsCompleteAndValid() {
                                                QStringLiteral("screen-recording.encoding-preset")});
     require(encodingPreset != nullptr,
             "Function settings must expose the video encoding preset selector");
+    const auto* videoQuality = catalog.item({QStringLiteral("function-settings"),
+                                             QStringLiteral("screen-recording-settings"),
+                                             QStringLiteral("screen-recording.video-quality")});
+    require(videoQuality != nullptr &&
+                videoQuality->configurationKey ==
+                    QStringLiteral("screen_recording/video_quality") &&
+                std::get<settings::SettingsSliderDefinition>(videoQuality->payload).binding ==
+                    settings::SettingsSliderBinding::ScreenRecordingVideoQuality,
+            "Function settings must expose the MP4 quality slider");
     const auto& encodingPresetOptions =
         std::get<settings::SettingsSelectDefinition>(encodingPreset->payload).options;
     require(encodingPresetOptions.size() == 5 &&

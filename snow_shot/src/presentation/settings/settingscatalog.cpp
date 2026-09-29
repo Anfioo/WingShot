@@ -1433,6 +1433,13 @@ QVector<SettingsItemDefinition> screenRecordingItems() {
              {QStringLiteral("h264"), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "H.264"))},
              {QStringLiteral("h265"),
               settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "H.265"))}}),
+        {QStringLiteral("screen-recording.video-quality"),
+         settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Video quality")),
+         settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Adjust MP4 quality and file size")),
+         {},
+         QStringLiteral("screen_recording/video_quality"),
+         SettingsSliderDefinition{SettingsSliderBinding::ScreenRecordingVideoQuality,
+                                  settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "%"))}},
         fixedSelectItem(
             QStringLiteral("screen-recording.encoding-preset"),
             QT_TRANSLATE_NOOP("SettingsCatalog", "Encoding preset"),
@@ -3955,6 +3962,9 @@ QStringList SettingsCatalog::validationErrors() const {
                         break;
                     case SettingsSliderBinding::ScreenshotImageQuality:
                         expectedKey = QStringLiteral("screenshot/image_quality");
+                        break;
+                    case SettingsSliderBinding::ScreenRecordingVideoQuality:
+                        expectedKey = QStringLiteral("screen_recording/video_quality");
                         break;
                     }
                     if (itemDefinition.configurationKey != expectedKey || schemaEntry == nullptr ||
