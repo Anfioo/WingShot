@@ -214,6 +214,19 @@ SettingsItemDefinition openCaptureHistoryItem() {
         []() { return outlined_icons::History(); });
 }
 
+SettingsItemDefinition switchWindowGroupItem() {
+    auto item = quickActionItem(
+        QStringLiteral("quick.switch-window-group"),
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Switch Window Group"),
+        QT_TRANSLATE_NOOP("SettingsCatalog",
+                          "Preview window groups, then release the shortcut keys to switch"),
+        {}, GlobalShortcutAction::SwitchWindowGroup,
+        QStringLiteral("global_shortcuts/switch_window_group"),
+        []() { return outlined_icons::Swap(); });
+    std::get<SettingsShortcutActionDefinition>(item.payload).showInTrayMenu = false;
+    return item;
+}
+
 SettingsItemDefinition openPinToScreenManagementItem() {
     return quickActionItem(
         QStringLiteral("quick.open-pin-to-screen-management"),
@@ -2167,6 +2180,7 @@ QVector<SettingsPageDefinition> builtInPages() {
                         pinClipboardContentItem(),
                         pinSelectedFilesItem(),
                         restoreLastClosedWindowsItem(),
+                        switchWindowGroupItem(),
                         openPinToScreenManagementItem(),
                     },
                 },
@@ -3041,6 +3055,8 @@ QString shortcutConfigurationKey(GlobalShortcutAction action) {
         return QStringLiteral("global_shortcuts/open_screen_recording_folder");
     case GlobalShortcutAction::OpenCaptureHistory:
         return QStringLiteral("global_shortcuts/open_capture_history");
+    case GlobalShortcutAction::SwitchWindowGroup:
+        return QStringLiteral("global_shortcuts/switch_window_group");
     case GlobalShortcutAction::GlobalCanvas:
         return QStringLiteral("global_shortcuts/global_canvas");
     case GlobalShortcutAction::OpenPinToScreenManagement:
