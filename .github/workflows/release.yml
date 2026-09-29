@@ -172,10 +172,11 @@ jobs:
           $base = "snow-ocr-runtime-$runtime-windows-x64"
           $names += @("$base.zip", "$base.zip.sha256", "$base.manifest.json")
           $packages = @($names | ForEach-Object { Get-Item -LiteralPath "build/snow-shot-msvc-release/$_" -ErrorAction Stop })
-          $assets = ($packages | ForEach-Object { $_.FullName }) -join "`n"
-          "assets<<SNOW_ASSETS" | Out-File $env:GITHUB_OUTPUT -Encoding utf8 -Append
-          $assets | Out-File $env:GITHUB_OUTPUT -Encoding utf8 -Append
-          "SNOW_ASSETS" | Out-File $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          # 用单行分号拼接，不要用多行输出：多行值经 workflow output 往返后行尾会带 CR，
+          # 拆出来的路径会残留尾随 CR，而 gh 会对每个文件参数做 filepath.Glob
+          # （pkg/cmdutil/args.go 的 GlobPaths），带 CR 的路径匹配不到任何文件并直接报错。
+          $assets = ($packages | ForEach-Object { $_.FullName }) -join ';'
+          "assets=$assets" | Out-File $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
       - name: Preserve matching release symbols separately
         uses: actions/upload-artifact@v4
@@ -192,7 +193,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $assets = "${{ steps.package.outputs.assets }}" -split "`n" | Where-Object { $_ }
+          $assets = @("${{ steps.package.outputs.assets }}" -split ';' | Where-Object { $_ })
+          if (-not $assets) { throw "No release assets were resolved by the package step." }
           $version = [regex]::Match((Get-Content -Raw CMakeLists.txt), 'set\(SNOW_SHOT_VERSION "([^"]+)"\)').Groups[1].Value
           $releaseFlags = @()
           if (($version -split '\+')[0].Contains('-')) { $releaseFlags += '--prerelease' }
