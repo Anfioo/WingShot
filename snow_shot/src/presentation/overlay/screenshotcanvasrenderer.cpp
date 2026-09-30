@@ -1171,10 +1171,22 @@ void ScreenshotCanvasRenderer::setImageViewportPhysicalSize(const QSize& size) {
 void ScreenshotCanvasRenderer::setPinnedResultSurface(const QRectF& contentCanvasRect,
                                                       const QRectF& surfaceCanvasRect,
                                                       const ScreenshotResultStyle& style) {
+    const auto normalizedStyle = ScreenshotResultCompositor::normalizedStyle(style);
+    const bool changed = m_pinnedContentCanvasRect != contentCanvasRect.normalized() ||
+                         m_pinnedSurfaceCanvasRect != surfaceCanvasRect.normalized() ||
+                         m_pinnedResultStyle.cornerRadius != normalizedStyle.cornerRadius ||
+                         m_pinnedResultStyle.shadowWidth != normalizedStyle.shadowWidth ||
+                         m_pinnedResultStyle.shadowColor != normalizedStyle.shadowColor ||
+                         m_pinnedResultStyle.region != normalizedStyle.region ||
+                         m_pinnedResultStyle.regionScale != normalizedStyle.regionScale;
     m_pinnedContentCanvasRect = contentCanvasRect.normalized();
     m_pinnedSurfaceCanvasRect = surfaceCanvasRect.normalized();
-    m_pinnedResultStyle = ScreenshotResultCompositor::normalizedStyle(style);
+    m_pinnedResultStyle = normalizedStyle;
     setRenderMode(RenderMode::PinnedResult);
+    if (changed) {
+        invalidateCachedContent();
+        m_canvas.update();
+    }
 }
 
 void ScreenshotCanvasRenderer::setBakedSelectionPath(const QPainterPath& path) {
@@ -1520,13 +1532,7 @@ void ScreenshotCanvasRenderer::clearOcrPresentation() {
 void ScreenshotCanvasRenderer::reset() {
     // Pinned/export snapshots can share geometry with the ending capture.
     // Release only derived data, leaving those snapshots fully usable.
-    if (m_selectionState.region)
-        m_selectionState.region->clearDerivedCache();
-    m_selectionState.confirmedRegion.clearDerivedCache();
-    if (m_regionHoverCacheRegion)
-        m_regionHoverCacheRegion->clearDerivedCache();
-    if (m_pinnedResultStyle.region)
-        m_pinnedResultStyle.region->clearDerivedCache();
+    clearRenderState();
     setOcrVisible(true);
     const bool hadCachedContent =
         m_imageSource.isValid() || !m_imageViewportPhysicalSize.isEmpty() ||
@@ -1544,10 +1550,6 @@ void ScreenshotCanvasRenderer::reset() {
     m_pinnedResultStyle = {};
     m_pinnedBackgroundColor = {};
     m_bakedSelectionPath = {};
-    m_regionHoverCacheRegion.reset();
-    m_regionHoverCache = {};
-    m_outlineCache = {};
-    m_maskCache = {};
     m_pinnedCheckerboardEnabled = false;
     m_selectionState = ScreenshotSelectionVisualState{};
     m_renderMode = RenderMode::Standard;
@@ -1570,8 +1572,34 @@ void ScreenshotCanvasRenderer::reset() {
     }
 }
 
+void ScreenshotCanvasRenderer::clearRenderState() {
+    if (m_selectionState.region)
+        m_selectionState.region->clearDerivedCache();
+    m_selectionState.confirmedRegion.clearDerivedCache();
+    if (m_regionHoverCacheRegion)
+        m_regionHoverCacheRegion->clearDerivedCache();
+    if (m_pinnedResultStyle.region)
+        m_pinnedResultStyle.region->clearDerivedCache();
+    m_regionHoverCacheRegion.reset();
+    m_regionHoverCache = {};
+    m_outlineCache = {};
+    m_maskCache = {};
+    ScreenshotSelectionShadowRenderer::resetCacheForCurrentThread();
+}
+
 std::uint64_t ScreenshotCanvasRenderer::contentRevision() const {
     return m_contentRevision;
+}
+
+std::optional<SnowCanvasFilterRenderReference>
+ScreenshotCanvasRenderer::filterRenderReference() const {
+    if (m_renderMode != RenderMode::PinnedResult || !m_imageSource.isMaterialized() ||
+        !m_pinnedSurfaceCanvasRect.isValid()) {
+        return std::nullopt;
+    }
+    return SnowCanvasFilterRenderReference{m_pinnedSurfaceCanvasRect,
+                                           m_imageSource.materializedImage.width() /
+                                               m_imageSource.materializedCanvasRect.width()};
 }
 
 ScreenshotCanvasRenderer::RenderMode ScreenshotCanvasRenderer::renderMode() const {

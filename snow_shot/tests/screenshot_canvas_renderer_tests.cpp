@@ -736,6 +736,7 @@ QImage renderPinnedResult(const QImage& source, const QTransform& canvasToView,
     QPainter painter(&output);
     const QRect logicalViewport(QPoint(),
                                 QSize(qCeil(targetRect.width()), qCeil(targetRect.height())));
+    painter.setRenderHint(QPainter::Antialiasing, true);
     const SnowCanvasRenderContext context{
         logicalViewport,
         QRegion(logicalViewport),
@@ -779,6 +780,76 @@ void pinnedResultDownscaleUsesLinearFiltering() {
     require(fractionalDpi == checker,
             "a full-size pinned result at fractional DPI maps 1:1 in device pixels and should "
             "stay pixel-exact");
+}
+
+void pinnedFiltersUseTheSourceResolution() {
+    SnowCanvasRuntime runtime;
+    SnowCanvasWidget canvas(runtime);
+    canvas.resize(160, 120);
+    canvas.setClearBackgroundEnabled(false);
+    canvas.show();
+    QApplication::processEvents();
+    require(canvas.setViewportCamera(40, 30, 2), "configure Retina pinned viewport");
+    ScreenshotCanvasRenderer renderer(canvas);
+    const QRectF bounds(0, 0, 80, 60);
+    renderer.setImage(checkerboardFixture({160, 120}), bounds);
+    require(!renderer.filterRenderReference().has_value(),
+            "standard screenshots keep viewport-resolution filters");
+    renderer.setPinnedResultSurface(bounds, bounds, {});
+    const auto reference = renderer.filterRenderReference();
+    require(reference && reference->canvasRect == bounds && reference->pixelsPerCanvasUnit == 2,
+            "pinned filters must use the original source density");
+    canvas.setCustomRenderer(&renderer);
+    require(runtime.setQuickSelectionDisabledTools({SnowCanvasTool::RectangleFilter}),
+            "disable pinned fixture quick selection");
+    require(canvas.setCanvasFilterStyle({SnowCanvasFilterType::Mosaic, 0.65, 1, 30},
+                                        SnowCanvasFilterStylePropertyType |
+                                            SnowCanvasFilterStylePropertyStrength |
+                                            SnowCanvasFilterStylePropertyOpacity),
+            "configure pinned mosaic");
+    require(canvas.setCanvasTool(SnowCanvasTool::RectangleFilter), "activate pinned mosaic");
+    for (const auto& [type, point, button, buttons] :
+         {std::tuple{QEvent::MouseButtonPress, QPointF(20, 20), Qt::LeftButton,
+                     Qt::MouseButtons(Qt::LeftButton)},
+          std::tuple{QEvent::MouseMove, QPointF(140, 100), Qt::NoButton,
+                     Qt::MouseButtons(Qt::LeftButton)},
+          std::tuple{QEvent::MouseButtonRelease, QPointF(140, 100), Qt::LeftButton,
+                     Qt::MouseButtons(Qt::NoButton)}}) {
+        QMouseEvent event(type, point, point, point, button, buttons, Qt::NoModifier);
+        QApplication::sendEvent(&canvas, &event);
+    }
+    require(canvas.resetEditingStatePreservingTool(), "clear pinned filter selection");
+    canvas.setInteractionEnabled(false);
+    const QImage baseline = renderCanvas(canvas);
+    for (const auto [scale, dpr] :
+         {std::pair{0.5, 1.0}, {0.75, 1.25}, {1.0, 1.0}, {1.0, 2.0}, {1.5, 1.0}, {2.0, 1.0}}) {
+        canvas.resize(qRound(160 * scale), qRound(120 * scale));
+        require(canvas.setViewportCamera(40, 30, 2 * scale), "scale pinned window");
+        const QImage scaled = renderCanvas(canvas, dpr);
+        const QImage expected =
+            renderPinnedResult(baseline, QTransform::fromScale(scale, scale), dpr);
+        require(scaled.size() == expected.size(),
+                "scaled pins must keep the physical viewport size");
+        // QWidget::render clips the fractional device-pixel fringe differently from a direct
+        // renderer call. Compare every fully covered pixel on the shared physical grid.
+        const QRect completePixels(
+            QPoint(), QSize(qFloor(canvas.width() * dpr), qFloor(canvas.height() * dpr)));
+        const bool matches = scaled.copy(completePixels) == expected.copy(completePixels);
+        if (!matches)
+            std::cerr << "Pinned interior mismatch: scale=" << scale << ", dpr=" << dpr << '\n';
+        require(matches,
+                "pinned mosaic must resample its source-resolution result like an ordinary pin "
+                "without rerendering the filter at the viewport resolution");
+    }
+    const auto revision = renderer.contentRevision();
+    ScreenshotResultStyle style;
+    style.cornerRadius = 8;
+    renderer.setPinnedResultSurface(bounds, bounds, style);
+    require(renderer.contentRevision() != revision,
+            "pinned appearance changes must invalidate reference filter output");
+    require(renderCanvas(canvas).pixelColor(0, 0).alpha() == 0,
+            "reference output must refresh pinned transparency after an appearance change");
+    canvas.setCustomRenderer(nullptr);
 }
 
 void pinnedResultUpscaleUsesLinearFiltering() {
@@ -5314,6 +5385,12 @@ void nonRectangularSelectionDraftLeavesInteriorUnchanged() {
 
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
+    if (application.arguments().contains(QStringLiteral("--pinned-filter-reference-only"))) {
+        pinnedFiltersUseTheSourceResolution();
+        pinnedResultDownscaleUsesLinearFiltering();
+        pinnedCheckerboardStaysBehindTransparentPixels();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--overlay-boundary-input"))) {
 #ifdef Q_OS_MACOS
         if (QGuiApplication::platformName() == QStringLiteral("cocoa")) {
@@ -5463,6 +5540,7 @@ int main(int argc, char** argv) {
         ocrFilteredCropMatchesFullFrameReference();
         return 0;
     }
+    pinnedFiltersUseTheSourceResolution();
     ocrBackgroundFillSamplesRobustlyAndChoosesContrastingText();
     ocrSolidFillRendersAdaptiveTextPerBlock();
     sessionTeardownClearsThreadCachesWithoutOverlays();

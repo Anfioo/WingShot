@@ -157,8 +157,11 @@ class ScreenshotCanvasRenderer final : public SnowCanvasCustomRenderer {
     void updateOcrSelection();
     void clearOcrPresentation();
     void reset();
+    void clearRenderState() override;
 
     [[nodiscard]] std::uint64_t contentRevision() const override;
+    [[nodiscard]] std::optional<SnowCanvasFilterRenderReference>
+    filterRenderReference() const override;
     [[nodiscard]] RenderMode renderMode() const;
     [[nodiscard]] bool maskVisible() const;
     [[nodiscard]] QColor maskColor() const;
