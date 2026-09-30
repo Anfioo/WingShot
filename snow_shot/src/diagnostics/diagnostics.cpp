@@ -932,6 +932,16 @@ DiagnosticsService& DiagnosticsService::instance() {
     return service;
 }
 
+std::shared_ptr<DiagnosticsService::Impl> DiagnosticsService::sessionSnapshot() const {
+    std::lock_guard<std::mutex> lock(m_sessionMutex);
+    return m_impl;
+}
+
+void DiagnosticsService::publishSession(std::shared_ptr<Impl> session) {
+    std::lock_guard<std::mutex> lock(m_sessionMutex);
+    m_impl.swap(session);
+}
+
 bool DiagnosticsService::initialize(DiagnosticsOptions options) {
     shutdown();
     const auto session = std::make_shared<Impl>(*this);
@@ -966,7 +976,7 @@ bool DiagnosticsService::initialize(DiagnosticsOptions options) {
     if (impl.state.directory.isEmpty()) {
         impl.state.lastError = QString::fromUtf8(QT_TRANSLATE_NOOP(
             "DiagnosticsService", "No writable diagnostics directory is available."));
-        m_impl.store(session);
+        publishSession(session);
         impl.notify();
         return false;
     }
@@ -980,7 +990,7 @@ bool DiagnosticsService::initialize(DiagnosticsOptions options) {
             .filePath(QStringLiteral("session-%1.lock").arg(impl.state.sessionId)));
     impl.sessionLock->setStaleLockTime(0);
     if (!impl.sessionLock->tryLock(0)) {
-        m_impl.store(session);
+        publishSession(session);
         return false;
     }
     if (impl.options.installMessageHandler)
@@ -1040,7 +1050,7 @@ bool DiagnosticsService::initialize(DiagnosticsOptions options) {
     }
     // Publish only after all immutable session data is prepared. Calls already using
     // the stopped session keep it alive until they release their own snapshot.
-    m_impl.store(session);
+    publishSession(session);
     impl.worker = std::thread([session] { session->loop(); });
     if (impl.options.installMessageHandler) {
         std::lock_guard<std::mutex> lock(handlerMutex);
@@ -1067,11 +1077,11 @@ bool DiagnosticsService::initialize(DiagnosticsOptions options) {
 }
 
 DiagnosticsOptions DiagnosticsService::options() const {
-    return m_impl.load()->options;
+    return sessionSnapshot()->options;
 }
 
 void DiagnosticsService::shutdown() {
-    const auto session = m_impl.load();
+    const auto session = sessionSnapshot();
     auto& impl = *session;
     if (!impl.running)
         return;
@@ -1105,18 +1115,18 @@ void DiagnosticsService::shutdown() {
 }
 
 DiagnosticsStatus DiagnosticsService::status() const {
-    const auto session = m_impl.load();
+    const auto session = sessionSnapshot();
     std::lock_guard<std::mutex> lock(session->stateMutex);
     return session->state;
 }
 QStringList DiagnosticsService::directories() const {
-    return m_impl.load()->roots;
+    return sessionSnapshot()->roots;
 }
 QString DiagnosticsService::crashPipeName() const {
-    return m_impl.load()->pipe;
+    return sessionSnapshot()->pipe;
 }
 QString DiagnosticsService::crashCaptureDirectory() const {
-    return m_impl.load()->captureDatabase;
+    return sessionSnapshot()->captureDatabase;
 }
 
 void DiagnosticsService::record(QtMsgType level, const QString& category, const QString& event,
@@ -1136,7 +1146,7 @@ void DiagnosticsService::record(QtMsgType level, const QString& category, const 
                 insideRecord = false;
             }
         } reset;
-        const auto session = m_impl.load();
+        const auto session = sessionSnapshot();
         auto& impl = *session;
         std::lock_guard<std::mutex> lock(impl.mutex);
         if (!impl.running || impl.stopping || level == QtDebugMsg)
@@ -1180,7 +1190,7 @@ void DiagnosticsService::record(QtMsgType level, const QString& category, const 
 }
 
 bool DiagnosticsService::flush(std::chrono::milliseconds timeout) {
-    const auto session = m_impl.load();
+    const auto session = sessionSnapshot();
     auto promise = std::make_shared<std::promise<bool>>();
     auto future = promise->get_future();
     {
@@ -1206,7 +1216,7 @@ bool DiagnosticsService::flush(std::chrono::milliseconds timeout) {
 }
 
 void DiagnosticsService::requestMaintenance() {
-    const auto session = m_impl.load();
+    const auto session = sessionSnapshot();
     std::lock_guard<std::mutex> lock(session->mutex);
     if (!session->running || session->stopping || session->maintenancePending)
         return;
@@ -1222,7 +1232,7 @@ void DiagnosticsService::requestMaintenance() {
 }
 
 std::shared_future<LogExportResult> DiagnosticsService::exportDay(const QDate& date) {
-    const auto session = m_impl.load();
+    const auto session = sessionSnapshot();
     auto promise = std::make_shared<std::promise<LogExportResult>>();
     auto future = promise->get_future().share();
     record(QtInfoMsg, QStringLiteral("snow_shot.diagnostics"), QStringLiteral("export.snapshot"));
@@ -1261,7 +1271,7 @@ std::shared_future<LogExportResult> DiagnosticsService::exportDay(const QDate& d
 }
 
 void DiagnosticsService::protectSnapshot(const QString& path) {
-    const auto session = m_impl.load();
+    const auto session = sessionSnapshot();
     std::lock_guard<std::mutex> lock(session->mutex);
     if (!session->running || session->stopping)
         return;

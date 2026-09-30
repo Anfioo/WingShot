@@ -292,6 +292,48 @@ void publishFile(const QString& path, bool expectRetry = false) {
     require(success, "file commit failed");
     require(!expectRetry || attempts > 1, "file publication must retry with metadata intact");
 }
+void scopedPublicationsPreservePlacement() {
+    ScreenshotClipboardCommitScope scope;
+    QObject receiver;
+    QTemporaryDir directory;
+    const auto path = directory.filePath(QStringLiteral("scoped.png"));
+    require(image().save(path, "PNG"), "save scoped publication fixture");
+    for (const bool file : {false, true}) {
+        auto placement = fixture();
+        bool completed = false;
+        ScreenshotClipboardCommitHandle handle;
+        auto completion = [&](ScreenshotClipboardCommitResult result) {
+            require(result.succeeded() && handle.isFinished() && scope.pendingCount() == 0,
+                    "scoped metadata publications must retire before completion");
+            completed = true;
+        };
+        if (file) {
+            const QFileInfo info(path);
+            placement.filePath = screenshotClipboardFilePath(path);
+            placement.fileSize = info.size();
+            placement.fileModifiedMs = info.lastModified().toUTC().toMSecsSinceEpoch();
+            auto* mime = new QMimeData;
+            mime->setUrls({QUrl::fromLocalFile(path)});
+            setScreenshotClipboardPlacement(*mime, placement);
+            handle = scope.commitMimeData(QApplication::clipboard(), &receiver, mime, completion);
+        } else {
+            handle = scope.commit(QApplication::clipboard(), &receiver,
+                                  ScreenshotClipboardService::prepareImage(image(), {}, placement),
+                                  completion);
+        }
+        require(handle.isValid() && scope.pendingCount() == 1,
+                "scoped metadata publication must be tracked");
+        processUntil([&] { return completed; });
+        auto snapshot = ScreenshotClipboardContentReader::snapshot(QApplication::clipboard(), 1);
+        require(snapshot.has_value(), "snapshot scoped clipboard publication");
+        const auto content = ScreenshotClipboardContentReader::decode(std::move(*snapshot));
+        require(content && content->placement &&
+                    content->placement->windowRect == placement.windowRect &&
+                    content->placement->filePath == placement.filePath &&
+                    content->image.size() == placement.rasterSize,
+                "retiring scoped image and file publications must preserve placement and pixels");
+    }
+}
 void publicationOrderAndCancellation() {
     QObject receiver;
     auto newer = fixture();
@@ -391,6 +433,7 @@ void nativeRoundtrip() {
 #endif
         }
     } restore{clipboard, saved};
+    scopedPublicationsPreservePlacement();
     publicationOrderAndCancellation();
     require(ScreenshotClipboardService::publish(
                 clipboard, ScreenshotClipboardService::prepareImage(image(), {}, fixture())),
@@ -452,6 +495,7 @@ int main(int argc, char** argv) {
             codecAndRecovery();
             contentAndPayload();
 #if !defined(Q_OS_WIN)
+            scopedPublicationsPreservePlacement();
             publicationOrderAndCancellation();
 #endif
         }

@@ -153,7 +153,8 @@ void concurrentRecordsAndSnapshots() {
     require(read(result.path) == snapshot, "published snapshots must be immutable");
 }
 void restartPublishesPreparedSession() {
-    QTemporaryDir directory;
+    QTemporaryDir directory(QDir(QDir::tempPath()).canonicalPath() +
+                            QStringLiteral("/snow-diag-XXXXXX"));
     DiagnosticsService service;
     const auto source = QDir(directory.path()).filePath(QStringLiteral("source"));
     const auto destination = QDir(directory.path()).filePath(QStringLiteral("destination"));
@@ -208,7 +209,8 @@ struct PausingClock {
     std::shared_ptr<ClockCopyGate> gate;
 };
 void restartRetainsInFlightReader() {
-    QTemporaryDir directory;
+    QTemporaryDir directory(QDir(QDir::tempPath()).canonicalPath() +
+                            QStringLiteral("/snow-diag-XXXXXX"));
     DiagnosticsService service;
     const auto gate = std::make_shared<ClockCopyGate>();
     std::promise<void> resume;

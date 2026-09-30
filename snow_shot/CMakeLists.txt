@@ -82,6 +82,9 @@ snow_enable_clang_tidy()
 
 find_package(Qt6 6.11.1 EXACT REQUIRED COMPONENTS Widgets LinguistTools Svg Network)
 if(APPLE)
+    add_library(snow_shot_macos_clipboard STATIC src/platform/macos/imageclipboard.cpp)
+    target_link_libraries(snow_shot_macos_clipboard PUBLIC Qt6::Gui
+        PRIVATE "-framework CoreGraphics" "-framework ImageIO")
     add_library(snow_shot_macos_cursor STATIC
         src/platform/macos/windowcursorcoordinator.cpp
         src/platform/macos/windowcursorcoordinator.mm)
@@ -97,6 +100,7 @@ if(APPLE)
     target_link_libraries(snow_shot_macos_window_platform PUBLIC Qt6::Widgets
         PRIVATE Qt6::GuiPrivate snow_shot_macos_cursor "-framework AppKit" "-framework ApplicationServices")
 endif()
+
 
 function(snow_shot_link_macos_window_platform target)
     if(APPLE)
@@ -8277,6 +8281,53 @@ if(TARGET snow-shot-pinned-window-tests)
     endif()
 endif()
 
+if(SNOW_SHOT_BUILD_TESTS)
+    snow_shot_offscreen_qpa_environment(_snow_clipboard_qpa_environment)
+    add_executable(snow-shot-clipboard-lifecycle-tests
+        tests/screenshot_clipboard_lifecycle_tests.cpp
+        src/presentation/services/screenshotclipboardservice.cpp)
+    target_include_directories(snow-shot-clipboard-lifecycle-tests PRIVATE include)
+    target_link_libraries(snow-shot-clipboard-lifecycle-tests PRIVATE
+        snow_shot_image_codec snow_shot_diagnostics Qt6::Widgets)
+    if(WIN32)
+        target_link_libraries(snow-shot-clipboard-lifecycle-tests PRIVATE user32)
+    endif()
+    snow_shot_import_offscreen_platform(snow-shot-clipboard-lifecycle-tests)
+    add_test(NAME snow-shot-clipboard-lifecycle-tests COMMAND snow-shot-clipboard-lifecycle-tests)
+    set_tests_properties(snow-shot-clipboard-lifecycle-tests PROPERTIES
+        ENVIRONMENT "${_snow_clipboard_qpa_environment}" LABELS "unit" SNOW_TEST_CROSS_PLATFORM TRUE)
+
+    if(TARGET snow-shot-pinned-window-tests)
+        add_test(NAME snow-shot-selection-clipboard-lifecycle-tests
+            COMMAND snow-shot-pinned-window-tests --clipboard-publication-only -platform offscreen)
+        set_tests_properties(snow-shot-selection-clipboard-lifecycle-tests PROPERTIES
+            ENVIRONMENT "${_snow_clipboard_qpa_environment}" LABELS "unit" TIMEOUT 60)
+    endif()
+    if(Python3_Interpreter_FOUND AND SNOW_SHOT_ENABLE_MCP)
+        add_test(NAME snow-shot-mcp-media-clipboard-tests
+            COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/mcp_application_fixture_tests.py"
+                "$<TARGET_FILE:snow_shot_mcp>" "$<TARGET_FILE:snow_shot>" --clipboard-only)
+        set_tests_properties(snow-shot-mcp-media-clipboard-tests PROPERTIES TIMEOUT 120
+            LABELS "unit" RUN_SERIAL TRUE ENVIRONMENT "${_snow_clipboard_qpa_environment}"
+            ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    endif()
+
+    if(APPLE)
+        add_executable(snow-shot-macos-clipboard-roundtrip-tests
+            tests/macos_clipboard_roundtrip_tests.mm
+            src/presentation/services/screenshotclipboardservice.cpp)
+        target_include_directories(snow-shot-macos-clipboard-roundtrip-tests PRIVATE include)
+        target_link_libraries(snow-shot-macos-clipboard-roundtrip-tests PRIVATE
+            snow_shot_image_codec snow_shot_diagnostics Qt6::Widgets
+            "-framework AppKit" "-framework ImageIO")
+        add_test(NAME snow-shot-macos-clipboard-roundtrip-tests
+            COMMAND snow-shot-macos-clipboard-roundtrip-tests -platform cocoa)
+        set_tests_properties(snow-shot-macos-clipboard-roundtrip-tests PROPERTIES
+            LABELS "unit;macos" RUN_SERIAL TRUE TIMEOUT 60)
+    endif()
+    unset(_snow_clipboard_qpa_environment)
+endif()
+
 # Shared clipboard metadata must have one native MIME converter per process.
 add_library(snow_shot_clipboard_placement STATIC
     src/presentation/services/screenshotclipboardplacement.cpp)
@@ -8288,13 +8339,6 @@ if(APPLE)
 elseif(WIN32)
     target_link_libraries(snow_shot_clipboard_placement PRIVATE user32)
 endif()
-get_property(_snow_clipboard_consumers DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
-foreach(_snow_target IN LISTS _snow_clipboard_consumers)
-    get_target_property(_snow_sources ${_snow_target} SOURCES)
-    if("${_snow_sources}" MATCHES "screenshotclipboard(service|content)\\.cpp")
-        target_link_libraries(${_snow_target} PRIVATE snow_shot_clipboard_placement)
-    endif()
-endforeach()
 
 if(SNOW_SHOT_BUILD_TESTS)
     add_executable(snow-shot-clipboard-placement-tests
@@ -8340,3 +8384,16 @@ if(SNOW_SHOT_BUILD_BENCHMARKS)
         target_link_libraries(snow-shot-clipboard-placement-benchmark PRIVATE user32)
     endif()
 endif()
+
+# Link after all clipboard test and benchmark targets have been declared so
+# metadata and native image converters are available to every consumer.
+get_property(_snow_clipboard_consumers DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
+foreach(_snow_target IN LISTS _snow_clipboard_consumers)
+    get_target_property(_snow_sources ${_snow_target} SOURCES)
+    if("${_snow_sources}" MATCHES "screenshotclipboard(service|content)\\.cpp")
+        target_link_libraries(${_snow_target} PRIVATE snow_shot_clipboard_placement)
+    endif()
+    if(APPLE AND "${_snow_sources}" MATCHES "screenshotclipboardservice\\.cpp")
+        target_link_libraries(${_snow_target} PRIVATE snow_shot_macos_clipboard)
+    endif()
+endforeach()

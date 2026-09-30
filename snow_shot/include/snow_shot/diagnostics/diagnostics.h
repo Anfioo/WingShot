@@ -7,10 +7,10 @@
 #include <QStringList>
 
 #include <chrono>
-#include <atomic>
 #include <functional>
 #include <future>
 #include <memory>
+#include <mutex>
 
 namespace snow_shot::diagnostics {
 
@@ -116,7 +116,10 @@ class DiagnosticsService final : public QObject {
   private:
     struct Impl;
     // Readers retain their session while a storage migration publishes its replacement.
-    std::atomic<std::shared_ptr<Impl>> m_impl;
+    std::shared_ptr<Impl> sessionSnapshot() const;
+    void publishSession(std::shared_ptr<Impl> session);
+    mutable std::mutex m_sessionMutex;
+    std::shared_ptr<Impl> m_impl;
 };
 
 void logEvent(const QString& category, const QString& event, const QJsonObject& fields = {},
