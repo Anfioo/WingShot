@@ -5,11 +5,13 @@
 #include "snow_shot/presentation/screenshotoverlayeventsink.h"
 #include "snow_shot/presentation/screenshotselectionaspectratio.h"
 #include "snow_shot/presentation/screenshotselectiongeometry.h"
+#include "snow_shot/presentation/screenshotselectioneffectgeometry.h"
 
 #include "snow_shot/image/screenshotregiongeometry.h"
 #include "snow_draw_engine_qt/snow_canvas_path_geometry.h"
 #include <QPoint>
 #include <QPointF>
+#include <QPointer>
 #include <QTimer>
 #include <Qt>
 
@@ -22,6 +24,8 @@ class ScreenshotInteractionState;
 class ScreenshotIntelligentSelectionModel;
 class ScreenshotOverlayWindow;
 class ScreenshotSelectionModel;
+class QWidget;
+class SnowCanvasWidget;
 struct ScreenshotCaptureState;
 enum class ScreenshotActiveTool;
 enum class ScreenshotIntelligentSelectionTarget;
@@ -121,6 +125,12 @@ struct ScreenshotOverlayInputActions {
     std::function<bool()> toggleGuidesForCurrentSession = []() { return false; };
     std::function<bool()> cursorVisibilityAvailable = [] { return false; };
     std::function<bool()> toggleCursorVisibility = [] { return false; };
+    std::function<void(ScreenshotOverlayWindow*, ScreenshotSelectionEffectHandle)> setEffectCursor =
+        [](ScreenshotOverlayWindow*, ScreenshotSelectionEffectHandle) {};
+    std::function<void(ScreenshotSelectionEffectHandle, int)> previewSelectionEffect = {};
+    std::function<void()> commitSelectionEffects = [] {};
+    std::function<SnowCanvasWidget*(const ScreenshotOverlayWindow*)> effectCanvas =
+        [](const ScreenshotOverlayWindow*) { return nullptr; };
     std::function<void(ScreenshotSelectionAspectRatioPreset, bool)>
         persistSelectionAspectRatioPreference = [](ScreenshotSelectionAspectRatioPreset, bool) {};
 };
@@ -138,6 +148,11 @@ struct ScreenshotOverlayInputHandlerContext {
 class ScreenshotOverlayInputHandler final {
   public:
     explicit ScreenshotOverlayInputHandler(ScreenshotOverlayInputHandlerContext context);
+    ~ScreenshotOverlayInputHandler();
+    bool effectDragActive() const;
+    bool cancelEffectDrag();
+    void leaveEffectEditors();
+    bool handleEffectDoubleClick(ScreenshotOverlayWindow* overlay, const QPointF& position);
     void setExternalDragActive(bool active) {
         if (m_externalDragActive && !active) {
             resetTransientShortcuts();
@@ -194,6 +209,15 @@ class ScreenshotOverlayInputHandler final {
     void cancelCanvasColorSampling();
 
   private:
+    ScreenshotSelectionEffectLayout effectLayout(const ScreenshotOverlayWindow* overlay) const;
+    ScreenshotSelectionEffectHandle effectHandleAt(const ScreenshotOverlayWindow* overlay,
+                                                   const QPointF& localPosition) const;
+    bool updateEffectHover(ScreenshotOverlayWindow* overlay, const QPointF& localPosition);
+    bool beginEffectDrag(ScreenshotOverlayWindow* overlay, const QPointF& localPosition);
+    void updateEffectDrag(const QPointF& canvasPosition);
+    void finishEffectDrag(ScreenshotOverlayWindow* overlay, const QPointF& localPosition);
+    QPointer<QWidget> m_effectMouseGrab;
+    bool m_consumeEffectRelease = false;
     void executeConfiguredCompletionAction(const QString& action);
     void beginSelectionDrag(ScreenshotOverlayWindow* overlay, const QPointF& virtualPosition,
                             ScreenshotSelectionDragMode dragMode);
