@@ -18,6 +18,7 @@ include(RustStaticLibrary)
 set(CMAKE_AUTOUIC OFF)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
+set(CMAKE_INSTALL_DEFAULT_COMPONENT_NAME SnowShot)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -270,11 +271,22 @@ if(NOT TARGET snow_visual_region_detector_c)
 endif()
 
 if(NOT TARGET snow_selected_text_c)
+    # Selected-text capture is Full-only. Keep it outside the shared capture /
+    # recording / canvas archive so Mini never compiles or links its engines.
+    set(_snow_selected_text_features)
+    if(TARGET snow_shot_rust_ffi_bundle)
+        list(APPEND _snow_selected_text_features host-application-qos)
+    endif()
     snow_add_rust_static_library(snow_selected_text_c
         PACKAGE snow-selected-text-c
         MANIFEST_DIR "${SNOW_SHOT_CAPTURE_CRATES_DIR}"
         OUTPUT_NAME snow_selected_text_c
+        FEATURES ${_snow_selected_text_features}
         STRIP_MSVC_DIRECTIVES)
+    if(TARGET snow_shot_rust_ffi_bundle)
+        target_link_libraries(snow_selected_text_c INTERFACE snow_shot_rust_ffi_bundle)
+    endif()
+    unset(_snow_selected_text_features)
     target_include_directories(snow_selected_text_c INTERFACE
         "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-selected-text-c/include")
     if(APPLE)
@@ -7670,24 +7682,40 @@ if(WIN32)
             "avutil-*.dll"
             "swresample-*.dll"
             "swscale-*.dll"
-            "libx264-*.dll"
-            "libx265*.dll"
-            "libwebp*.dll"
-            "libsharpyuv*.dll"
-            "openh264-*.dll"
-            "vpl*.dll"
         )
         set(SNOW_SHOT_FFMPEG_DLLS)
         foreach(_ffmpeg_dll_pattern IN LISTS SNOW_SHOT_FFMPEG_DLL_PATTERNS)
             file(GLOB _ffmpeg_matching_dlls
-                "${SNOW_SHOT_FFMPEG_BIN_DIR}/${_ffmpeg_dll_pattern}"
+                CONFIGURE_DEPENDS "${SNOW_SHOT_FFMPEG_BIN_DIR}/${_ffmpeg_dll_pattern}"
             )
             list(APPEND SNOW_SHOT_FFMPEG_DLLS ${_ffmpeg_matching_dlls})
         endforeach()
-        set(SNOW_SHOT_FFMPEG_RUNTIME_FILES ${SNOW_SHOT_FFMPEG_DLLS}
+        # FFmpeg is built with the release CRT even in Debug. Resolve its DLL
+        # imports from its own bin directory, including dependencies whose names
+        # differ from the application's Debug codecs (zlib1.dll, libvpl.dll).
+        set(_snow_ffmpeg_runtime_manifest
+            "${CMAKE_CURRENT_BINARY_DIR}/generated/ffmpeg-runtime.cmake")
+        execute_process(COMMAND "${CMAKE_COMMAND}"
+            "-DSNOW_RUNTIME_ROOT_LIBRARIES=${SNOW_SHOT_FFMPEG_DLLS}"
+            "-DSNOW_RUNTIME_MANIFEST=${_snow_ffmpeg_runtime_manifest}"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/../cmake/StageRuntimeDependencies.cmake"
+            COMMAND_ERROR_IS_FATAL ANY)
+        include("${_snow_ffmpeg_runtime_manifest}")
+        set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+            ${SNOW_RUNTIME_FILES})
+        set(SNOW_SHOT_FFMPEG_RUNTIME_FILES ${SNOW_RUNTIME_FILES}
             CACHE INTERNAL "FFmpeg runtime files installed with Snow Shot.")
+        unset(SNOW_RUNTIME_FILES)
     endif()
 endif()
+
+function(snow_shot_stage_ffmpeg_runtime target)
+    if(WIN32 AND NOT SNOW_SHOT_RELEASE_STATIC AND SNOW_SHOT_FFMPEG_RUNTIME_FILES)
+        add_custom_command(TARGET ${target} POST_BUILD
+            COMMAND "${CMAKE_COMMAND}" -E copy_if_different ${SNOW_SHOT_FFMPEG_RUNTIME_FILES}
+                "$<TARGET_FILE_DIR:${target}>" COMMAND_EXPAND_LISTS VERBATIM)
+    endif()
+endfunction()
 
 if(MSVC)
     # Parallel CL invocations otherwise race over the target's shared PDB.
@@ -7841,6 +7869,7 @@ install(FILES
 )
 
 if(WIN32 AND NOT SNOW_SHOT_RELEASE_STATIC)
+    snow_shot_stage_ffmpeg_runtime(snow_shot)
     if(SNOW_SHOT_FFMPEG_RUNTIME_FILES)
         install(FILES ${SNOW_SHOT_FFMPEG_RUNTIME_FILES}
             DESTINATION ${CMAKE_INSTALL_BINDIR}
@@ -8659,3 +8688,5 @@ foreach(_snow_target IN LISTS _snow_clipboard_consumers)
         target_link_libraries(${_snow_target} PRIVATE snow_shot_macos_clipboard)
     endif()
 endforeach()
+
+include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/SnowShotMini.cmake")
