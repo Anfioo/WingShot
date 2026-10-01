@@ -1388,6 +1388,8 @@ set(PROJECT_CXX_SOURCES
     src/presentation/tools/screenshottoolpalettestylemodel.cpp
     src/presentation/tools/screenshottoolpalettestylepresets.cpp
     src/presentation/tools/screenshottoolpalette.cpp
+    src/presentation/recording/recordingaudiogainpopover.cpp
+    src/presentation/recording/recordingaudiogainpopover.h
     src/presentation/tools/screenshottoolpalettehost.cpp
     src/presentation/toolbar/screenshottoolbarwindow.cpp
     src/presentation/recording/screenrecordingareawindow.cpp
@@ -3790,6 +3792,8 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/tools/screenshotfloatingtoolpalettewindow.cpp
         src/presentation/tools/screenshottoolbarmainpanel.cpp
         src/presentation/tools/screenshottoolpalette.cpp
+        src/presentation/recording/recordingaudiogainpopover.cpp
+        src/presentation/recording/recordingaudiogainpopover.h
         src/presentation/tools/screenshottoolpalettebuttons.cpp
         src/presentation/tools/screenshottoolpalettehost.cpp
         src/presentation/tools/screenshottoolpalettestylecontrols.cpp
@@ -4598,6 +4602,8 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/tools/screenshottoolpalettestylemodel.cpp
         src/presentation/tools/screenshottoolpalettestylepresets.cpp
         src/presentation/tools/screenshottoolpalette.cpp
+        src/presentation/recording/recordingaudiogainpopover.cpp
+        src/presentation/recording/recordingaudiogainpopover.h
         src/presentation/styles/thememanager.cpp
         src/presentation/styles/themecolorscheme.cpp
     )
@@ -4787,6 +4793,8 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/tools/screenshottoolpalettestylemodel.cpp
         src/presentation/tools/screenshottoolpalettestylepresets.cpp
         src/presentation/tools/screenshottoolpalette.cpp
+        src/presentation/recording/recordingaudiogainpopover.cpp
+        src/presentation/recording/recordingaudiogainpopover.h
         src/presentation/toolbar/screenshottoolbarwindow.cpp
         src/presentation/styles/thememanager.cpp
         src/presentation/styles/themecolorscheme.cpp
@@ -4847,6 +4855,8 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/tools/screenshottoolpalettestylemodel.cpp
         src/presentation/tools/screenshottoolpalettestylepresets.cpp
         src/presentation/tools/screenshottoolpalette.cpp
+        src/presentation/recording/recordingaudiogainpopover.cpp
+        src/presentation/recording/recordingaudiogainpopover.h
         src/presentation/styles/thememanager.cpp
         src/presentation/styles/themecolorscheme.cpp
     )
@@ -4920,6 +4930,8 @@ if(SNOW_SHOT_BUILD_TESTS)
             src/presentation/tools/screenshottoolpalettestylemodel.cpp
             src/presentation/tools/screenshottoolpalettestylepresets.cpp
             src/presentation/tools/screenshottoolpalette.cpp
+            src/presentation/recording/recordingaudiogainpopover.cpp
+            src/presentation/recording/recordingaudiogainpopover.h
             src/presentation/toolbar/screenshottoolbarwindow.cpp
             src/presentation/styles/thememanager.cpp
             src/presentation/styles/themecolorscheme.cpp
@@ -4985,6 +4997,8 @@ if(SNOW_SHOT_BUILD_TESTS)
             src/presentation/tools/screenshottoolpalettestylemodel.cpp
             src/presentation/tools/screenshottoolpalettestylepresets.cpp
             src/presentation/tools/screenshottoolpalette.cpp
+            src/presentation/recording/recordingaudiogainpopover.cpp
+            src/presentation/recording/recordingaudiogainpopover.h
             src/presentation/tools/screenshottoolbarperfinstrumentation.h
             src/presentation/toolbar/screenshottoolbarwindow.cpp
             src/presentation/styles/thememanager.cpp
@@ -5047,6 +5061,8 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/tools/screenshottoolpalettestylemodel.cpp
         src/presentation/tools/screenshottoolpalettestylepresets.cpp
         src/presentation/tools/screenshottoolpalette.cpp
+        src/presentation/recording/recordingaudiogainpopover.cpp
+        src/presentation/recording/recordingaudiogainpopover.h
     )
     snow_shot_link_macos_window_platform(snow-shot-screen-recording-shortcut-tests)
     target_compile_definitions(snow-shot-screen-recording-shortcut-tests PRIVATE
@@ -5123,6 +5139,8 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/tools/screenshottoolpalettestylemodel.cpp
         src/presentation/tools/screenshottoolpalettestylepresets.cpp
         src/presentation/tools/screenshottoolpalette.cpp
+        src/presentation/recording/recordingaudiogainpopover.cpp
+        src/presentation/recording/recordingaudiogainpopover.h
         src/presentation/toolbar/screenshottoolbarwindow.cpp
     )
     snow_shot_link_macos_window_platform(snow-shot-floating-toolbar-drag-tests)
@@ -5598,6 +5616,8 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/tools/screenshottoolpalettestylemodel.cpp
         src/presentation/tools/screenshottoolpalettestylepresets.cpp
         src/presentation/tools/screenshottoolpalette.cpp
+        src/presentation/recording/recordingaudiogainpopover.cpp
+        src/presentation/recording/recordingaudiogainpopover.h
     )
     target_include_directories(snow-shot-toolbar-main-panel-tests PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
@@ -5757,9 +5777,13 @@ if(SNOW_SHOT_BUILD_TESTS)
         "${CMAKE_CURRENT_SOURCE_DIR}/../test-support/fonts/recording_test_fonts.qrc")
     # Override only the test executable: exercise the real controller without
     # opening capture devices, recording the desktop, or exporting media.
-    foreach(_operation create_direct create_deferred finalize_deferred destroy start pause resume request_stop stop state)
+    foreach(_operation create_direct create_deferred finalize_deferred destroy start pause resume request_stop stop state set_audio_gain set_audio_metering take_audio_levels request_exclusions exclusion_status)
         target_compile_definitions(snow-shot-screen-recording-controller-tests PRIVATE
             "snow_recording_session_${_operation}=test_recording_session_${_operation}")
+    endforeach()
+    foreach(_operation create cancel destroy set_gain set_metering take_levels)
+        target_compile_definitions(snow-shot-screen-recording-controller-tests PRIVATE
+            "snow_recording_audio_monitor_${_operation}=test_recording_audio_monitor_${_operation}")
     endforeach()
     target_compile_definitions(snow-shot-screen-recording-controller-tests PRIVATE
         snow_recording_source_render_start=test_recording_source_render_start
@@ -6891,6 +6915,8 @@ if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
         src/presentation/tools/screenshottoolpalettestylemodel.cpp
         src/presentation/tools/screenshottoolpalettestylepresets.cpp
         src/presentation/tools/screenshottoolpalette.cpp
+        src/presentation/recording/recordingaudiogainpopover.cpp
+        src/presentation/recording/recordingaudiogainpopover.h
         src/presentation/tools/screenshottoolbarperfinstrumentation.h
         src/presentation/toolbar/screenshottoolbarwindow.cpp
         src/presentation/styles/thememanager.cpp
@@ -7091,6 +7117,8 @@ if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
         src/presentation/tools/screenshotfloatingtoolpalettewindow.cpp
         src/presentation/tools/screenshottoolbarmainpanel.cpp
         src/presentation/tools/screenshottoolpalette.cpp
+        src/presentation/recording/recordingaudiogainpopover.cpp
+        src/presentation/recording/recordingaudiogainpopover.h
         src/presentation/tools/screenshottoolpalettebuttons.cpp
         src/presentation/tools/screenshottoolpalettehost.cpp
         src/presentation/tools/screenshottoolpalettestylecontrols.cpp
@@ -8689,4 +8717,33 @@ foreach(_snow_target IN LISTS _snow_clipboard_consumers)
     endif()
 endforeach()
 
+if(SNOW_SHOT_BUILD_TESTS)
+    add_test(NAME snow-shot-recording-audio-settings-tests
+        COMMAND snow-shot-application-storage-tests --recording-audio-only)
+    set_tests_properties(snow-shot-recording-audio-settings-tests PROPERTIES LABELS "unit")
+    add_test(NAME snow-shot-recording-audio-controller-tests
+        COMMAND snow-shot-screen-recording-controller-tests --audio-gain-only -platform offscreen)
+    set_tests_properties(snow-shot-recording-audio-controller-tests PROPERTIES LABELS "unit" TIMEOUT 60
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+endif()
+
+if(SNOW_SHOT_BUILD_TESTS)
+    find_package(Qt6 REQUIRED COMPONENTS Test)
+    add_executable(snow-shot-recording-audio-gain-popover-tests
+        tests/recording_audio_gain_popover_tests.cpp
+        src/presentation/recording/recordingaudiogainpopover.cpp
+        src/presentation/recording/recordingaudiogainpopover.h)
+    set_target_properties(snow-shot-recording-audio-gain-popover-tests PROPERTIES AUTOMOC ON)
+    target_link_libraries(snow-shot-recording-audio-gain-popover-tests PRIVATE ant_design_qt Qt6::Widgets Qt6::Test)
+    target_include_directories(snow-shot-recording-audio-gain-popover-tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
+    get_target_property(_snow_audio_qt_core_type Qt6::Core TYPE)
+    if(_snow_audio_qt_core_type STREQUAL "STATIC_LIBRARY" AND TARGET Qt6::QOffscreenIntegrationPlugin)
+        target_link_libraries(snow-shot-recording-audio-gain-popover-tests PRIVATE Qt6::QOffscreenIntegrationPlugin)
+        qt_import_plugins(snow-shot-recording-audio-gain-popover-tests INCLUDE Qt6::QOffscreenIntegrationPlugin)
+    endif()
+    add_test(NAME snow-shot-recording-audio-gain-popover-tests
+        COMMAND snow-shot-recording-audio-gain-popover-tests -platform offscreen)
+    set_tests_properties(snow-shot-recording-audio-gain-popover-tests PROPERTIES LABELS "unit" TIMEOUT 60
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+endif()
 include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/SnowShotMini.cmake")
