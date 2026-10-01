@@ -118,6 +118,8 @@ struct ScreenshotOverlayInputActions {
     // explicit command confirms the selection and shows the toolbar.
     std::function<void()> prepareExplicitSelectionCommand = []() {};
     std::function<bool()> toggleGuidesForCurrentSession = []() { return false; };
+    std::function<bool()> cursorVisibilityAvailable = [] { return false; };
+    std::function<bool()> toggleCursorVisibility = [] { return false; };
 };
 
 struct ScreenshotOverlayInputHandlerContext {

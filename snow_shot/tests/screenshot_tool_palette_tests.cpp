@@ -1609,6 +1609,14 @@ void dynamicToolbarLabelsUseEveryTranslationCatalog() {
     require(filterTypes != nullptr && filterTypes->model() != nullptr,
             "dynamic translation coverage should expose filter options");
 
+    ScreenshotToolPalette::Options cursorOptions;
+    cursorOptions.showMoveTool = true;
+    cursorOptions.showMoveOptionsToolbar = true;
+    ScreenshotToolPalette cursorPalette(cursorOptions);
+    cursorPalette.setActiveTool(ScreenshotToolPalette::Tool::Move);
+    auto* cursorButton = cursorPalette.findChild<adqt::widgets::AdButton*>(
+        QStringLiteral("screenshotCaptureCursorButton"));
+    require(cursorButton != nullptr, "cursor translation action should be present");
     const QStringList objectNames{
         QStringLiteral("screenshotToolbarDragHandle"),
         QStringLiteral("screenRecordingShowKeyboard"),
@@ -1662,6 +1670,20 @@ void dynamicToolbarLabelsUseEveryTranslationCatalog() {
                         controls.at(index)->accessibleName() == expectation.labels.at(index),
                     "dynamic toolbar labels must use the active translation catalog");
         }
+        const QString cursorLabel =
+            QCoreApplication::translate("ScreenshotToolPalette", "Show Cursor");
+        require(cursorLabel != QStringLiteral("Show Cursor") &&
+                    cursorButton->toolTip().startsWith(cursorLabel),
+                "Show Cursor must retranslate with its configurable shortcut");
+        cursorPalette.setCursorAvailable(false);
+        const QString unavailable = QCoreApplication::translate(
+            "ScreenshotToolPalette", "Cursor data is unavailable for this screenshot.");
+        require(cursorButton->toolTip() == unavailable &&
+                    cursorButton->accessibleName() == cursorLabel &&
+                    cursorButton->accessibleDescription() == unavailable &&
+                    !cursorButton->isEnabled(),
+                "unavailable cursor explanation and accessible label must retranslate");
+        cursorPalette.setCursorAvailable(true);
         const QModelIndex embossIndex = filterTypes->model()->index(5, 0);
         require(embossIndex.data(adqt::widgets::AdSelect::DefaultLabelRole).toString() ==
                     expectation.emboss,
@@ -12761,7 +12783,7 @@ void moveToolExposesCaptureCursorAndRecaptureOptions() {
     options.showMoveTool = true;
     options.showMoveOptionsToolbar = true;
     ScreenshotToolPalette palette(options);
-    palette.setCaptureCursorEnabled(false);
+    palette.setCursorVisible(false);
     palette.setActiveTool(ScreenshotToolPalette::Tool::Move);
 
     auto* controls = palette.findChild<QWidget*>(QStringLiteral("screenshotMoveActionControls"));
@@ -12814,7 +12836,7 @@ void moveToolExposesCaptureCursorAndRecaptureOptions() {
     require(qr->isEnabled(), "failed recapture restores QR toggle");
     palette.setQrCodeState(false, true);
     require(!qr->isEnabled() && !qr->isChecked(), "invalidated results disable QR toggle");
-    require(!cursor->isCheckable() && !cursor->isChecked() && !palette.captureCursorEnabled(),
+    require(!cursor->isCheckable() && !cursor->isChecked() && !palette.cursorVisible(),
             "Capture cursor must use the same state-driven action button as scrolling screenshot");
 
     auto* regionTypes =
@@ -12931,7 +12953,7 @@ void moveToolExposesCaptureCursorAndRecaptureOptions() {
     int recaptures = 0;
     int hideChanges = 0;
     bool selectionToolbarHidden = false;
-    QObject::connect(&palette, &ScreenshotToolPalette::captureCursorToggled,
+    QObject::connect(&palette, &ScreenshotToolPalette::cursorVisibilityToggled,
                      [&cursorChanges](bool enabled) { cursorChanges += enabled ? 1 : 100; });
     QObject::connect(&palette, &ScreenshotToolPalette::recaptureRequested,
                      [&recaptures]() { ++recaptures; });
@@ -12940,9 +12962,19 @@ void moveToolExposesCaptureCursorAndRecaptureOptions() {
                          ++hideChanges;
                          selectionToolbarHidden = hidden;
                      });
+    const bool savedDefault = snow_shot::storage::ScreenshotSettings().showCursor();
+    palette.setCursorAvailable(false);
     cursor->click();
-    require(cursorChanges == 1 && palette.captureCursorEnabled(),
-            "Capture cursor clicks must update state and emit the persisted-setting command");
+    require(!cursor->isEnabled() && cursorChanges == 0 &&
+                cursor->toolTip() ==
+                    QStringLiteral("Cursor data is unavailable for this screenshot."),
+            "unavailable cursor data must disable its action with an explanation");
+    palette.setCursorAvailable(true);
+    cursor->click();
+    require(snow_shot::storage::ScreenshotSettings().showCursor() == savedDefault,
+            "session visibility actions must preserve the saved default");
+    require(cursorChanges == 1 && palette.cursorVisible(),
+            "Show Cursor clicks must update session state and emit one visibility command");
     recapture->click();
     require(recaptures == 1 && recapture->toolTip() == shortcutTooltip(QStringLiteral("Recapture"),
                                                                        {QStringLiteral("Alt+R")}),
@@ -12988,8 +13020,7 @@ void moveToolExposesCaptureCursorAndRecaptureOptions() {
         QStringLiteral("screenshotCaptureCursorButton"));
     auto* retainedRecapture =
         palette.findChild<adqt::widgets::AdButton*>(QStringLiteral("screenshotRecaptureButton"));
-    require(retainedCursor == cursor && retainedRecapture == recapture &&
-                palette.captureCursorEnabled(),
+    require(retainedCursor == cursor && retainedRecapture == recapture && palette.cursorVisible(),
             "canvas style pushes must not rebuild the Move options row or reset its state");
     require(palette.activateScreenshotShortcut(QStringLiteral("recapture")) && recaptures == 3,
             "Move options keep their commands after canvas style pushes");
@@ -13014,14 +13045,14 @@ void moveToolExposesCaptureCursorAndRecaptureOptions() {
     requireMatchingButtonState();
     cursor->click();
     scrollingButton->click();
-    require(!palette.captureCursorEnabled() && cursorChanges == 101,
+    require(!palette.cursorVisible() && cursorChanges == 101,
             "clicking Capture cursor again must disable capture and emit once");
     requireMatchingButtonState();
     require(recapture->buttonStyle() == scrollingButton->buttonStyle() &&
                 recapture->accentRole() == scrollingButton->accentRole() &&
                 recapture->isCheckable() == scrollingButton->isCheckable(),
             "Recapture must use the same unselected action button style as scrolling screenshot");
-    palette.setCaptureCursorEnabled(true);
+    palette.setCursorVisible(true);
     scrollingButton->click();
     require(cursorChanges == 101, "inbound capture state must not emit a user command");
     requireMatchingButtonState();
@@ -13137,7 +13168,7 @@ void moveToolExposesCaptureCursorAndRecaptureOptions() {
         hideSelectionToolbar = palette.findChild<adqt::widgets::AdButton*>(
             QStringLiteral("screenshotHideSelectionToolbarButton"));
         require(palette.actionToolbarVisible() && !palette.styleToolbarVisible() &&
-                    cursor != nullptr && palette.captureCursorEnabled() && recapture != nullptr &&
+                    cursor != nullptr && palette.cursorVisible() && recapture != nullptr &&
                     !recapture->isEnabled() && hideSelectionToolbar != nullptr,
                 "returning to Move must restore capture state through the shared action row");
         requireMatchingButtonState();

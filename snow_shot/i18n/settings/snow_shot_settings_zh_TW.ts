@@ -1057,10 +1057,6 @@
             <translation>擷取後端</translation>
         </message>
         <message>
-            <source>Capture cursor</source>
-            <translation>擷取游標</translation>
-        </message>
-        <message>
             <source>Capture every monitor and copy the monitor under the pointer</source>
             <translation>擷取所有顯示器並複製指標所在的顯示器</translation>
         </message>
@@ -1915,10 +1911,6 @@
         <message>
             <source>Include the displayed text recognition or original-image translation result when saving an image.</source>
             <translation>儲存圖片時包含目前顯示的文字辨識或原圖翻譯結果。</translation>
-        </message>
-        <message>
-            <source>Include the mouse cursor in normal screenshots.</source>
-            <translation>在一般截圖中包含滑鼠游標。</translation>
         </message>
         <message>
             <source>Include the screen recording toolbar in the recorded video.</source>
@@ -2937,6 +2929,10 @@
             <translation>截圖工具與游標移動的快速鍵</translation>
         </message>
         <message>
+            <source>Show Cursor</source>
+            <translation>顯示游標</translation>
+        </message>
+        <message>
             <source>Show Guides by Default</source>
             <translation>預設顯示輔助線</translation>
         </message>
@@ -2971,6 +2967,10 @@
         <message>
             <source>Show the area type hint at the top of the screenshot window</source>
             <translation>在截圖視窗頂部顯示區域類型提示</translation>
+        </message>
+        <message>
+            <source>Show the captured mouse cursor by default in new normal screenshots.</source>
+            <translation>在新的一般螢幕擷取中預設顯示擷取的滑鼠游標。</translation>
         </message>
         <message>
             <source>Shutter Sound Notification</source>
@@ -3191,6 +3191,10 @@
         <message>
             <source>Toggle Guides</source>
             <translation>切換輔助線</translation>
+        </message>
+        <message>
+            <source>Toggle cursor visibility</source>
+            <translation>切換游標顯示</translation>
         </message>
         <message>
             <source>Toggle hotkeys</source>

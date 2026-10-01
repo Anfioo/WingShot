@@ -3205,6 +3205,7 @@ dependencies = [
  "objc2",
  "snow-capture",
  "snow-core",
+ "snow-cursor",
  "snow-macos",
  "snow-media",
  "windows",
