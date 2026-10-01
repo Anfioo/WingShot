@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/components/settingscustomwidget.h"
+#include "snow_shot/presentation/components/formfields.h"
 #include "snow_shot/app/edition.h"
 #if SNOW_SHOT_ENABLE_API_CONFIGURATION
 #include "snow_shot/presentation/components/customaimodelssettingswidget.h"
@@ -1226,7 +1227,14 @@ class McpStatusSettingsWidget final : public SettingsCustomWidget {
         m_help->setObjectName(QStringLiteral("settings-mcp-help"));
         m_help->setWordWrap(true);
         layout->addWidget(m_help);
-        m_config = new adqt::widgets::AdTextEdit(this);
+        namespace fields = snow_shot::presentation::components::form_fields;
+        fields::Options configOptions;
+        configOptions.parent = this;
+        configOptions.readOnly = true;
+        fields::Metadata configMetadata;
+        configMetadata.id = QStringLiteral("settings-mcp-config");
+        const auto configurationField = fields::textArea(configMetadata, configOptions);
+        m_config = configurationField.editor;
         m_config->setObjectName(QStringLiteral("settings-mcp-config"));
         // Keep this as a real Ant Design textarea in its native read-only mode. The
         // contents remain selectable for copying while editing is disabled by the
@@ -1241,7 +1249,7 @@ class McpStatusSettingsWidget final : public SettingsCustomWidget {
         m_config->setMinimumVisibleRows(9);
         m_config->setMaximumVisibleRows(9);
         m_config->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
-        layout->addWidget(m_config);
+        layout->addWidget(configurationField.viewWidget());
         m_endpoint = new QLabel(this);
         m_endpoint->setObjectName(QStringLiteral("settings-mcp-endpoint"));
         m_endpoint->setTextFormat(Qt::PlainText);

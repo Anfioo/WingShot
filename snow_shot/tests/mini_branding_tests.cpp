@@ -3,6 +3,7 @@
 #include "snow_shot/presentation/components/aboutpagewidget.h"
 #include "snow_shot/presentation/components/contentcardwidget.h"
 #include "snow_shot/presentation/components/settingscustomwidget.h"
+#include "snow_shot/presentation/components/formfields.h"
 #include "snow_shot/presentation/components/titlebarwidget.h"
 #include "snow_shot/presentation/components/icons/snowshoticons.h"
 #include "snow_shot/presentation/globalshortcutmanager.h"
@@ -125,6 +126,21 @@ void brandingRetranslatesWithoutChangingIdentifiers() {
     std::unique_ptr<SettingsCustomWidget> mcp(
         createSettingsCustomWidget(renderer, registry, *mcpField->definition, session));
     auto* mcpConfig = child<adqt::widgets::AdTextEdit>(*mcp, "settings-mcp-config");
+    namespace fields = snow_shot::presentation::components::form_fields;
+    auto* configurationField = mcp->findChild<fields::FormField*>();
+    require(configurationField != nullptr && configurationField->controlWidget() == mcpConfig &&
+                configurationField->metadata().id == QStringLiteral("settings-mcp-config") &&
+                mcpConfig->isReadOnly(),
+            "both editions use a shared read-only field for MCP configuration");
+    if (edition::isMini) {
+        for (const auto unavailable :
+             {settings::SettingsCustomRenderer::CustomAiModels,
+              settings::SettingsCustomRenderer::TextTranslationConfigurations}) {
+            std::unique_ptr<SettingsCustomWidget> widget(
+                createSettingsCustomWidget(unavailable, registry, *mcpField->definition, session));
+            require(widget == nullptr, "Mini does not construct Full-only API settings widgets");
+        }
+    }
     auto* mcpHelp = child<QLabel>(*mcp, "settings-mcp-help");
     auto* mcpEndpoint = child<QLabel>(*mcp, "settings-mcp-endpoint");
     const QString mcpJson = mcpConfig->toPlainText();
