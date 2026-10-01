@@ -1,5 +1,6 @@
 #include "snow_shot/platform/applicationqos.h"
 #include "recordingeffectpreview.h"
+#include "recordingcolorsampler.h"
 #include "recordingrenderjob.h"
 #include "widgets/message.h"
 #include "recordingeffectstyle.h"
@@ -249,6 +250,9 @@ struct RecordingUiSession final : QObject {
     std::unique_ptr<QObject> connections = std::make_unique<QObject>();
     std::unique_ptr<ScreenRecordingShortcutController> shortcuts;
     std::unique_ptr<RecordingEffectPreview> preview;
+    std::unique_ptr<snow_shot::presentation::recording::RecordingColorSampler> colorSampler =
+        std::make_unique<snow_shot::presentation::recording::RecordingColorSampler>(*area,
+                                                                                    *toolbar);
 };
 } // namespace
 
@@ -1286,6 +1290,7 @@ struct ScreenRecordingController::Impl {
         retiring->preview->setEligible(false);
         retiring->preview->stopAndClear();
         retiring->connections.reset();
+        retiring->colorSampler.reset();
         retiring->shortcuts.reset();
         retiring->toolbar->hide();
         retiring->area->hide();
@@ -1411,6 +1416,8 @@ struct ScreenRecordingController::Impl {
     }
 
     void syncUi() {
+        if (uiSession != nullptr && sessionStatus.busy())
+            uiSession->colorSampler->cancel();
         if (uiSession != nullptr && uiSession->settingsModal &&
             (sessionStatus.state() != ScreenshotToolPalette::RecordingState::Idle ||
              sessionStatus.busy()))
