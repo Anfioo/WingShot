@@ -213,6 +213,10 @@ ScreenshotToolPalette::Tool paletteToolForActiveTool(ScreenshotActiveTool tool) 
         return ScreenshotToolPalette::Tool::PenHighlight;
     case ScreenshotActiveTool::Eraser:
         return ScreenshotToolPalette::Tool::Eraser;
+    case ScreenshotActiveTool::RectangleEraser:
+        return ScreenshotToolPalette::Tool::RectangleEraser;
+    case ScreenshotActiveTool::BrushEraser:
+        return ScreenshotToolPalette::Tool::BrushEraser;
     case ScreenshotActiveTool::AutoFilter:
         return ScreenshotToolPalette::Tool::AutoFilter;
     case ScreenshotActiveTool::RectangleFilter:
@@ -392,6 +396,8 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     void setPenHighlightTool() override;
     void setSpotlightTool() override;
     void setEraserTool() override;
+    void setRectangleEraserTool() override;
+    void setBrushEraserTool() override;
     void setFilterTool() override;
     void setRectangleFilterTool() override;
     void setPenFilterTool() override;
@@ -2475,6 +2481,12 @@ bool ScreenshotController::Impl::activateToolForSelectionResize(ScreenshotActive
         break;
     case ScreenshotActiveTool::Eraser:
         setEraserTool();
+        break;
+    case ScreenshotActiveTool::RectangleEraser:
+        setRectangleEraserTool();
+        break;
+    case ScreenshotActiveTool::BrushEraser:
+        setBrushEraserTool();
         break;
     case ScreenshotActiveTool::AutoFilter:
         setAutoFilterTool();
@@ -4930,6 +4942,20 @@ void ScreenshotController::Impl::setEraserTool() {
     restoreToolUiAfterScrollingCapture(scrollingCaptureStopped);
 }
 
+void ScreenshotController::Impl::setRectangleEraserTool() {
+    deactivateRecognition();
+    const bool scrollingCaptureStopped = stopScrollingCapture(true);
+    m_toolCommandWorkflow->setRectangleEraserTool();
+    restoreToolUiAfterScrollingCapture(scrollingCaptureStopped);
+}
+
+void ScreenshotController::Impl::setBrushEraserTool() {
+    deactivateRecognition();
+    const bool scrollingCaptureStopped = stopScrollingCapture(true);
+    m_toolCommandWorkflow->setBrushEraserTool();
+    restoreToolUiAfterScrollingCapture(scrollingCaptureStopped);
+}
+
 void ScreenshotController::Impl::setFilterTool() {
     setRectangleFilterTool();
 }
@@ -5944,6 +5970,8 @@ const std::pair<const char*, ScreenshotActiveTool> mcpTools[] = {
     {"rectangle_highlight", ScreenshotActiveTool::RectangleHighlight},
     {"pen_highlight", ScreenshotActiveTool::PenHighlight},
     {"eraser", ScreenshotActiveTool::Eraser},
+    {"rectangle_eraser", ScreenshotActiveTool::RectangleEraser},
+    {"brush_eraser", ScreenshotActiveTool::BrushEraser},
     {"rectangle_filter", ScreenshotActiveTool::RectangleFilter},
     {"pen_filter", ScreenshotActiveTool::PenFilter},
     {"text", ScreenshotActiveTool::Text},

@@ -32,6 +32,8 @@ enum class ScreenshotActiveTool {
     Html,
     AutoFilter,
     Latex,
+    RectangleEraser,
+    BrushEraser,
 };
 
 [[nodiscard]] inline bool isScreenshotRecognitionTool(ScreenshotActiveTool tool) {
