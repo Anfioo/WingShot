@@ -428,6 +428,12 @@ struct ScreenRecordingController::Impl {
         destroyUi();
     }
 
+    void setCaptureActivity(bool active) {
+        if (desktopCaptureActive == active)
+            return;
+        desktopCaptureActive = active;
+        emit owner.captureActivityChanged(active);
+    }
     void open(const QRect& requestedRegion) {
         const QRect region =
             snow_shot::presentation::recording::screenRecordingNormalizedRegion(requestedRegion);
@@ -436,6 +442,7 @@ struct ScreenRecordingController::Impl {
             sessionStatus.state() != ScreenshotToolPalette::RecordingState::Idle) {
             return;
         }
+        setCaptureActivity(true);
         cancelPendingStart();
         if (!automationOwned && !automationNextStart) {
             const snow_shot::storage::RecordingSettings settings;
@@ -938,8 +945,11 @@ struct ScreenRecordingController::Impl {
             progressBarColor = settings.progressBarColor();
         }
         automationNextStart = false;
-        if (!allowRecording(true))
+        if (!allowRecording(true)) {
+            setCaptureActivity(false);
             return;
+        }
+        setCaptureActivity(true);
         // A new accepted recording owns the state even during its countdown.
         // Earlier retained sources remain on disk; earlier exports cease being
         // eligible for this recording's Copy action.
@@ -1003,8 +1013,11 @@ struct ScreenRecordingController::Impl {
     }
 
     void scheduleStart() {
-        if (!allowRecording(true))
+        if (!allowRecording(true)) {
+            setCaptureActivity(false);
             return;
+        }
+        setCaptureActivity(true);
         startScheduled = true;
         syncPreview();
         uiSession->preview->stopAndClear(true);
@@ -1301,6 +1314,7 @@ struct ScreenRecordingController::Impl {
 
         // Freeze the media endpoint before UI teardown or worker scheduling.
         static_cast<void>(snow_recording_session_request_stop(recordingSession.get()));
+        setCaptureActivity(false);
         stopAudioMeter();
         exclusionPollTimer.stop();
         durationTimer.stop();
@@ -1469,6 +1483,8 @@ struct ScreenRecordingController::Impl {
     }
 
     void destroyUi() {
+        if (!recordingSession)
+            setCaptureActivity(false);
         if (trimSession) {
             trimSession->detach();
             trimSession = nullptr;
@@ -1962,6 +1978,8 @@ struct ScreenRecordingController::Impl {
     }
 
     void showError(const QString& message) {
+        if (!recordingSession)
+            setCaptureActivity(false);
         report(QStringLiteral("recording.failed"), QtWarningMsg);
         automationError = message;
         automationRevision = snow_shot::presentation::nextAutomationRevision();
@@ -2075,6 +2093,7 @@ struct ScreenRecordingController::Impl {
     }
     QString operation;
     QElapsedTimer operationTimer;
+    bool desktopCaptureActive = false;
     bool startScheduled = false;
     quint64 startGeneration = 0;
     snow_shot::presentation::WindowCaptureExclusion captureExclusion{

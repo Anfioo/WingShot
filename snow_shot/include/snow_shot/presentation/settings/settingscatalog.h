@@ -129,6 +129,7 @@ enum class SettingsSwitchBinding {
     ScreenshotAreaTypeHint,
     ShowGuidesByDefault,
     TrayEnabled,
+    FloatingToolbarEnabled,
     ScreenshotAutoSaveAfterCopy,
     ScreenshotQuickSelectionModification,
     ScreenshotShowCursor,
@@ -189,6 +190,7 @@ struct SettingsIntegerDefinition {
 
 enum class SettingsSliderBinding {
     ShortcutHintOpacity,
+    FloatingToolbarOpacity,
     ScreenshotImageQuality,
     ScreenRecordingVideoQuality,
     SkinOpacity,
@@ -358,6 +360,7 @@ enum class SettingsCustomRenderer {
     DrawingToolbarEditor,
     ScreenshotToolbarEditor,
     PinnedToolbarEditor,
+    FloatingToolbarEditor,
     TrayMenuOptions,
 };
 
@@ -449,6 +452,8 @@ enum class SettingsSectionReset {
     PinToScreenBehavior,
     Tray,
     TrayBehavior,
+    FloatingToolbarBehavior,
+    FloatingToolbarLayout,
     ScreenRecording,
     ScreenRecordingOutput,
     GlobalHotkeys,

@@ -412,6 +412,9 @@ void closeAndStopHaveIndependentUiLifetimes() {
     for (const bool close : {false, true}) {
         for (const bool failure : {false, true}) {
             ScreenRecordingController controller(testEffectsSource);
+            QVector<bool> captureActivity;
+            QObject::connect(&controller, &ScreenRecordingController::captureActivityChanged,
+                             &controller, [&](bool active) { captureActivity.push_back(active); });
             require(recordingWindowCount() == 0,
                     "constructing a controller must not create windows");
             controller.open({40, 40, 320, 240});
@@ -427,6 +430,8 @@ void closeAndStopHaveIndependentUiLifetimes() {
             const int previousErrors = errors.shown;
             controller.startRecording();
             waitForRecording(controller);
+            require(captureActivity == QVector<bool>{true},
+                    "setup and recording share uninterrupted desktop capture suppression");
             require(lastDirectConfig.audio_mode == SNOW_CAPTURE_RECORDING_AUDIO_SEPARATE,
                     "subsequent recordings snapshot separate audio tracks");
             require(lastDirectConfig.loop_animated_images == 0,
@@ -444,6 +449,8 @@ void closeAndStopHaveIndependentUiLifetimes() {
             }
             require(enteredFuture.wait_for(std::chrono::seconds(2)) == std::future_status::ready,
                     "stop must reach the controlled backend");
+            require(captureActivity == QVector<bool>({true, false}),
+                    "stopping capture restores desktop surfaces before asynchronous export");
             require(controller.isOpen() != close, "only Close must detach the UI during export");
             QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
             require(previousToolbar.isNull() == close && recordingWindowCount() == (close ? 0 : 2),
@@ -453,6 +460,8 @@ void closeAndStopHaveIndependentUiLifetimes() {
                     "busy finalization must reject reopen");
             release.set_value();
             waitForIdle(controller);
+            require(captureActivity == QVector<bool>({true, false}),
+                    "export success and failure must not reacquire capture suppression");
             require(destroyedSessions == previousDestroyed + 1,
                     "backend must be destroyed exactly once");
             require(errors.shown == previousErrors + (failure ? 1 : 0),
@@ -1487,6 +1496,9 @@ void staleRetinaSizingCannotConfigureAnotherRegion() {
 void permissionsAndExactLogicalRegion() {
     const snow_shot::storage::RecordingSettings settings;
     ScreenRecordingController controller(testEffectsSource);
+    QVector<bool> captureActivity;
+    QObject::connect(&controller, &ScreenRecordingController::captureActivityChanged, &controller,
+                     [&](bool active) { captureActivity.push_back(active); });
     bool granted = false;
     int requests = 0;
     controller.setPermissionCheck([&](bool microphone, bool input, bool notify) {
@@ -1506,9 +1518,13 @@ void permissionsAndExactLogicalRegion() {
     QCoreApplication::processEvents();
     require(requests == 1 && starts == initialStarts && !controller.isRecording(),
             "denied permissions must keep recording idle without creating a session");
+    require(captureActivity == QVector<bool>({true, false}),
+            "permission failure releases setup suppression");
     granted = true;
     controller.startRecording();
     waitForRecording(controller);
+    require(captureActivity == QVector<bool>({true, false, true}),
+            "retry after permission grant reacquires suppression");
 #ifdef Q_OS_MACOS
     require(lastDirectConfig.x == -231 && lastDirectConfig.y == -119 &&
                 lastDirectConfig.width == 321 && lastDirectConfig.height == 239,
@@ -1529,6 +1545,9 @@ void delayCountdownBlocksTheStartUntilItElapses() {
             "out-of-range delays must be rejected");
     {
         ScreenRecordingController controller(testEffectsSource);
+        QVector<bool> captureActivity;
+        QObject::connect(&controller, &ScreenRecordingController::captureActivityChanged,
+                         &controller, [&](bool active) { captureActivity.push_back(active); });
         controller.open({40, 40, 320, 240});
         auto* exportButton = palette()->findChild<adqt::widgets::AdButton*>(
             QStringLiteral("screenRecordingExportSettings"));
@@ -1572,6 +1591,8 @@ void delayCountdownBlocksTheStartUntilItElapses() {
         QCoreApplication::processEvents();
         require(!controller.isRecording() && starts.load() == startsBefore,
                 "a delayed start must wait for the countdown");
+        require(captureActivity == QVector<bool>{true},
+                "setup suppression remains active throughout the countdown");
         require(palette()->recordingBusyOperation() ==
                     ScreenshotToolPalette::RecordingBusyOperation::CountingDown,
                 "the countdown must be published as a busy operation");
@@ -1589,6 +1610,8 @@ void delayCountdownBlocksTheStartUntilItElapses() {
                 "the recording area must show the countdown indicator");
         palette()->recordingCloseRequested();
         require(!controller.isOpen(), "Close must detach the UI during the countdown");
+        require(captureActivity == QVector<bool>({true, false}),
+                "countdown cancellation restores floating surfaces");
         QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
         require(starts.load() == startsBefore,
                 "cancelling the countdown must not reach the capture backend");
@@ -3454,6 +3477,9 @@ void recordingTrimmingTests(const QString& directory) {
     for (bool deferred : {false, true}) {
         for (bool paused : {false, true}) {
             ScreenRecordingController controller(testEffectsSource);
+            QVector<bool> captureActivity;
+            QObject::connect(&controller, &ScreenRecordingController::captureActivityChanged,
+                             &controller, [&](bool active) { captureActivity.push_back(active); });
             QString error;
             const QString original =
                 directory + (deferred ? QStringLiteral("/deferred") : QStringLiteral("/real")) +
@@ -3466,6 +3492,8 @@ void recordingTrimmingTests(const QString& directory) {
                                                &error),
                     "start trim fixture");
             waitForRecording(controller);
+            require(captureActivity == QVector<bool>{true},
+                    "recording suppresses floating surfaces before entering trim");
             auto* close = recordingToolbarButton("Close recording");
             auto* trim = recordingToolbarButton("Trim Video");
             auto* save = recordingToolbarButton("Save to File");
@@ -3479,6 +3507,8 @@ void recordingTrimmingTests(const QString& directory) {
             trim->click();
             require(recordingStopRequested && close->isEnabled(),
                     "trim freezes capture immediately and keeps Close enabled");
+            require(captureActivity == QVector<bool>({true, false}),
+                    "entering trim restores floating surfaces before source finalization");
             wait([&] {
                 return controller.automationState().value(QStringLiteral("state")) ==
                            QStringLiteral("trimming") &&
@@ -3653,11 +3683,16 @@ void recordingTrimmingTests(const QString& directory) {
             clipExportState = SNOW_RECORDING_RENDER_STATE_SUCCEEDED;
             wait([&] { return !controller.isOpen(); });
             QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+            require(recordingWindowCount() == 0 && captureActivity == QVector<bool>({true, false}),
+                    "closing trim retires its windows without reacquiring capture suppression");
         }
     }
     for (bool deferred : {false, true}) {
         for (bool restart : {false, true}) {
             ScreenRecordingController controller(testEffectsSource);
+            QVector<bool> captureActivity;
+            QObject::connect(&controller, &ScreenRecordingController::captureActivityChanged,
+                             &controller, [&](bool active) { captureActivity.push_back(active); });
             QString error;
             require(controller.startAutomation(QRect(80, 80, 320, 240),
                                                {{QStringLiteral("post_processing"), deferred}},
@@ -3667,6 +3702,8 @@ void recordingTrimmingTests(const QString& directory) {
             auto* trim = recordingToolbarButton("Trim Video");
             trim->click();
             wait([&] { return trim->isEnabled(); });
+            require(captureActivity == QVector<bool>({true, false}),
+                    "trim playback keeps floating surfaces available");
             auto* start = recordingToolbarButton("Start recording");
             QPointer<QSlider> timeline =
                 palette()->findChild<QSlider*>(QStringLiteral("screenRecordingTrimStart"));
@@ -3674,6 +3711,8 @@ void recordingTrimmingTests(const QString& directory) {
             if (restart) {
                 start->click();
                 waitForRecording(controller);
+                require(captureActivity == QVector<bool>({true, false, true}),
+                        "restarting from trim reacquires capture suppression");
             } else {
                 trim->click();
                 require(controller.automationState().value(QStringLiteral("state")) ==
@@ -3687,10 +3726,16 @@ void recordingTrimmingTests(const QString& directory) {
             recordingToolbarButton("Close recording")->click();
             wait([&] { return !controller.isRecording(); });
             QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+            require(captureActivity == (restart ? QVector<bool>({true, false, true, false})
+                                                : QVector<bool>({true, false})),
+                    "closing after trim releases only an active capture suppression");
         }
     }
     for (bool deferred : {false, true}) {
         ScreenRecordingController controller(testEffectsSource);
+        QVector<bool> captureActivity;
+        QObject::connect(&controller, &ScreenRecordingController::captureActivityChanged,
+                         &controller, [&](bool active) { captureActivity.push_back(active); });
         QString error;
         require(controller.startAutomation(QRect(80, 80, 320, 240),
                                            {{QStringLiteral("post_processing"), deferred}}, &error),
@@ -3707,6 +3752,8 @@ void recordingTrimmingTests(const QString& directory) {
                 "trim finalization reaches its worker barrier");
         recordingToolbarButton("Close recording")->click();
         require(!controller.isOpen(), "Close stays responsive during trim preparation");
+        require(captureActivity == QVector<bool>({true, false}),
+                "closing during trim preparation leaves floating surfaces available");
         release.set_value();
         exportEntered = nullptr;
         exportGate = {};
@@ -3716,6 +3763,8 @@ void recordingTrimmingTests(const QString& directory) {
                 "closing preparation retains the source without rendering effects or starting "
                 "playback");
         QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        require(recordingWindowCount() == 0 && captureActivity == QVector<bool>({true, false}),
+                "detached trim completion cannot reopen windows or suppress floating surfaces");
     }
     ScreenRecordingController controller(testEffectsSource);
     QString error;

@@ -577,6 +577,39 @@ SettingsItemDefinition pinnedToolbarEditorItem() {
             SettingsCustomDefinition{SettingsCustomRenderer::PinnedToolbarEditor}};
 }
 
+SettingsItemDefinition floatingToolbarOpacityItem() {
+    return {QStringLiteral("interface.floating-toolbar.opacity"),
+            settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Toolbar Opacity")),
+            settingsText(QT_TRANSLATE_NOOP(
+                "SettingsCatalog",
+                "Set the floating toolbar opacity when the mouse is not hovering over it")),
+            {},
+            QStringLiteral("floating_toolbar/opacity"),
+            SettingsSliderDefinition{SettingsSliderBinding::FloatingToolbarOpacity,
+                                     settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "%"))}};
+}
+
+SettingsItemDefinition floatingToolbarEditorItem() {
+    return {QStringLiteral("interface.floating-toolbar.editor"),
+            settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Floating toolbar settings")),
+            settingsText(QT_TRANSLATE_NOOP(
+                "SettingsCatalog",
+                "Drag tools to reorder, group, or hide them on the floating toolbar.")),
+            {settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Hidden tools"))},
+            QStringLiteral("floating_toolbar/layout"),
+            SettingsCustomDefinition{SettingsCustomRenderer::FloatingToolbarEditor}};
+}
+
+SettingsItemDefinition floatingToolbarEnabledItem() {
+    return {QStringLiteral("floating-toolbar.enabled"),
+            settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Show toolbar")),
+            settingsText(
+                QT_TRANSLATE_NOOP("SettingsCatalog", "Show the floating toolbar on the desktop")),
+            {},
+            QStringLiteral("floating_toolbar/enabled"),
+            SettingsSwitchDefinition{SettingsSwitchBinding::FloatingToolbarEnabled}};
+}
+
 SettingsItemDefinition pinBorderColorItem() {
     return screenshotColorItem(
         QStringLiteral("interface.pin-to-screen.border-color"),
@@ -2634,6 +2667,13 @@ QVector<SettingsPageDefinition> builtInPages() {
                     {trayLeftClickItem(), trayMiddleClickItem(), trayMenuOptionsItem()},
                 },
                 {
+                    QStringLiteral("floating-toolbar-settings"),
+                    settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Floating toolbar")),
+                    settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Desktop capture tools")),
+                    SettingsSectionReset::FloatingToolbarBehavior,
+                    {floatingToolbarEnabledItem()},
+                },
+                {
                     QStringLiteral("global-hotkeys"),
                     settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Global hotkeys")),
                     settingsText(
@@ -2755,6 +2795,14 @@ QVector<SettingsPageDefinition> builtInPages() {
                                                    "Pinned screenshot window appearance settings")),
                     SettingsSectionReset::PinToScreen,
                     {pinBorderColorItem(), pinBorderActiveColorItem(), pinnedToolbarEditorItem()},
+                },
+                {
+                    QStringLiteral("floating-toolbar"),
+                    settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Floating toolbar")),
+                    settingsText(
+                        QT_TRANSLATE_NOOP("SettingsCatalog", "Customize floating toolbar tools")),
+                    SettingsSectionReset::FloatingToolbarLayout,
+                    {floatingToolbarOpacityItem(), floatingToolbarEditorItem()},
                 },
                 {
                     QStringLiteral("tray"),
@@ -4145,6 +4193,9 @@ QStringList SettingsCatalog::validationErrors() const {
                     case SettingsSwitchBinding::ShowGuidesByDefault:
                         expectedKey = QStringLiteral("screenshot_ui/show_guides_by_default");
                         break;
+                    case SettingsSwitchBinding::FloatingToolbarEnabled:
+                        expectedKey = QStringLiteral("floating_toolbar/enabled");
+                        break;
                     case SettingsSwitchBinding::TrayEnabled:
                         expectedKey = QStringLiteral("tray/enabled");
                         break;
@@ -4402,6 +4453,9 @@ QStringList SettingsCatalog::validationErrors() const {
                     case SettingsSliderBinding::ShortcutHintOpacity:
                         expectedKey = QStringLiteral("screenshot_ui/shortcut_hint_opacity");
                         break;
+                    case SettingsSliderBinding::FloatingToolbarOpacity:
+                        expectedKey = QStringLiteral("floating_toolbar/opacity");
+                        break;
                     case SettingsSliderBinding::ScreenshotImageQuality:
                         expectedKey = QStringLiteral("screenshot/image_quality");
                         break;
@@ -4618,6 +4672,11 @@ QStringList SettingsCatalog::validationErrors() const {
                     case SettingsCustomRenderer::DrawingToolbarEditor:
                         rendererSupported = true;
                         expectedKey = QStringLiteral("screenshot_toolbar/layout");
+                        expectedKind = storage::ConfigurationValueKind::Structured;
+                        break;
+                    case SettingsCustomRenderer::FloatingToolbarEditor:
+                        rendererSupported = true;
+                        expectedKey = QStringLiteral("floating_toolbar/layout");
                         expectedKind = storage::ConfigurationValueKind::Structured;
                         break;
                     case SettingsCustomRenderer::PinnedToolbarEditor:
