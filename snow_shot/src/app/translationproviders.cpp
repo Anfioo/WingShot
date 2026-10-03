@@ -184,7 +184,7 @@ class HttpTranslationProvider : public TranslationProvider {
             reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
         const bool timedOut = state->timeoutFired;
         const QByteArray body = reply->read(kMaximumResponseBytes + 1);
-        const QNetworkReply::Error error = reply->error();
+        const QNetworkReply::NetworkError error = reply->error();
         const QString transportError = reply->errorString();
         reply->deleteLater();
 
@@ -242,10 +242,10 @@ class GoogleTranslationProvider final : public HttpTranslationProvider {
     void parseReply(const QByteArray& body, int, QString& outText, QString& outError) override {
         const QJsonDocument doc = QJsonDocument::fromJson(body);
         const QJsonArray root = doc.array();
-        const QJsonArray segments = root.value(0).toArray();
+        const QJsonArray segments = root.at(0).toArray();
         QString joined;
         for (const QJsonValue& segment : segments)
-            joined += segment.toArray().value(0).toString();
+            joined += segment.toArray().at(0).toString();
         if (joined.trimmed().isEmpty())
             outError = tr("Google translate returned no content");
         else
@@ -273,16 +273,16 @@ class MicrosoftTranslationProvider final : public HttpTranslationProvider {
             "(KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36 Edg/138.0.0.0");
         out.request.setRawHeader("Origin", "https://www.microsoft.com");
         out.request.setRawHeader("Referer", "https://www.microsoft.com/");
-        out.body = QJsonArray{input.text}.toJson(QJsonDocument::Compact);
+        out.body = QJsonDocument(QJsonArray{input.text}).toJson(QJsonDocument::Compact);
         return true;
     }
 
     void parseReply(const QByteArray& body, int, QString& outText, QString& outError) override {
         const QJsonDocument doc = QJsonDocument::fromJson(body);
         const QJsonArray root = doc.array();
-        const QJsonObject first = root.value(0).toObject();
+        const QJsonObject first = root.at(0).toObject();
         const QString text =
-            first.value(QStringLiteral("translations")).toArray().value(0).toObject().value(
+            first.value(QStringLiteral("translations")).toArray().at(0).toObject().value(
                 QStringLiteral("text")).toString();
         if (text.trimmed().isEmpty())
             outError = tr("Microsoft translate returned no content");
@@ -320,7 +320,7 @@ class DeepLTranslationProvider final : public HttpTranslationProvider {
         const QJsonDocument doc = QJsonDocument::fromJson(body);
         const QJsonObject root = doc.object();
         const QString text =
-            root.value(QStringLiteral("translations")).toArray().value(0).toObject().value(
+            root.value(QStringLiteral("translations")).toArray().at(0).toObject().value(
                 QStringLiteral("text")).toString();
         if (text.trimmed().isEmpty())
             outError = tr("DeepL returned no content");
@@ -368,7 +368,7 @@ class OpenAiCompatibleTranslationProvider final : public HttpTranslationProvider
         const QJsonObject root = doc.object();
         const QString text = root.value(QStringLiteral("choices"))
                                  .toArray()
-                                 .value(0)
+                                 .at(0)
                                  .toObject()
                                  .value(QStringLiteral("message"))
                                  .toObject()
