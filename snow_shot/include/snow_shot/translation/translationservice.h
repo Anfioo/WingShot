@@ -2,6 +2,7 @@
 #define SNOW_SHOT_TRANSLATION_TRANSLATIONSERVICE_H
 
 #include "snow_shot/network/snowshotapiclient.h"
+#include "snow_shot/translation/translationprovider.h"
 
 #include <QLocale>
 #include <QStringList>
@@ -15,6 +16,8 @@ struct TranslationPreferences {
     QString sourceLanguage;
     QString targetLanguage;
     QString modelId;
+    // External translation source; empty or "snowshot" keeps the built-in cloud chain.
+    QString providerId = QStringLiteral("snowshot");
     friend bool operator==(const TranslationPreferences&, const TranslationPreferences&) = default;
 };
 
@@ -42,6 +45,12 @@ class TranslationService final : public QObject {
     QString errorText() const;
     static QString modelConfigurationChangedText();
     bool savePreferences(const TranslationPreferences& preferences);
+    // Provider-specific credentials (apiKey/baseUrl/model) persisted as a JSON document.
+    [[nodiscard]] TranslationProviderConfig providerConfig() const;
+    bool saveProviderConfig(const TranslationProviderConfig& config);
+    // The adapter for the current provider, or nullptr when the built-in cloud source is
+    // selected. The service owns the returned adapter and recreates it when config changes.
+    TranslationProvider* activeAdapter();
     void refreshModels(bool force = false);
     void setLocale(const QLocale& locale);
     TranslationJob* createJob(const QStringList& texts, QObject* owner);
@@ -60,6 +69,8 @@ class TranslationService final : public QObject {
     void publishModels(bool resolveSelection);
     QPointer<SnowShotApiClient> m_client;
     QPointer<storage::ConfigurationStore> m_settings;
+    QPointer<TranslationProvider> m_adapter;
+    QString m_adapterFingerprint;
     QLocale m_locale;
     QString m_defaultTarget;
     QVector<SnowShotChatModel> m_models;
@@ -125,6 +136,7 @@ class TranslationJob final : public QObject {
     void invalidateModel(const QString& id);
     QPointer<TranslationService> m_service;
     QPointer<SnowShotApiClient> m_client;
+    QPointer<TranslationProvider> m_jobAdapter;
     QVector<Unit> m_units;
     TranslationPreferences m_preferences;
     QString m_translationMode;

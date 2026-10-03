@@ -95,7 +95,21 @@ void TranslationPageController::setComposing(bool composing) {
 
 bool TranslationPageController::setPreferences(const QString& source, const QString& target,
                                                const QString& model) {
-    return m_service != nullptr && m_service->savePreferences({source, target, model});
+    if (m_service == nullptr)
+        return false;
+    auto prefs = m_service->preferences();
+    prefs.sourceLanguage = source;
+    prefs.targetLanguage = target;
+    prefs.modelId = model;
+    return m_service->savePreferences(prefs);
+}
+
+bool TranslationPageController::setProvider(const QString& providerId) {
+    if (m_service == nullptr)
+        return false;
+    auto prefs = m_service->preferences();
+    prefs.providerId = providerId;
+    return m_service->savePreferences(prefs);
 }
 
 void TranslationPageController::swapLanguages() {

@@ -716,7 +716,10 @@ target_link_libraries(snow_shot_storage PUBLIC
 add_library(snow_shot_translation STATIC
     include/snow_shot/translation/translationservice.h
     include/snow_shot/translation/translationlanguages.h
+    include/snow_shot/translation/translationprovider.h
+    include/snow_shot/translation/translationproviderregistry.h
     src/app/translationservice.cpp
+    src/app/translationproviders.cpp
     include/snow_shot/presentation/selectedtexttranslationcontroller.h
     src/presentation/services/selectedtexttranslationcontroller.cpp
     include/snow_shot/network/snowshotapiclient.h

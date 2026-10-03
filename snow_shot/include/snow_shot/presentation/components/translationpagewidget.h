@@ -63,6 +63,7 @@ class TranslationPageWidget final : public QWidget {
     QWidget* m_fields[3]{};
     QLabel* m_labels[3]{};
     adqt::widgets::AdSelect* m_selects[3]{};
+    adqt::widgets::AdSelect* m_providerSelect = nullptr;
     QGridLayout* m_formLayout = nullptr;
     QGridLayout* m_editorsLayout = nullptr;
     adqt::widgets::AdTextEdit* m_source = nullptr;

@@ -1,8 +1,11 @@
 #include "snow_shot/translation/translationservice.h"
 
 #include "snow_shot/translation/translationlanguages.h"
+#include "snow_shot/translation/translationproviderregistry.h"
 #include "snow_shot/storage/configurationstore.h"
 
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QTimer>
 #include <algorithm>
 #include <utility>
@@ -12,8 +15,25 @@ namespace {
 const QString sourceKey = QStringLiteral("screenshot_translation/source_language");
 const QString targetKey = QStringLiteral("screenshot_translation/target_language");
 const QString modelKey = QStringLiteral("screenshot_translation/model");
+const QString providerKey = QStringLiteral("screenshot_translation/provider");
+const QString providerConfigKey = QStringLiteral("screenshot_translation/provider_config");
 const QString customKey = QStringLiteral("api_configuration/custom_models");
 const QString proxyKey = QStringLiteral("network/proxy");
+
+TranslationProviderConfig providerConfigFromJson(const QJsonValue& value) {
+    const QJsonObject object = value.toObject();
+    TranslationProviderConfig config;
+    config.apiKey = object.value(QStringLiteral("apiKey")).toString();
+    config.baseUrl = object.value(QStringLiteral("baseUrl")).toString();
+    config.model = object.value(QStringLiteral("model")).toString();
+    return config;
+}
+
+QJsonValue providerConfigToJson(const TranslationProviderConfig& config) {
+    return QJsonObject{{QStringLiteral("apiKey"), config.apiKey},
+                       {QStringLiteral("baseUrl"), config.baseUrl},
+                       {QStringLiteral("model"), config.model}};
+}
 } // namespace
 
 TranslationService& TranslationService::forClient(SnowShotApiClient& client,
@@ -44,7 +64,8 @@ TranslationService::TranslationService(SnowShotApiClient& client,
                 } else if (key == proxyKey) {
                     m_client->setUseSystemProxy(m_settings->value(proxyKey).toString() ==
                                                 QStringLiteral("system"));
-                } else if (!m_saving && (key == sourceKey || key == targetKey || key == modelKey)) {
+                } else if (!m_saving && (key == sourceKey || key == targetKey || key == modelKey ||
+                                        key == providerKey || key == providerConfigKey)) {
                     syncPreferences(ChangeReason::UserPreferences);
                 }
             });
@@ -75,11 +96,14 @@ void TranslationService::syncPreferences(ChangeReason reason) {
         return;
     TranslationPreferences next{m_settings->value(sourceKey).toString(),
                                 m_settings->value(targetKey).toString(),
-                                m_settings->value(modelKey).toString()};
+                                m_settings->value(modelKey).toString(),
+                                m_settings->value(providerKey).toString()};
     if (next.sourceLanguage.isEmpty())
         next.sourceLanguage = QStringLiteral("auto");
     if (next.targetLanguage.isEmpty())
         next.targetLanguage = m_defaultTarget;
+    if (next.providerId.isEmpty())
+        next.providerId = QStringLiteral("snowshot");
     if (next != m_preferences) {
         m_preferences = next;
         emit preferencesChanged(reason);
@@ -92,12 +116,58 @@ bool TranslationService::savePreferences(const TranslationPreferences& preferenc
     m_saving = true;
     const bool saved = m_settings->setValues({{sourceKey, preferences.sourceLanguage},
                                               {targetKey, preferences.targetLanguage},
-                                              {modelKey, preferences.modelId}});
+                                              {modelKey, preferences.modelId},
+                                              {providerKey, preferences.providerId}});
     m_saving = false;
     m_storageError = !saved;
     syncPreferences(ChangeReason::UserPreferences);
     emit catalogChanged();
     return saved;
+}
+
+TranslationProviderConfig TranslationService::providerConfig() const {
+    TranslationProviderConfig config;
+    if (m_settings != nullptr)
+        config = providerConfigFromJson(m_settings->value(providerConfigKey));
+    config.providerId = m_preferences.providerId;
+    return config;
+}
+
+bool TranslationService::saveProviderConfig(const TranslationProviderConfig& config) {
+    if (m_settings == nullptr)
+        return false;
+    m_saving = true;
+    const bool saved = m_settings->setValue(providerConfigKey, providerConfigToJson(config));
+    m_saving = false;
+    m_storageError = !saved;
+    // Force the adapter to rebuild on the next translation.
+    m_adapter = nullptr;
+    m_adapterFingerprint.clear();
+    emit catalogChanged();
+    return saved;
+}
+
+TranslationProvider* TranslationService::activeAdapter() {
+    const bool builtIn = isBuiltInTranslationProvider(m_preferences.providerId);
+    if (builtIn) {
+        m_adapter = nullptr;
+        m_adapterFingerprint.clear();
+        return nullptr;
+    }
+    const TranslationProviderConfig config = providerConfig();
+    const QString fingerprint =
+        QStringLiteral("%1|%2|%3|%4")
+            .arg(config.providerId, config.apiKey, config.baseUrl, config.model);
+    if (m_adapter != nullptr && fingerprint == m_adapterFingerprint)
+        return m_adapter;
+    m_adapter = nullptr;
+    m_adapterFingerprint.clear();
+    TranslationProvider* adapter = createTranslationProvider(config, this);
+    if (adapter == nullptr)
+        return nullptr;
+    m_adapter = adapter;
+    m_adapterFingerprint = fingerprint;
+    return m_adapter;
 }
 
 void TranslationService::publishModels(bool resolveSelection) {
@@ -136,6 +206,13 @@ void TranslationService::publishModels(bool resolveSelection) {
 void TranslationService::refreshModels(bool force) {
     if (m_client == nullptr || loadingModels())
         return;
+    // External providers do not use the cloud model catalog.
+    if (!isBuiltInTranslationProvider(m_preferences.providerId)) {
+        m_catalogAttempted = true;
+        m_catalogError.clear();
+        emit catalogChanged();
+        return;
+    }
     m_catalogAttempted = true;
     if (!force && m_client->hasBuiltInModels(m_locale.name())) {
         publishModels(true);
@@ -167,6 +244,9 @@ QString TranslationService::errorText() const {
     if (m_storageError)
         return tr(
             "Unable to save translation preferences. Your previous selections were restored.");
+    // External providers rely on their own adapters, not the cloud model catalog.
+    if (!isBuiltInTranslationProvider(m_preferences.providerId))
+        return {};
     if (!m_models.isEmpty() || loadingModels() || !m_catalogAttempted)
         return {};
     return m_catalogError.isEmpty()
@@ -211,9 +291,13 @@ TranslationJob::~TranslationJob() {
 void TranslationJob::cancel() {
     ++m_generation;
     const auto requests = std::exchange(m_requests, {});
-    if (m_client != nullptr)
+    if (m_jobAdapter != nullptr) {
+        for (auto token : requests)
+            m_jobAdapter->cancel(token);
+    } else if (m_client != nullptr) {
         for (auto token : requests)
             m_client->cancel(token);
+    }
     if (busy()) {
         m_state = State::Cancelled;
         for (auto& unit : m_units) {
@@ -268,6 +352,14 @@ void TranslationJob::prepare() {
         return;
     }
     const auto& models = m_service->models();
+    m_jobAdapter = m_service->activeAdapter();
+    if (m_jobAdapter != nullptr) {
+        // External providers bypass the cloud model catalog entirely.
+        m_translationMode.clear();
+        m_state = State::Streaming;
+        pump();
+        return;
+    }
     const auto it = std::find_if(models.cbegin(), models.cend(), [this](const auto& model) {
         return model.id == m_preferences.modelId;
     });
@@ -293,9 +385,32 @@ void TranslationJob::prepare() {
 }
 
 void TranslationJob::pump() {
-    if (m_state != State::Streaming || m_client == nullptr)
+    if (m_state != State::Streaming)
         return;
     const auto generation = m_generation;
+    const auto settle = [this, generation](int index, SnowShotTranslationResult result) {
+        if (generation != m_generation || !m_requests.remove(index))
+            return;
+        auto& completed = m_units[index];
+        if (result.succeeded() && completed.text.trimmed().isEmpty())
+            result.error = tr("The model returned no content");
+        completed.state = result.succeeded() ? State::Completed : State::Failed;
+        if (!result.succeeded())
+            m_result = result;
+        if (result.httpStatus == 429) {
+            m_rateLimited = true;
+            for (auto& pending : m_units)
+                if (pending.state == State::Idle)
+                    pending.state = State::Failed;
+        }
+        pump();
+    };
+    const auto appendDelta = [this, generation](int index, const QString& delta) {
+        if (generation != m_generation || m_state != State::Streaming)
+            return;
+        m_units[index].text += delta;
+        emit unitChanged(index);
+    };
     for (int index = 0; index < m_units.size() && m_requests.size() < 4 && !m_rateLimited;
          ++index) {
         auto& unit = m_units[index];
@@ -303,34 +418,35 @@ void TranslationJob::pump() {
             continue;
         unit.state = State::Streaming;
         unit.text.clear();
-        const SnowShotTranslationRequest request{
-            m_preferences.modelId, m_preferences.sourceLanguage, m_preferences.targetLanguage,
-            unit.sourceText, m_translationMode};
-        const auto token = m_client->streamTranslation(
-            request, this,
-            [this, generation, index](const QString& delta) {
-                if (generation != m_generation || m_state != State::Streaming)
-                    return;
-                m_units[index].text += delta;
-                emit unitChanged(index);
-            },
-            [this, generation, index](SnowShotTranslationResult result) {
-                if (generation != m_generation || !m_requests.remove(index))
-                    return;
-                auto& completed = m_units[index];
-                if (result.succeeded() && completed.text.trimmed().isEmpty())
-                    result.error = tr("The model returned no content");
-                completed.state = result.succeeded() ? State::Completed : State::Failed;
-                if (!result.succeeded())
-                    m_result = result;
-                if (result.httpStatus == 429) {
-                    m_rateLimited = true;
-                    for (auto& pending : m_units)
-                        if (pending.state == State::Idle)
-                            pending.state = State::Failed;
-                }
-                pump();
-            });
+        quint64 token = 0;
+        if (m_jobAdapter != nullptr) {
+            const TranslationProviderRequest request{m_preferences.sourceLanguage,
+                                                      m_preferences.targetLanguage,
+                                                      unit.sourceText};
+            token = m_jobAdapter->translate(
+                request, this,
+                [appendDelta, index](const QString& delta) { appendDelta(index, delta); },
+                [settle, index](TranslationProviderResult provided) {
+                    SnowShotTranslationResult result;
+                    result.error = provided.error;
+                    result.httpStatus = provided.httpStatus;
+                    result.cancelled = provided.cancelled;
+                    settle(index, std::move(result));
+                });
+        } else {
+            if (m_client == nullptr) {
+                unit.state = State::Failed;
+                m_result.error = tr("Translation service is unavailable");
+                continue;
+            }
+            const SnowShotTranslationRequest request{
+                m_preferences.modelId, m_preferences.sourceLanguage,
+                m_preferences.targetLanguage, unit.sourceText, m_translationMode};
+            token = m_client->streamTranslation(
+                request, this,
+                [appendDelta, index](const QString& delta) { appendDelta(index, delta); },
+                [settle, index](SnowShotTranslationResult result) { settle(index, std::move(result)); });
+        }
         if (token != 0)
             m_requests.insert(index, token);
         else {

@@ -7,6 +7,7 @@
 #include "snow_shot/presentation/styles/thememanager.h"
 #include "snow_shot/presentation/translationlanguages.h"
 #include "snow_shot/presentation/translationpagecontroller.h"
+#include "snow_shot/translation/translationproviderregistry.h"
 #include "snow_shot/shortcuts/shortcutdisplayservice.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "antd_icons.h"
@@ -142,6 +143,19 @@ TranslationPageWidget::TranslationPageWidget(QWidget* parent, SnowShotApiClient*
         }
         if (index == 2) {
             row->insertStretch(0);
+            m_providerSelect = new AdSelect(field);
+            m_providerSelect->setObjectName(QStringLiteral("translationProvider"));
+            m_providerSelect->setVariant(AdSelect::Variant::Underlined);
+            m_providerSelect->setSearchEnabled(false);
+            m_providerSelect->setSizeAdjustPolicy(AdSelect::SizeAdjustPolicy::AdjustToCurrentText);
+            m_providerSelect->setPopupMatchSelectWidth(false);
+            m_providerSelect->setPopupLayerMode(AdSelect::PopupLayerMode::QtTool);
+            m_providerSelect->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
+            row->addWidget(m_providerSelect);
+            connect(m_providerSelect, &AdSelect::currentValueChanged, this, [this]() {
+                if (!m_syncing)
+                    m_controller->setProvider(m_providerSelect->currentValue().toString());
+            });
         } else {
             row->addStretch();
         }
@@ -435,7 +449,21 @@ void TranslationPageWidget::syncState() {
     }
     m_selects[2]->setCurrentValue(preferences.modelId);
     m_selects[2]->setLoading(services.isEmpty() && m_controller->loadingModels());
-    m_selects[2]->setEnabled(!services.isEmpty());
+    const bool externalProvider =
+        !snow_shot::translation::isBuiltInTranslationProvider(preferences.providerId);
+    m_selects[2]->setEnabled(!externalProvider && !services.isEmpty());
+    QVector<AdSelect::Option> providers;
+    for (const auto& info : snow_shot::translation::availableTranslationProviders())
+        providers.push_back({info.id, info.displayName});
+    const auto previousProviders = m_providerSelect->options();
+    if (!std::equal(previousProviders.cbegin(), previousProviders.cend(), providers.cbegin(),
+                    providers.cend(), [](const AdSelect::Option& first, const AdSelect::Option& second) {
+                        return first.value == second.value && first.label == second.label;
+                    })) {
+        m_providerSelect->setOptions(providers);
+    }
+    m_providerSelect->setCurrentValue(
+        preferences.providerId.isEmpty() ? QStringLiteral("snowshot") : preferences.providerId);
     m_swap->setEnabled(preferences.sourceLanguage != QStringLiteral("auto") &&
                        preferences.sourceLanguage != preferences.targetLanguage);
     // Lifecycle changes clear stale output or flush final/error output synchronously.
@@ -473,6 +501,8 @@ void TranslationPageWidget::retranslateUi() {
     m_selects[0]->setOptions(sourceOptions);
     m_selects[1]->setOptions(targetOptions);
     m_selects[2]->setPlaceholder(tr("Select a service"));
+    m_providerSelect->setToolTip(tr("Translation source"));
+    m_providerSelect->setAccessibleName(tr("Translation source"));
     m_source->setPlaceholderText(tr("Enter text to translate"));
     m_source->setAccessibleName(tr("Source text"));
     m_result->setPlaceholderText(tr("Translation appears here"));

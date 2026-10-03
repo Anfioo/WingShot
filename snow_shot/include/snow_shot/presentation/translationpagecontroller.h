@@ -27,6 +27,8 @@ class TranslationPageController final : public QObject {
     void setSourceText(const QString& text);
     void setComposing(bool composing);
     bool setPreferences(const QString& source, const QString& target, const QString& model);
+    // Switches the translation source (provider), preserving source/target/model selection.
+    bool setProvider(const QString& providerId);
     void swapLanguages();
     void retry();
     void setLocale(const QLocale& locale);
