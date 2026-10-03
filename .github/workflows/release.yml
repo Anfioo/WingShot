@@ -3,12 +3,12 @@ name: Snow Shot Static Release
 on:
   push:
     tags:
-      - "v*_snow-shot"
+      - "v*"
   workflow_dispatch:
     inputs:
       version:
-        description: "版本号，必须与 CMakeLists.txt 中的 SNOW_SHOT_VERSION 一致，例如 1.1.2-beta"
-        required: true
+        description: "发布标签/草稿名称（可与 CMakeLists 中的 SNOW_SHOT_VERSION 不同；构建产物始终按 SNOW_SHOT_VERSION 命名，标签仅用于区分草稿）。留空则用 v{SNOW_SHOT_VERSION}_snow-shot"
+        required: false
         type: string
 
 permissions:
@@ -36,13 +36,17 @@ jobs:
         env:
           INPUT_VERSION: ${{ inputs.version }}
         run: |
-          $version = [regex]::Match((Get-Content -Raw CMakeLists.txt), 'set\(SNOW_SHOT_VERSION "([^"]+)"\)').Groups[1].Value
+          # 构建产物始终按 CMakeLists.txt 中的 SNOW_SHOT_VERSION 定位（当前固定为 1.1.2-beta）。
+          # 标签/草稿名允许与之不同：它只用于生成唯一的 GitHub Release 草稿名称。
+          $cmakeVersion = [regex]::Match((Get-Content -Raw CMakeLists.txt), 'set\(SNOW_SHOT_VERSION "([^"]+)"\)').Groups[1].Value
           if ($env:GITHUB_EVENT_NAME -eq 'workflow_dispatch') {
-            $requested = ($env:INPUT_VERSION).Trim()
-            if ($requested -cne $version) {
-              throw "输入的版本 $requested 与 CMakeLists.txt 中的 SNOW_SHOT_VERSION ($version) 不一致。"
+            $requested = ("$env:INPUT_VERSION").Trim()
+            if ($requested) {
+              if (-not $requested.StartsWith('v')) { $requested = "v$requested" }
+              $tag = $requested
+            } else {
+              $tag = "v${cmakeVersion}_snow-shot"
             }
-            $tag = "v${version}_snow-shot"
           } else {
             $tag = $env:GITHUB_REF_NAME
           }
@@ -152,14 +156,13 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Updater tests failed." }
           & scripts/test-snow-shot-update-helper.ps1
 
-      - name: Verify tag and locate package
+      - name: Locate built package artifacts
         id: package
         shell: pwsh
         run: |
+          # 构建产物按 CMakeLists.txt 的 SNOW_SHOT_VERSION 命名（固定 1.1.2-beta），
+          # 不要求 Release 标签与该版本一致；标签仅用于命名草稿。
           $version = [regex]::Match((Get-Content -Raw CMakeLists.txt), 'set\(SNOW_SHOT_VERSION "([^"]+)"\)').Groups[1].Value
-          if ($env:RELEASE_TAG -cne "v${version}_snow-shot") {
-            throw "Unexpected release tag: $env:RELEASE_TAG"
-          }
           $names = @()
           foreach ($variant in @('online', 'offline')) {
             $base = "snow-shot-$version-windows-x64-$variant"
