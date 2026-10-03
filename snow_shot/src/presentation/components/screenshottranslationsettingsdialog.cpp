@@ -105,6 +105,16 @@ createScreenshotTranslationSettingsDialog(translation::TranslationService& servi
     image->setChecked(storage::ScreenshotTranslationSettings().originalImageTranslationEnabled());
     imageLayout->addWidget(image);
     imageLayout->addStretch();
+    auto* manualRow = new QWidget(form);
+    auto* manualLayout = new QHBoxLayout(manualRow);
+    manualLayout->setContentsMargins(0, 0, 0, 0);
+    auto* manual = new AdSwitch(manualRow);
+    manual->setObjectName(QStringLiteral("screenshotTranslationManualTrigger"));
+    manual->setControlSize(AdSwitch::ControlSize::Medium);
+    manual->setChecked(
+        storage::ScreenshotTranslationSettings().configuration().manualTrigger);
+    manualLayout->addWidget(manual);
+    manualLayout->addStretch();
     form->addField({}, source, QStringLiteral("source"));
     form->addField({}, target, QStringLiteral("target"));
     form->addField({}, providers, QStringLiteral("provider"));
@@ -112,6 +122,7 @@ createScreenshotTranslationSettingsDialog(translation::TranslationService& servi
     form->addField({}, baseUrl, QStringLiteral("providerBaseUrl"));
     form->addField({}, apiKey, QStringLiteral("providerApiKey"));
     form->addField({}, imageRow, QStringLiteral("originalImage"));
+    form->addField({}, manualRow, QStringLiteral("manualTrigger"));
     layout->addWidget(form);
     modal->setContentWidget(body);
     modal->setInitialFocusWidget(source);
@@ -131,15 +142,17 @@ createScreenshotTranslationSettingsDialog(translation::TranslationService& servi
             QT_TRANSLATE_NOOP("ScreenshotTranslationSettingsDialog", "Translation service"),
             QT_TRANSLATE_NOOP("ScreenshotTranslationSettingsDialog", "Base URL"),
             QT_TRANSLATE_NOOP("ScreenshotTranslationSettingsDialog", "API key"),
-            QT_TRANSLATE_NOOP("ScreenshotTranslationSettingsDialog", "Original Image Translation")};
+            QT_TRANSLATE_NOOP("ScreenshotTranslationSettingsDialog", "Original Image Translation"),
+            QT_TRANSLATE_NOOP("ScreenshotTranslationSettingsDialog", "Manual translation")};
         const QString keys[] = {QStringLiteral("source"),
                                 QStringLiteral("target"),
                                 QStringLiteral("provider"),
                                 QStringLiteral("service"),
                                 QStringLiteral("providerBaseUrl"),
                                 QStringLiteral("providerApiKey"),
-                                QStringLiteral("originalImage")};
-        for (int i = 0; i < 7; ++i)
+                                QStringLiteral("originalImage"),
+                                QStringLiteral("manualTrigger")};
+        for (int i = 0; i < 8; ++i)
             form->field(keys[i])->setLabel(text(labels[i]));
         source->setAccessibleName(text(labels[0]));
         target->setAccessibleName(text(labels[1]));
@@ -148,6 +161,7 @@ createScreenshotTranslationSettingsDialog(translation::TranslationService& servi
         baseUrl->setAccessibleName(text(labels[4]));
         apiKey->setAccessibleName(text(labels[5]));
         image->setAccessibleName(text(labels[6]));
+        manual->setAccessibleName(text(labels[7]));
         baseUrl->setPlaceholderText(QStringLiteral("https://api.example.com/v1"));
         const auto selectedSource = source->currentValue();
         const auto selectedTarget = target->currentValue();
@@ -315,6 +329,11 @@ createScreenshotTranslationSettingsDialog(translation::TranslationService& servi
                                             "previous selections were restored."));
             error->show();
             return;
+        }
+        auto translationConfig = settings.configuration();
+        if (translationConfig.manualTrigger != manual->isChecked()) {
+            translationConfig.manualTrigger = manual->isChecked();
+            settings.setConfiguration(translationConfig);
         }
         if (changed && displayModeChanged) {
             displayModeChanged(true);

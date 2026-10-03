@@ -2192,7 +2192,10 @@ void ScreenshotController::Impl::handleAutomaticTextRecognitionAction(bool avail
 
     if (m_ocrTranslateAfterRecognition) {
         m_ocrTranslateAfterRecognition = false;
-        m_ocrController->beginTextTranslation();
+        // In manual translation mode the OCR result stays on screen and the user
+        // starts the translation explicitly.
+        if (!snow_shot::storage::ScreenshotTranslationSettings().configuration().manualTrigger)
+            m_ocrController->beginTextTranslation();
         return;
     }
 

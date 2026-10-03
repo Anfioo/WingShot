@@ -1513,7 +1513,8 @@ ScreenshotTranslationConfiguration ScreenshotTranslationSettings::configuration(
     return {cache().value(QStringLiteral("screenshot_translation/source_language")).toString(),
             cache().value(QStringLiteral("screenshot_translation/target_language")).toString(),
             cache().value(QStringLiteral("screenshot_translation/model")).toString(),
-            layoutProcessing()};
+            layoutProcessing(),
+            cache().value(QStringLiteral("screenshot_translation/manual_trigger")).toBool()};
 }
 
 QString ScreenshotTranslationSettings::layoutProcessing() const {
@@ -1532,6 +1533,7 @@ bool ScreenshotTranslationSettings::setConfiguration(
         {QStringLiteral("screenshot_translation/model"), configuration.modelId},
         {QStringLiteral("screenshot_translation/layout_processing"),
          configuration.layoutProcessing},
+        {QStringLiteral("screenshot_translation/manual_trigger"), configuration.manualTrigger},
     });
 }
 
