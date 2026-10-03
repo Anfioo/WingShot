@@ -49,6 +49,9 @@ struct DiagnosticsOptions {
     qint64 dailyBytes = 50 * 1024 * 1024;
     qint64 totalBytes = 256 * 1024 * 1024;
     std::function<QDateTime()> clock = [] { return QDateTime::currentDateTime(); };
+    // Returns how many days of diagnostic logs are kept; expired artifacts are
+    // removed during maintenance. Values outside [1, 90] fall back to 7.
+    std::function<int()> logRetentionDays = [] { return 7; };
     std::function<bool(const QString&)> removeFile;
     std::function<bool(const QString&, const QByteArray&)> appendFile;
     std::shared_ptr<CrashCollector> crashCollector;

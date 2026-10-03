@@ -371,6 +371,15 @@ int main(int argc, char* argv[]) {
     diagnosticsOptions.version = QStringLiteral(SNOW_DIAGNOSTICS_VERSION);
     diagnosticsOptions.revision = QStringLiteral(SNOW_DIAGNOSTICS_REVISION);
     diagnosticsOptions.buildConfiguration = QStringLiteral(SNOW_DIAGNOSTICS_BUILD);
+    diagnosticsOptions.logRetentionDays = [] {
+        auto& storage = snow_shot::storage::ApplicationStorage::instance();
+        if (!storage.isInitialized()) {
+            return 7;
+        }
+        return storage.configuration()
+            .value(QStringLiteral("diagnostics/log_retention_days"))
+            .toInt();
+    };
     static_cast<void>(diagnostics.initialize(std::move(diagnosticsOptions)));
     snow_diagnostics_install_panic_hook(snow_diag_panic);
 

@@ -781,6 +781,8 @@ int BuiltInSettingsBackend::integerValue(SettingsIntegerBinding binding) const {
         return storage::ApplicationStorage::instance().pinnedWindowPolicy().maxDiskMiB;
     case SettingsIntegerBinding::ScreenshotDelaySeconds:
         return storage::ScreenshotSettings().delaySeconds();
+    case SettingsIntegerBinding::LogRetentionDays:
+        return storage::DiagnosticsSettings().logRetentionDays();
     }
     return 0;
 }
@@ -820,6 +822,19 @@ bool BuiltInSettingsBackend::applyIntegerValue(SettingsIntegerBinding binding, i
             return false;
         }
         const bool accepted = storage::ScreenshotSettings().setDelaySeconds(value);
+        if (accepted) {
+            emit synchronized();
+        }
+        return accepted;
+    }
+    case SettingsIntegerBinding::LogRetentionDays: {
+        const auto* schema =
+            storage::ConfigurationSchema::entry(QStringLiteral("diagnostics/log_retention_days"));
+        if (schema == nullptr || !schema->integerRange.has_value() ||
+            value < schema->integerRange->minimum || value > schema->integerRange->maximum) {
+            return false;
+        }
+        const bool accepted = storage::DiagnosticsSettings().setLogRetentionDays(value);
         if (accepted) {
             emit synchronized();
         }

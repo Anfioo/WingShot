@@ -646,11 +646,16 @@ struct DiagnosticsService::Impl {
         quint64 removedCount = 0;
         bool deletionFailed = false;
         // Age precedes budget eviction, even when an unexpired snapshot is obsolete.
-        std::stable_partition(files.begin(), files.end(), [today](const Artifact& file) {
-            return file.date < today.addDays(-6);
-        });
+        int retentionDays = options.logRetentionDays ? options.logRetentionDays() : 7;
+        if (retentionDays < 1 || retentionDays > 90)
+            retentionDays = 7;
+        const QDate expirationDate = today.addDays(-(retentionDays - 1));
+        std::stable_partition(files.begin(), files.end(),
+                              [&expirationDate](const Artifact& file) {
+                                  return file.date < expirationDate;
+                              });
         for (const auto& file : files) {
-            const bool expired = file.date < today.addDays(-6);
+            const bool expired = file.date < expirationDate;
             if (file.liveSession || (file.protectedFile && !expired) ||
                 (output.isOpen() && file.path == output.fileName()) || file.path == emergencyPath) {
                 continue;

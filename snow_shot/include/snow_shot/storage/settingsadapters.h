@@ -456,6 +456,12 @@ class NetworkSettings final {
     [[nodiscard]] QString proxy() const;
     bool setProxy(const QString& proxy) const;
 };
+
+class DiagnosticsSettings final {
+  public:
+    [[nodiscard]] int logRetentionDays() const;
+    bool setLogRetentionDays(int days) const;
+};
 } // namespace snow_shot::storage
 
 Q_DECLARE_METATYPE(snow_shot::storage::ScreenshotToolbarLayout)
