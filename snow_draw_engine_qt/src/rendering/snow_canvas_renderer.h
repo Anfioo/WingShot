@@ -25,6 +25,9 @@ namespace snow_canvas_renderer {
 
 struct FilterRenderDiagnostics {
     bool usedFilterPath = false;
+    std::size_t referenceSceneBuildCount = 0;
+    std::size_t referenceSceneHits = 0;
+    std::size_t retainedReferenceSceneBytes = 0;
     std::size_t executionPlanBuildCount = 0;
     std::size_t dependencyItemVisits = 0;
     std::uint64_t planningNanoseconds = 0;
@@ -74,6 +77,11 @@ struct FilterRenderDiagnostics {
     std::size_t gaussianDownsampleAvx2Executions = 0;
     std::size_t gaussianReconstructionAvx2Executions = 0;
     std::size_t opaqueRectDispatchCount = 0;
+    std::size_t restorationDispatchCount = 0;
+    std::size_t restoredPixelCount = 0;
+    std::size_t restorationBlendPixelCount = 0;
+    std::size_t pristineTileHits = 0;
+    std::size_t pristineTileMisses = 0;
     std::size_t constantOpacityRectDispatchCount = 0;
     std::uint64_t sceneReplayNanoseconds = 0;
     std::uint64_t maskConstructionNanoseconds = 0;
@@ -118,12 +126,14 @@ struct SceneRenderRequest {
     SnowCanvasSmartEraseSnapshot smartErase{};
     const SceneExecutionPlan* executionPlan = nullptr;
     const std::vector<SnowSceneRenderRun>* renderPlan = nullptr;
+    bool enableOriginalBackgroundCache = false;
 };
 
 QColor toQColor(const SnowColorRgba8& color);
 std::size_t hatchTextureCacheEntryCountForCurrentThread();
 FilterRenderDiagnostics filterRenderDiagnosticsForCurrentThread();
 void resetFilterRenderDiagnosticsForCurrentThread();
+void recordReferenceScenePresentation(bool rebuilt, std::size_t retainedBytes);
 void accumulateFilterRenderDiagnostics(FilterRenderDiagnostics& target,
                                        const FilterRenderDiagnostics& source);
 std::size_t watermarkLayoutCacheBuildCountForCurrentThread();

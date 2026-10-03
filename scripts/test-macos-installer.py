@@ -16,21 +16,36 @@ import tempfile
 import unittest
 
 SCRIPT = Path(__file__).resolve().with_name('install-snow-shot-macos.sh')
+PREFLIGHT = SCRIPT.with_name('prepare-snow-shot-homebrew.sh')
 FINGERPRINT = 'A' * 40
-REQUIREMENT = 'identifier "com.anfioo.wingshot" and anchor = H"' + FINGERPRINT + '"'
-PRIMARY = 'https://snowshot.top/setup/snow-shot_macos-arm64.dmg'
-API = 'https://api.github.com/repos/mg-chao/snow-apps/releases/latest'
+REQUIREMENT = 'identifier "com.snowshot.snow_shot" and anchor = H"' + FINGERPRINT + '"'
+API = 'https://api.github.com/repos/mg-chao/snow-apps/releases?per_page=100&page=1'
+GITEE_API = 'https://gitee.com/api/v5/repos/mg-chao/snow-apps/releases?per_page=100&page=1'
+GITEE_ATTACH = 'https://gitee.com/api/v5/repos/mg-chao/snow-apps/releases/123/attach_files?per_page=100'
 ASSET = 'snow-shot-1.2.3-macos-arm64.dmg'
-GITHUB = 'https://github.com/mg-chao/snow-apps/releases/download/v1.2.3/' + ASSET
+TAG = 'v1.2.3_snow-shot'
+GITHUB = 'https://github.com/mg-chao/snow-apps/releases/download/' + TAG + '/' + ASSET
+GITEE = 'https://gitee.com/mg-chao/snow-apps/releases/download/' + TAG + '/' + ASSET
 
 MOCK = r'''#!/usr/bin/env python3
-import hashlib, json, os, pathlib, plistlib, shutil, subprocess, sys
+import hashlib, json, os, pathlib, plistlib, shutil, signal, subprocess, sys, time
 name = pathlib.Path(sys.argv[0]).name
 args = sys.argv[1:]
 root = pathlib.Path(os.environ['FIXTURE'])
 with (root / 'calls.jsonl').open('a') as f: f.write(json.dumps([name] + args) + '\n')
 def fail(code=1): sys.exit(code)
 if name == 'curl':
+    if args[-1] == os.environ.get('BLOCK_URL'):
+        def stopped(signum, frame):
+            (root / 'blocked-stopped').touch()
+            sys.exit(128 + signum)
+        signal.signal(signal.SIGTERM, stopped)
+        signal.alarm(10)  # Bound a failing cancellation regression without leaving an orphan.
+        (root / 'blocked-ready').write_text(str(os.getpid()))
+        while True: signal.pause()
+    if args[-1] == os.environ.get('WAIT_FOR_BLOCK_URL'):
+        while not (root / 'blocked-ready').exists(): time.sleep(0.01)
+    if args[-1] == os.environ.get('DELAY_URL'): time.sleep(0.5)
     responses = json.loads((root / 'responses.json').read_text())
     entry = responses.get(args[-1])
     if entry is None: fail(22)
@@ -62,7 +77,7 @@ elif name == 'file': print('Mach-O 64-bit executable ' + os.environ.get('BINARY_
 elif name == 'codesign':
     if '--force' in args:
         assert '--deep' not in args
-        executable = pathlib.Path(args[-1]) / 'Contents/MacOS/WingShot'
+        executable = pathlib.Path(args[-1]) / 'Contents/MacOS/snow_shot'
         executable.write_bytes(executable.read_bytes() + b' locally signed')
     elif '-d' in args: print('designated => ' + os.environ['REQUIREMENT'])
     elif (pathlib.Path(args[-1]) / 'reject-signature').exists(): fail()
@@ -86,7 +101,7 @@ elif name == 'pgrep':
     if os.environ.get('RUNNING'): print('54321')
     else: fail()
 elif name == 'osascript':
-    if args[-1].endswith('.json') or (len(args) > 4 and args[-2].endswith('.json')):
+    if len(args) >= 4 and args[:3] == ['-l', 'JavaScript', '-'] and args[3].endswith('.json'):
         # Exercise the actual shipped JSON parser, never a Python reimplementation.
         if sys.platform != 'darwin': fail(77)
         sys.exit(subprocess.run(['/usr/bin/osascript'] + args, input=sys.stdin.buffer.read()).returncode)
@@ -123,9 +138,9 @@ class InstallerTests(unittest.TestCase):
         self.bundle = self.root / 'bundle'
         (self.bundle / 'Contents/MacOS').mkdir(parents=True)
         (self.bundle / 'Contents/Resources/assets/ocr').mkdir(parents=True)
-        self.info = dict(CFBundleIdentifier='com.anfioo.wingshot', CFBundleExecutable='WingShot', LSMinimumSystemVersion='15.0')
+        self.info = dict(CFBundleIdentifier='com.snowshot.snow_shot', CFBundleExecutable='snow_shot', LSMinimumSystemVersion='15.0')
         self.write_info()
-        self.executable = self.bundle / 'Contents/MacOS/WingShot'
+        self.executable = self.bundle / 'Contents/MacOS/snow_shot'
         self.executable.write_bytes(b'fixture executable')
         self.executable.chmod(0o755)
         (self.bundle / 'Contents/MacOS/snow-ocr-process').write_bytes(b'signed helper')
@@ -135,11 +150,23 @@ class InstallerTests(unittest.TestCase):
         self.sum = self.root / 'package.dmg.sha256'
         self.sum.write_text(hashlib.sha256(self.dmg.read_bytes()).hexdigest() + '  package.dmg\n')
         self.release = self.root / 'metadata.json'
-        self.metadata = dict(draft=False, prerelease=False, assets=[
+        self.metadata = dict(tag_name=TAG, draft=False, prerelease=False, assets=[
             dict(name=ASSET, browser_download_url=GITHUB),
             dict(name=ASSET+'.sha256', browser_download_url=GITHUB+'.sha256')])
-        self.release.write_text(json.dumps(self.metadata))
-        self.responses = {PRIMARY: str(self.dmg), PRIMARY+'.sha256': str(self.sum), API: str(self.release), GITHUB: str(self.dmg), GITHUB+'.sha256': str(self.sum)}
+        self.release.write_text(json.dumps([self.metadata]))
+        self.gitee_release = self.root / 'gitee-metadata.json'
+        self.gitee_metadata = json.loads(json.dumps(self.metadata))
+        self.gitee_metadata['id'] = 123
+        attachments = self.gitee_metadata.pop('assets')
+        for asset in attachments:
+            asset['browser_download_url'] = asset['browser_download_url'].replace('github.com', 'gitee.com')
+        self.gitee_release.write_text(json.dumps([self.gitee_metadata]))
+        self.gitee_attachments = self.root / 'gitee-attachments.json'
+        self.gitee_attachments.write_text(json.dumps(attachments))
+        self.responses = {API: str(self.release), GITEE_API: str(self.gitee_release),
+                          GITEE_ATTACH: str(self.gitee_attachments),
+                          GITHUB: str(self.dmg), GITHUB+'.sha256': str(self.sum),
+                          GITEE: str(self.dmg), GITEE+'.sha256': str(self.sum)}
         self.bin = self.root / 'bin'
         self.bin.mkdir()
         self.mock = self.bin / 'mock'
@@ -151,8 +178,8 @@ class InstallerTests(unittest.TestCase):
 
     def test_accepts_legacy_dmg_bundle_name(self):
         self.shell('validate_and_stage "$FIXTURE/package.dmg" "$FIXTURE/package.dmg.sha256"',
-                   BUNDLE_NAME='WingShot.app')
-        self.assertTrue((self.work / 'WingShot.app/Contents/MacOS/snow_shot').is_file())
+                   BUNDLE_NAME='snow_shot.app')
+        self.assertTrue((self.work / 'snow_shot.app/Contents/MacOS/snow_shot').is_file())
 
     def write_info(self):
         (self.bundle / 'Contents/Info.plist').write_bytes(plistlib.dumps(self.info))
@@ -181,7 +208,7 @@ class InstallerTests(unittest.TestCase):
         return [call for call in calls if name is None or call[0] == name]
 
     def stage(self):
-        shutil.copytree(self.bundle, self.work / 'WingShot.app')
+        shutil.copytree(self.bundle, self.work / 'snow_shot.app')
 
     def identity(self):
         (self.state / 'identity').write_text(FINGERPRINT + '\n')
@@ -198,7 +225,7 @@ class InstallerTests(unittest.TestCase):
             self.assertNotIn('\x1b', result.stdout)
 
     def test_invalid_arguments(self):
-        for args in [['--lang'], ['--lang', 'fr'], ['--dmg'], ['--unexpected']]:
+        for args in [['--lang'], ['--lang', 'fr'], ['--dmg'], ['--prepare-app'], ['--prepare-app', '/tmp/snow-shot-test.app'], ['--unexpected']]:
             self.assertNotEqual(subprocess.run(['/bin/bash', str(SCRIPT)] + args, capture_output=True).returncode, 0)
 
     def test_language_detection(self):
@@ -229,35 +256,57 @@ class InstallerTests(unittest.TestCase):
             self.sum.write_text(value)
             self.shell('verify_checksum "$FIXTURE/package.dmg" "$FIXTURE/package.dmg.sha256"', success=False)
 
-    def test_primary_download_and_validation(self):
+    @unittest.skipUnless(sys.platform == 'darwin', 'Requires built-in JXA')
+    def test_release_download_and_validation(self):
         self.shell('obtain_package')
-        self.assertEqual([c[-1] for c in self.calls('curl')], [PRIMARY, PRIMARY+'.sha256'])
-        self.assertTrue((self.work / 'WingShot.app').is_dir())
+        calls = [c[-1] for c in self.calls('curl')]
+        self.assertIn(API, calls)
+        self.assertIn(GITEE_API, calls)
+        self.assertTrue(GITHUB in calls or GITEE in calls)
+        self.assertTrue((self.work / 'snow_shot.app').is_dir())
         self.assertFalse((self.root / 'mounted').exists())
         self.assertFalse(self.calls('security'))
 
     def test_detach_does_not_depend_on_mount_path_spelling(self):
-        self.shell('work="$FIXTURE//work"; obtain_package', CANONICAL_MOUNT_PATH='1')
+        self.shell('work="$FIXTURE//work"; local_dmg="$FIXTURE/package.dmg"; obtain_package', CANONICAL_MOUNT_PATH='1')
         self.assertFalse((self.root / 'mounted').exists())
         self.assertEqual(len([call for call in self.calls('hdiutil') if call[1] == 'detach']), 1)
         self.assertFalse(self.calls('mount'))
 
     @unittest.skipUnless(sys.platform == 'darwin', 'Requires built-in JXA')
-    def test_missing_primary_falls_back_to_github(self):
-        del self.responses[PRIMARY]
+    def test_missing_github_uses_gitee(self):
+        del self.responses[API]
         self.shell('obtain_package')
-        self.assertEqual([c[-1] for c in self.calls('curl')], [PRIMARY, API, GITHUB, GITHUB+'.sha256'])
+        self.assertIn(GITEE, [c[-1] for c in self.calls('curl')])
 
     @unittest.skipUnless(sys.platform == 'darwin', 'Requires built-in JXA')
-    def test_invalid_primary_image_falls_back(self):
+    def test_success_cancels_and_reaps_blocked_discovery(self):
+        for blocked, winner in [(GITEE_API, API), (API, GITEE_API)]:
+            with self.subTest(blocked=blocked):
+                for path in self.work.glob('*'):
+                    if path.is_dir(): shutil.rmtree(path)
+                    else: path.unlink()
+                for name in ['blocked-ready', 'blocked-stopped']:
+                    (self.root / name).unlink(missing_ok=True)
+                self.shell('obtain_package; [[ -z "$github_pid" && -z "$gitee_pid" ]]',
+                           BLOCK_URL=blocked, WAIT_FOR_BLOCK_URL=winner)
+                self.assertTrue((self.work / 'snow_shot.app/Contents/MacOS/snow_shot').is_file())
+                self.assertTrue((self.root / 'blocked-stopped').exists())
+                pid = int((self.root / 'blocked-ready').read_text())
+                with self.assertRaises(ProcessLookupError): os.kill(pid, 0)
+
+    @unittest.skipUnless(sys.platform == 'darwin', 'Requires built-in JXA')
+    def test_invalid_selected_image_falls_back_to_same_version(self):
         bad = self.root / 'bad.dmg'
         bad.write_bytes(b'BAD disk image')
         checksum = self.root / 'bad.sha256'
         checksum.write_text(hashlib.sha256(bad.read_bytes()).hexdigest())
-        self.responses[PRIMARY] = str(bad)
-        self.responses[PRIMARY+'.sha256'] = str(checksum)
-        self.shell('obtain_package')
-        self.assertIn(API, [c[-1] for c in self.calls('curl')])
+        self.responses[GITHUB] = str(bad)
+        self.responses[GITHUB+'.sha256'] = str(checksum)
+        # Delay Gitee metadata so GitHub is always selected first.
+        self.responses[GITEE_API] = str(self.gitee_release)
+        self.shell('obtain_package', DELAY_URL=GITEE_API)
+        self.assertIn(GITEE, [c[-1] for c in self.calls('curl')])
 
     def test_unavailable_download_preserves_installation_and_cleans_up(self):
         self.previous()
@@ -270,19 +319,42 @@ class InstallerTests(unittest.TestCase):
 
     @unittest.skipUnless(sys.platform == 'darwin', 'Requires built-in JXA')
     def test_real_release_parser_rejects_missing_ambiguous_and_foreign_assets(self):
-        for mutation in ['missing', 'duplicate', 'foreign', 'prerelease', 'malformed']:
+        for mutation in ['missing', 'duplicate', 'foreign', 'draft', 'malformed']:
             metadata = json.loads(json.dumps(self.metadata))
             if mutation == 'missing': metadata['assets'].pop()
             if mutation == 'duplicate': metadata['assets'].append(metadata['assets'][0])
             if mutation == 'foreign': metadata['assets'][0]['browser_download_url'] = 'https://example.com/a.dmg'
-            if mutation == 'prerelease': metadata['prerelease'] = True
-            self.release.write_text('{' if mutation == 'malformed' else json.dumps(metadata))
-            self.shell('github_urls "$FIXTURE/metadata.json"', success=False)
+            if mutation == 'draft': metadata['draft'] = True
+            self.release.write_text('{' if mutation == 'malformed' else json.dumps([metadata]))
+            self.shell('release_urls "$FIXTURE/metadata.json" github', success=False)
+
+    @unittest.skipUnless(sys.platform == 'darwin', 'Requires built-in JXA')
+    def test_preview_and_newest_semver(self):
+        preview = json.loads(json.dumps(self.metadata))
+        preview['tag_name'] = 'v2.0.0-beta_snow-shot'
+        preview['prerelease'] = True
+        for asset in preview['assets']:
+            asset['name'] = asset['name'].replace('1.2.3', '2.0.0-beta')
+            asset['browser_download_url'] = asset['browser_download_url'].replace('v1.2.3/', 'v2.0.0-beta_snow-shot/').replace('1.2.3', '2.0.0-beta')
+        self.release.write_text(json.dumps([self.metadata, preview]))
+        result = self.shell('release_urls "$FIXTURE/metadata.json" github')
+        self.assertTrue(result.stdout.startswith('v2.0.0-beta_snow-shot\n'))
+
+    @unittest.skipUnless(sys.platform == 'darwin', 'Requires built-in JXA')
+    def test_gitee_attachment_validation_and_exact_version(self):
+        result = self.shell('release_urls "$FIXTURE/gitee-metadata.json" gitee-list')
+        self.assertEqual(result.stdout.strip(), TAG + ' 123')
+        result = self.shell('release_urls "$FIXTURE/gitee-metadata.json" gitee "' + TAG + '" "$FIXTURE/gitee-attachments.json"')
+        self.assertIn(GITEE, result.stdout)
+        attachments = json.loads(self.gitee_attachments.read_text())
+        attachments[0]['browser_download_url'] = 'https://evil.invalid/package.dmg'
+        self.gitee_attachments.write_text(json.dumps(attachments))
+        self.shell('release_urls "$FIXTURE/gitee-metadata.json" gitee "' + TAG + '" "$FIXTURE/gitee-attachments.json"', success=False)
 
     @unittest.skipUnless(sys.platform == 'darwin', 'Requires built-in JXA')
     def test_real_release_parser_intel(self):
-        self.release.write_text(json.dumps(self.metadata).replace('arm64', 'x86_64'))
-        result = self.shell('asset_arch=x86_64; github_urls "$FIXTURE/metadata.json"')
+        self.release.write_text(json.dumps([self.metadata]).replace('arm64', 'x86_64'))
+        result = self.shell('asset_arch=x86_64; release_urls "$FIXTURE/metadata.json" github')
         self.assertIn('macos-x86_64.dmg', result.stdout)
 
     def test_local_package_never_downloads(self):
@@ -369,13 +441,13 @@ openssl x509 -in "$work/certificate.pem" -noout -text > "$FIXTURE/certificate.tx
         helper.chmod(0o755)
         self.stage()
         # Ad-hoc fixture tests sealing only; permission continuity needs a real identity.
-        (self.state / 'requirement').write_text('identifier "com.anfioo.wingshot"')
+        (self.state / 'requirement').write_text('identifier "com.snowshot.snow_shot"')
         self.shell('''codesign() { /usr/bin/codesign "$@"; }
 prepare_identity() { signing_identity=-; }
 sign_application
 ''')
         for path in ['Contents/MacOS/snow-ocr-process', 'Contents/Resources/assets/ocr/asset-manifest.json']:
-            self.assertEqual((self.bundle / path).read_bytes(), (self.work / 'WingShot.app' / path).read_bytes())
+            self.assertEqual((self.bundle / path).read_bytes(), (self.work / 'snow_shot.app' / path).read_bytes())
 
     def test_missing_identity_never_regenerates(self):
         self.identity()
@@ -397,7 +469,7 @@ sign_application
         self.identity()
         self.shell('sign_application')
         for path in ['Contents/MacOS/snow-ocr-process', 'Contents/Resources/assets/ocr/asset-manifest.json']:
-            self.assertEqual((self.bundle / path).read_bytes(), (self.work / 'WingShot.app' / path).read_bytes())
+            self.assertEqual((self.bundle / path).read_bytes(), (self.work / 'snow_shot.app' / path).read_bytes())
         signing = [c for c in self.calls('codesign') if '--force' in c]
         self.assertEqual(len(signing), 1)
         self.assertNotIn('--deep', signing[0])
@@ -429,18 +501,114 @@ sign_application''', success=False)
         self.assertFalse((self.root / 'outside').exists())
         self.assertFalse((self.state / 'lock').exists())
 
+    def test_homebrew_backup_does_not_require_signing_key(self):
+        self.previous()
+        code = 'source ' + shlex.quote(str(PREFLIGHT)) + '; homebrew_prepare_application "$FIXTURE/package.dmg" "$destination"'
+        self.shell(code, MISSING_IDENTITY='1')
+        self.assertEqual(self.calls(), [['codesign', '--verify', '--deep', '--strict', str(self.destination)]])
+        (self.destination / 'reject-signature').touch()
+        self.shell(code, success=False)
+        self.assertTrue((self.destination / 'old-marker').exists())
+
+    def test_homebrew_backup_rejects_symlink(self):
+        self.destination.symlink_to(self.bundle)
+        code = 'source ' + shlex.quote(str(PREFLIGHT)) + '; homebrew_prepare_application "$FIXTURE/package.dmg" "$destination"'
+        self.shell(code, success=False)
+        self.assertFalse(self.calls())
+
+    def test_homebrew_fresh_preflight_forwards_local_paths(self):
+        wrapper = self.root / PREFLIGHT.name
+        shutil.copyfile(PREFLIGHT, wrapper)
+        (self.root / SCRIPT.name).write_text("#!/bin/bash\nprintf '%s\\n' \"$@\"\n")
+        result = subprocess.run(['/bin/bash', str(wrapper), str(self.dmg), str(self.destination)],
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.splitlines(), ['--dmg', str(self.dmg), '--prepare-app', str(self.destination)])
+        self.assertFalse(self.destination.exists())
+
+    def prepare_code(self):
+        return '''trap cleanup EXIT
+local_dmg="$FIXTURE/package.dmg"
+prepare_app="$FIXTURE/Prepared Snow Shot.app"
+validate_prepare_output
+prepare_state
+obtain_package
+sign_application
+prepare_application
+'''
+
+    def test_prepare_app_reuses_identity_without_install_or_launch(self):
+        self.previous()
+        self.identity()
+        self.shell(self.prepare_code())
+        output = self.root / 'Prepared Snow Shot.app'
+        self.assertTrue((output / 'Contents/MacOS/snow_shot').exists())
+        self.assertTrue((self.destination / 'old-marker').exists())
+        self.assertEqual((self.state / 'requirement').read_text().strip(), REQUIREMENT)
+        for name in ('curl', 'open', 'sudo', 'osascript', 'pgrep', 'openssl'):
+            self.assertFalse(self.calls(name), name)
+        for path in ['Contents/MacOS/snow-ocr-process', 'Contents/Resources/assets/ocr/asset-manifest.json']:
+            self.assertEqual((self.bundle / path).read_bytes(), (output / path).read_bytes())
+        self.assertFalse(self.work.exists())
+        self.assertFalse((self.state / 'lock').exists())
+
+    def test_prepare_app_requires_local_dmg_and_fresh_absolute_path(self):
+        self.previous()
+        for output in (str(self.destination), 'relative.app', str(self.root / 'missing/Output.app')):
+            self.shell('local_dmg="$FIXTURE/package.dmg"; prepare_app="$OUTPUT"; validate_prepare_output',
+                       success=False, OUTPUT=output)
+        self.shell('prepare_app="$FIXTURE/New.app"; validate_prepare_output', success=False)
+        (self.root / 'link.app').symlink_to(self.root / 'missing')
+        self.shell('local_dmg="$FIXTURE/package.dmg"; prepare_app="$FIXTURE/link.app"; validate_prepare_output', success=False)
+        self.assertTrue((self.destination / 'old-marker').exists())
+        self.assertFalse(self.calls('security'))
+
+    def test_prepare_failure_keeps_installed_app_and_cleans_staging(self):
+        self.previous()
+        self.identity()
+        (self.state / 'requirement').write_text(REQUIREMENT)
+        self.shell(self.prepare_code(), success=False, FAIL_REQUIREMENT='1')
+        self.assertTrue((self.destination / 'old-marker').exists())
+        self.assertFalse((self.root / 'Prepared Snow Shot.app').exists())
+        self.assertFalse(self.work.exists())
+        self.assertFalse((self.state / 'lock').exists())
+        self.assertEqual((self.state / 'requirement').read_text(), REQUIREMENT)
+
+    def test_prepare_copy_failure_removes_owned_output(self):
+        self.previous()
+        self.identity()
+        code = self.prepare_code().replace('prepare_application', '''ditto() { return 1; }
+prepare_application''')
+        self.shell(code, success=False)
+        self.assertFalse((self.root / 'Prepared Snow Shot.app').exists())
+        self.assertFalse((self.state / 'requirement').exists())
+        self.assertTrue((self.destination / 'old-marker').exists())
+
+    def test_prepare_bad_checksum_never_signs(self):
+        self.sum.write_text('0' * 64)
+        self.shell(self.prepare_code(), success=False)
+        self.assertFalse(self.calls('security'))
+        self.assertFalse((self.root / 'Prepared Snow Shot.app').exists())
+        self.assertFalse((self.state / 'lock').exists())
+
+    def test_prepare_concurrent_install_retains_other_lock(self):
+        (self.state / 'lock').mkdir()
+        self.shell(self.prepare_code(), success=False)
+        self.assertTrue((self.state / 'lock').exists())
+        self.assertFalse(self.calls('security'))
+
     def test_legacy_installation_migrates_to_product_name(self):
         self.stage()
-        legacy = self.apps / 'WingShot.app'
+        legacy = self.apps / 'snow_shot.app'
         legacy.mkdir()
         (legacy / 'old-marker').write_text('previous application')
         self.shell('trap cleanup EXIT; requirement="$REQUIREMENT"; install_application')
         self.assertFalse(legacy.exists())
-        self.assertTrue((self.destination / 'Contents/MacOS/WingShot').is_file())
+        self.assertTrue((self.destination / 'Contents/MacOS/snow_shot').is_file())
 
     def test_failed_legacy_migration_restores_original_path(self):
         self.stage()
-        legacy = self.apps / 'WingShot.app'
+        legacy = self.apps / 'snow_shot.app'
         legacy.mkdir()
         (legacy / 'old-marker').write_text('previous application')
         self.shell('trap cleanup EXIT; requirement="$REQUIREMENT"; install_application',
@@ -453,7 +621,7 @@ sign_application''', success=False)
         self.stage()
         self.shell('trap cleanup EXIT; requirement="$REQUIREMENT"; launch=0; install_application')
         self.assertFalse((self.destination / 'old-marker').exists())
-        self.assertTrue((self.destination / 'Contents/MacOS/WingShot').exists())
+        self.assertTrue((self.destination / 'Contents/MacOS/snow_shot').exists())
         self.assertFalse(list(self.apps.glob('.snow-shot-install.*')))
         self.assertEqual((self.state / 'requirement').read_text().strip(), REQUIREMENT)
         self.assertFalse(self.calls('open'))
@@ -476,7 +644,7 @@ sign_application''', success=False)
         self.previous()
         self.stage()
         self.shell('trap cleanup EXIT; requirement="$REQUIREMENT"; install_application', success=False, FAIL_OPEN='1')
-        self.assertTrue((self.destination / 'Contents/MacOS/WingShot').exists())
+        self.assertTrue((self.destination / 'Contents/MacOS/snow_shot').exists())
         self.assertFalse((self.destination / 'old-marker').exists())
 
     def test_running_app_is_never_force_killed(self):

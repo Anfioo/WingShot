@@ -510,6 +510,8 @@ pub(crate) fn snow_text_element_info_from_rust(value: TextElementInfo) -> SnowTe
         center_y: value.center.y,
         width: value.width,
         height: value.height,
+        content_width: value.content_width,
+        content_height: value.content_height,
         rotation: value.rotation,
         font_size: value.font_size,
         auto_resize: u8::from(value.auto_resize),
@@ -646,6 +648,8 @@ impl From<SnowFilterStyle> for FilterStyle {
                 SnowFilterType::Grayscale => CanvasFilterType::Grayscale,
                 SnowFilterType::Inversion => CanvasFilterType::Inversion,
                 SnowFilterType::Emboss => CanvasFilterType::Emboss,
+                SnowFilterType::Brightness => CanvasFilterType::Brightness,
+                SnowFilterType::RestoreBackground => CanvasFilterType::RestoreBackground,
                 SnowFilterType::SmartErase => CanvasFilterType::SmartErase,
             },
             strength: value.strength,
@@ -664,6 +668,8 @@ impl From<FilterStyle> for SnowFilterStyle {
                 CanvasFilterType::Grayscale => SnowFilterType::Grayscale,
                 CanvasFilterType::Inversion => SnowFilterType::Inversion,
                 CanvasFilterType::Emboss => SnowFilterType::Emboss,
+                CanvasFilterType::Brightness => SnowFilterType::Brightness,
+                CanvasFilterType::RestoreBackground => SnowFilterType::RestoreBackground,
                 CanvasFilterType::SmartErase => SnowFilterType::SmartErase,
             },
             strength: value.strength,
@@ -782,6 +788,32 @@ impl From<TextStyle> for SnowTextStyle {
     }
 }
 
+pub(crate) fn snow_serial_number_numeric_type_to_rust(
+    value: SnowSerialNumberNumericType,
+) -> snow_draw_engine_document::SerialNumberNumericType {
+    use snow_draw_engine_document::SerialNumberNumericType as Numeric;
+    match value {
+        SnowSerialNumberNumericType::Arabic => Numeric::Arabic,
+        SnowSerialNumberNumericType::Roman => Numeric::Roman,
+        SnowSerialNumberNumericType::LowercaseLetters => Numeric::LowercaseLetters,
+        SnowSerialNumberNumericType::UppercaseLetters => Numeric::UppercaseLetters,
+        SnowSerialNumberNumericType::Chinese => Numeric::Chinese,
+    }
+}
+
+fn snow_serial_number_numeric_type_from_rust(
+    value: snow_draw_engine_document::SerialNumberNumericType,
+) -> SnowSerialNumberNumericType {
+    use snow_draw_engine_document::SerialNumberNumericType as Numeric;
+    match value {
+        Numeric::Arabic => SnowSerialNumberNumericType::Arabic,
+        Numeric::Roman => SnowSerialNumberNumericType::Roman,
+        Numeric::LowercaseLetters => SnowSerialNumberNumericType::LowercaseLetters,
+        Numeric::UppercaseLetters => SnowSerialNumberNumericType::UppercaseLetters,
+        Numeric::Chinese => SnowSerialNumberNumericType::Chinese,
+    }
+}
+
 pub(crate) fn snow_serial_number_type_to_rust(value: SnowSerialNumberType) -> SerialNumberType {
     match value {
         SnowSerialNumberType::OutlinedCircle => SerialNumberType::OutlinedCircle,
@@ -797,6 +829,7 @@ impl From<SnowSerialNumberStyle> for SerialNumberStyle {
         Self {
             number: value.number.max(0),
             serial_number_type: snow_serial_number_type_to_rust(value.serial_number_type),
+            numeric_type: snow_serial_number_numeric_type_to_rust(value.numeric_type),
             color: value.color.into(),
             fill: value.fill.into(),
             fill_style: snow_fill_style_to_rust(value.fill_style),
@@ -813,6 +846,7 @@ impl From<SerialNumberStyle> for SnowSerialNumberStyle {
     fn from(value: SerialNumberStyle) -> Self {
         let mut out = Self {
             number: value.number.max(0),
+            numeric_type: snow_serial_number_numeric_type_from_rust(value.numeric_type),
             serial_number_type: match value.serial_number_type {
                 SerialNumberType::OutlinedCircle => SnowSerialNumberType::OutlinedCircle,
                 SerialNumberType::SolidCircle => SnowSerialNumberType::SolidCircle,
@@ -920,6 +954,7 @@ unsafe fn runtime_style_default_enums_are_valid(defaults: *const SnowStyleDefaul
             && raw_c_enum_is_valid(std::ptr::addr_of!((*defaults).text.fill_style))
             && raw_c_enum_is_valid(std::ptr::addr_of!((*defaults).text.horizontal_align))
             && raw_c_enum_is_valid(std::ptr::addr_of!((*defaults).text.vertical_align))
+            && raw_c_enum_is_valid(std::ptr::addr_of!((*defaults).serial_number.numeric_type))
             && raw_c_enum_is_valid(std::ptr::addr_of!((*defaults).serial_number.fill_style))
             && raw_c_enum_is_valid(std::ptr::addr_of!((*defaults).serial_number.stroke_style))
             && raw_c_enum_is_valid(std::ptr::addr_of!(
@@ -978,6 +1013,7 @@ pub(crate) fn runtime_config_from_c(
                 pen_highlight: defaults.pen_highlight.into(),
                 rectangle_filter: defaults.rectangle_filter.into(),
                 pen_filter: defaults.pen_filter.into(),
+                brush_eraser: defaults.brush_eraser.into(),
                 text: TextStyle {
                     color: defaults.text.color.into(),
                     font_size: defaults.text.font_size,
@@ -995,6 +1031,9 @@ pub(crate) fn runtime_config_from_c(
                 },
                 serial_number: SerialNumberStyle {
                     number: defaults.serial_number.number,
+                    numeric_type: snow_serial_number_numeric_type_to_rust(
+                        defaults.serial_number.numeric_type,
+                    ),
                     serial_number_type: match defaults.serial_number.serial_number_type {
                         SnowSerialNumberType::OutlinedCircle => SerialNumberType::OutlinedCircle,
                         SnowSerialNumberType::SolidCircle => SerialNumberType::SolidCircle,
@@ -1084,6 +1123,7 @@ impl From<StyleDefaults> for SnowStyleDefaults {
             serial_number: value.editor.serial_number.into(),
             watermark: value.watermark.into(),
             spotlight: value.spotlight.into(),
+            brush_eraser: value.editor.brush_eraser.into(),
         }
     }
 }
@@ -1101,6 +1141,7 @@ impl Default for SnowStyleToolbarState {
             shape_style_mixed: 0,
             filter_style: SnowFilterStyle::default(),
             filter_style_mixed: 0,
+            brush_eraser_style: SnowBrushEraserStyle::default(),
         }
     }
 }
@@ -1146,6 +1187,8 @@ pub(crate) fn snow_active_tool_to_rust(value: SnowActiveTool) -> ActiveTool {
         SnowActiveTool::PenFilter => ActiveTool::PenFilter,
         SnowActiveTool::Spotlight => ActiveTool::Spotlight,
         SnowActiveTool::AutoFilter => ActiveTool::AutoFilter,
+        SnowActiveTool::RectangleEraser => ActiveTool::RectangleEraser,
+        SnowActiveTool::BrushEraser => ActiveTool::BrushEraser,
         SnowActiveTool::Watermark => ActiveTool::Watermark,
         SnowActiveTool::Text => ActiveTool::Text,
         SnowActiveTool::SerialNumber => ActiveTool::SerialNumber,
@@ -1166,6 +1209,8 @@ pub(crate) fn snow_active_tool_from_rust(value: ActiveTool) -> SnowActiveTool {
         ActiveTool::PenFilter => SnowActiveTool::PenFilter,
         ActiveTool::Spotlight => SnowActiveTool::Spotlight,
         ActiveTool::AutoFilter => SnowActiveTool::AutoFilter,
+        ActiveTool::RectangleEraser => SnowActiveTool::RectangleEraser,
+        ActiveTool::BrushEraser => SnowActiveTool::BrushEraser,
         ActiveTool::Watermark => SnowActiveTool::Watermark,
         ActiveTool::Text => SnowActiveTool::Text,
         ActiveTool::SerialNumber => SnowActiveTool::SerialNumber,
@@ -1173,7 +1218,7 @@ pub(crate) fn snow_active_tool_from_rust(value: ActiveTool) -> SnowActiveTool {
 }
 
 pub(crate) fn snow_active_tool_mask_to_rust(value: u64) -> u64 {
-    const TOOLS: [SnowActiveTool; 15] = [
+    const TOOLS: [SnowActiveTool; 17] = [
         SnowActiveTool::Select,
         SnowActiveTool::Shape,
         SnowActiveTool::Arrow,
@@ -1189,6 +1234,8 @@ pub(crate) fn snow_active_tool_mask_to_rust(value: u64) -> u64 {
         SnowActiveTool::PenFilter,
         SnowActiveTool::Spotlight,
         SnowActiveTool::AutoFilter,
+        SnowActiveTool::RectangleEraser,
+        SnowActiveTool::BrushEraser,
     ];
 
     TOOLS.into_iter().fold(0, |mask, tool| {
@@ -1221,6 +1268,10 @@ pub(crate) fn snow_style_toolbar_source_from_rust(
         StyleToolbarSource::DefaultPenHighlight => SnowStyleToolbarSource::DefaultPenHighlight,
         StyleToolbarSource::SelectedPenHighlight => SnowStyleToolbarSource::SelectedPenHighlight,
         StyleToolbarSource::Eraser => SnowStyleToolbarSource::Eraser,
+        StyleToolbarSource::DefaultRectangleEraser => {
+            SnowStyleToolbarSource::DefaultRectangleEraser
+        }
+        StyleToolbarSource::DefaultBrushEraser => SnowStyleToolbarSource::DefaultBrushEraser,
         StyleToolbarSource::DefaultRectangleFilter => {
             SnowStyleToolbarSource::DefaultRectangleFilter
         }
@@ -1391,6 +1442,21 @@ pub(crate) fn snow_cursor_style_from_rust(value: CursorStyle) -> SnowCursorStyle
     }
 }
 
+impl From<SnowBrushEraserStyle> for snow_draw_engine::BrushEraserStyle {
+    fn from(value: SnowBrushEraserStyle) -> Self {
+        Self {
+            stroke_width: value.stroke_width,
+        }
+    }
+}
+impl From<snow_draw_engine::BrushEraserStyle> for SnowBrushEraserStyle {
+    fn from(value: snow_draw_engine::BrushEraserStyle) -> Self {
+        Self {
+            stroke_width: value.stroke_width,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1475,6 +1541,8 @@ mod tests {
             center: Point { x: 1.0, y: 2.0 },
             width: 100.0,
             height: 30.0,
+            content_width: 84.0,
+            content_height: 27.0,
             rotation: 0.0,
             text,
             font_size: 21.0,
@@ -1483,6 +1551,8 @@ mod tests {
             measure_natural_width: false,
         });
 
+        assert_eq!(info.content_width, 84.0);
+        assert_eq!(info.content_height, 27.0);
         assert_eq!(info.text_utf8_len, (SNOW_TEXT_UTF8_CAPACITY - 1) as u32);
         assert_eq!(info.text_truncated, 1);
         assert_eq!(
@@ -1535,6 +1605,7 @@ mod tests {
         let serial_style: SnowSerialNumberStyle = SerialNumberStyle {
             number: 1,
             serial_number_type: SerialNumberType::OutlinedCircle,
+            numeric_type: snow_draw_engine_document::SerialNumberNumericType::Arabic,
             color: ColorRgba8::default(),
             fill: ColorRgba8::default(),
             fill_style: FillStyle::Solid,

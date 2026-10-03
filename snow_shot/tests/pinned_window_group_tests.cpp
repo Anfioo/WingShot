@@ -100,6 +100,12 @@ void managerValidationPersistenceAndCounts() {
     const auto alphaId = manager.createGroup(QStringLiteral("  Alpha  "));
     require(alphaId.has_value() && manager.displayName(*alphaId) == "Alpha",
             "group names should be trimmed and persisted");
+    const auto groupRevision = manager.automationRevision();
+    const auto initialGroup = manager.activeGroupId();
+    require(manager.setActiveGroup(*alphaId) && manager.setActiveGroup(initialGroup),
+            "group round trip should succeed before queued notifications are delivered");
+    require(manager.automationRevision() > groupRevision,
+            "group revisions must advance synchronously even when notifications coalesce");
     require(!manager.createGroup(QStringLiteral("alpha")).has_value(),
             "group names should be case-insensitively unique");
     require(!manager.createGroup(QStringLiteral("   ")).has_value(),
@@ -294,9 +300,21 @@ void ignoredRecordsCountTowardTotalAndDeleteWithEmptyGroups() {
     manager.registerPendingPin(item.id, *group);
     require(manager.windowCounts(*group).nonIgnored == 1 && manager.windowCounts(*group).total == 1,
             "an ignored pin being restored should count once in the total");
+    for (const auto& entry : manager.displaySnapshot()) {
+        const auto expected = manager.windowCounts(entry.id);
+        require(entry.counts.nonIgnored == expected.nonIgnored &&
+                    entry.counts.total == expected.total,
+                "bulk snapshot deduplicates ignored records being restored");
+    }
     manager.completePendingPin(item.id);
     require(manager.windowCounts(*group).nonIgnored == 0 && manager.windowCounts(*group).total == 1,
             "completing a pending pin should refresh the non-ignored count");
+    for (const auto& entry : manager.displaySnapshot()) {
+        const auto expected = manager.windowCounts(entry.id);
+        require(entry.counts.nonIgnored == expected.nonIgnored &&
+                    entry.counts.total == expected.total,
+                "bulk snapshot retains ignored windows in total counts");
+    }
     require(manager.deleteEmptyGroups() && !manager.contains(*group) &&
                 !repository.loadRecord(item.id).has_value(),
             "empty-group cleanup should delete an ignored-only group and its saved pins");

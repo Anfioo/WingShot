@@ -4,14 +4,18 @@
 #include "snow_shot/presentation/screenshottoolpalette.h"
 
 #include <QRect>
+#include <QImage>
 #include <QMarginsF>
 #include <QRectF>
+#include <QRegion>
 #include <QWidget>
 
 #include <memory>
 
 class QEvent;
 class QShowEvent;
+class RecordingRegionDragHandle;
+class RecordingRegionInputRouter;
 class SnowCanvasRuntime;
 class SnowCanvasWidget;
 
@@ -41,6 +45,8 @@ class ScreenRecordingAreaWindow final : public QWidget {
     // Focus the effective input owner; pass-through and blocked areas cannot activate.
     bool activateInput();
     void setDrawingBlocked(bool blocked);
+    void setTrimming(bool enabled);
+    void setPreviewFrame(const QImage& frame);
     [[nodiscard]] bool drawingBlocked() const;
     void startCountdown(int seconds);
     void updateCountdown(qint64 remainingMilliseconds);
@@ -48,6 +54,9 @@ class ScreenRecordingAreaWindow final : public QWidget {
     [[nodiscard]] bool countdownActive() const;
     [[nodiscard]] QColor inputSurfaceColor() const;
     [[nodiscard]] SnowCanvasWidget* canvas() const;
+    [[nodiscard]] SnowCanvasRuntime& canvasRuntime() {
+        return *m_canvasRuntime;
+    }
     [[nodiscard]] QRect canvasGeometry() const;
     [[nodiscard]] QRectF selectionRect() const {
         return m_selectionRect;
@@ -66,6 +75,10 @@ class ScreenRecordingAreaWindow final : public QWidget {
     void moveEvent(QMoveEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;
     void closeEvent(QCloseEvent* event) override;
+    void enterEvent(QEnterEvent* event) override;
+    void mousePressEvent(QMouseEvent* event) override;
+    void mouseMoveEvent(QMouseEvent* event) override;
+    void mouseReleaseEvent(QMouseEvent* event) override;
     bool eventFilter(QObject* watched, QEvent* event) override;
     bool nativeEvent(const QByteArray& eventType, void* message, qintptr* result) override;
     void paintEvent(QPaintEvent* event) override;
@@ -75,6 +88,12 @@ class ScreenRecordingAreaWindow final : public QWidget {
     friend class ScreenRecordingAreaWindowTestAccess;
 
     void applyInputMode();
+    void placeRecordingRegion(const QRect& region);
+    void beginRegionDrag(const QPoint& pointer, Qt::Edges edges);
+    void updateRegionDrag(const QPoint& pointer);
+    void applyRegionDragGeometry(const QRect& region);
+    void setRegionCursor(Qt::Edges edges);
+    [[nodiscard]] int minimumRegionExtent() const;
     void updateRegionCursor(const QPointF& position);
     void applyQuickSelectionPreferences();
     void applyNativePassThrough(bool enabled);
@@ -82,11 +101,13 @@ class ScreenRecordingAreaWindow final : public QWidget {
     [[nodiscard]] Qt::Edges resizeEdgesAt(const QPointF& position) const;
     void cancelRegionInteraction();
     void finishRegionInteraction();
-    void beginRegionInteraction();
     void synchronizeWindowGeometry();
     void scheduleGeometrySynchronization();
     void layoutSelection();
     void layoutCountdownOverlay();
+    void layoutRegionDragHandle();
+    [[nodiscard]] QRegion regionInteractionRegion() const;
+    void updateNativeMouseRouting(const QPoint& desktopPosition);
 
     QRectF m_frameRect;
     QRectF m_selectionRect;
@@ -95,18 +116,24 @@ class ScreenRecordingAreaWindow final : public QWidget {
     ScreenshotToolPalette::RecordingState m_state = ScreenshotToolPalette::RecordingState::Idle;
     InputMode m_inputMode = InputMode::PassThrough;
     bool m_drawingBlocked = false;
+    bool m_trimming = false;
+    QImage m_previewFrame;
     bool m_gestureInProgress = false;
-    bool m_regionInteractionActive = false;
+    bool m_cancellingRegionInteraction = false;
     bool m_settingRegion = false;
     bool m_geometrySyncPending = false;
     QMarginsF m_physicalInsets;
-#ifdef Q_OS_MACOS
+    bool m_regionDragActive = false;
+    QWidget* m_regionDragSource = nullptr;
+    bool m_regionEscapeRelease = false;
     QPoint m_regionDragOrigin;
     QRect m_regionDragRect;
     Qt::Edges m_regionDragEdges;
-#endif
+    Qt::Edges m_regionEffectiveEdges;
     std::unique_ptr<SnowCanvasRuntime> m_canvasRuntime;
     SnowCanvasWidget* m_canvas = nullptr;
+    std::unique_ptr<RecordingRegionInputRouter> m_regionInputRouter;
+    RecordingRegionDragHandle* m_regionDragHandle = nullptr;
     snow_shot::presentation::recording::RecordingCountdownOverlay* m_countdownOverlay = nullptr;
 };
 

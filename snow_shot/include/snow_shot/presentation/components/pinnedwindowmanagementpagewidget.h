@@ -17,6 +17,8 @@ class QLabel;
 class QVBoxLayout;
 namespace adqt::widgets {
 class AdButton;
+class AdImageViewer;
+class AdImageListModel;
 class AdDateRangePicker;
 class AdPagination;
 class AdPopconfirm;
@@ -62,11 +64,17 @@ class PinnedWindowManagementPageWidget final : public QWidget {
 
   protected:
     void changeEvent(QEvent* event) override;
+    void showEvent(QShowEvent* event) override;
+    void hideEvent(QHideEvent* event) override;
     bool eventFilter(QObject* watched, QEvent* event) override;
 
   private:
+    void handleSourceChanged();
+    void captureActivePreviewRevision();
+    void updateSkinBackgrounds();
     void rebuildFilteredRecords(bool resetPage);
     void rebuildEntries();
+    void rebuildPreview();
     void updateResponsiveLayout();
     void updateHeader();
     void updateSelectionBar();
@@ -108,6 +116,14 @@ class PinnedWindowManagementPageWidget final : public QWidget {
     QHash<QString, quint64> m_entryPreviewRevisions;
     QSet<QString> m_selected;
     snow_shot::presentation::styles::ThemeColorScheme m_scheme;
+    qreal m_backgroundOpacity = 1.0;
+    adqt::widgets::AdImageViewer* m_previewViewer = nullptr;
+    adqt::widgets::AdImageListModel* m_previewModel = nullptr;
+    QHash<QString, int> m_previewRows;
+    QString m_previewAltText;
+    QString m_activePreviewId;
+    std::optional<quint64> m_activePreviewRevision;
+    bool m_dirty = false;
     bool m_updatingPagination = false;
 };
 

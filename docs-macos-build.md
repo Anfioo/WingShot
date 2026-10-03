@@ -4,17 +4,160 @@ The app presets target macOS 15 or newer, with separate Apple Silicon (`arm64`)
 and Intel (`x64`) builds. Each build uses one architecture throughout CMake,
 vcpkg and Cargo; universal builds are not supported by these presets.
 
+## Snow Shot Mini
+
+Apple Silicon presets build both `snow_shot` and `snow_shot_mini` from the same
+configuration. Intel presets build Snow Shot only; Snow Shot Mini requires
+`arm64` on macOS. `SNOW_APPS_BUILD_SNOW_SHOT_MINI` controls the additional target
+and defaults to `ON` in the Apple Silicon presets. Use an explicit `--target`
+to build one edition, or configure with this option `OFF` for a full-only build.
+The build wrappers select the enabled editions automatically. Paired CMake build
+presets retain both target names, so a direct build with Mini disabled must use
+`cmake --build --preset build-<preset> --target snow_shot`. Apple Silicon release
+packaging requires both editions and rejects a Mini-disabled cache.
+
+Mini removes QR, table, Markdown, HTML, LaTeX, translation, Extended Features,
+and API Configuration. Manual text recognition remains available; its toolbar
+button is hidden by default, and Pin to Screen automatic recognition is off.
+Both macOS bundles include the local OCR worker and runtime. Full also bundles
+the default Small V6 model; Mini downloads the selected model on first use and
+reuses its verified cache afterward.
+
+```sh
+scripts/build.sh snow-shot-macos-arm64-debug --target snow_shot_mini
+scripts/run-snow-shot.sh snow-shot-macos-arm64-debug --edition mini
+scripts/package-snow-shot.sh snow-shot-macos-arm64-release
+bash install-snow-shot-macos.sh --edition mini --lang en
+```
+
+The Apple Silicon package command produces both
+`snow-shot-<version>-macos-arm64.dmg` and
+`snow-shot-mini-<version>-macos-arm64.dmg`, each with a `.sha256` sidecar.
+Mini installs as `Snow Shot Mini.app`, with executable `snow_shot_mini` and
+bundle ID `com.snowshot.snow_shot_mini`. Its settings, launch-at-login entry,
+MCP discovery, and installer state use separate product identities. For direct
+staging, use `cmake --install build/<preset> --component SnowShotMini --prefix
+/path/to/staging`. Both editions share a version and release tag.
+
+## Homebrew installation
+
+The project tap is `mg-chao/homebrew-tap`. Stable releases update `snow-shot`;
+beta releases update `snow-shot@beta`, independently of the stable channel.
+Tags accept `v<version>` with an optional `_snow-shot` suffix; beta versions use
+`-beta` or `-beta.<number>`. Other prerelease versions are not supported. Initially,
+Homebrew installation supports Apple Silicon and macOS 15 or later only. Keep
+Homebrew current with `brew update`.
+
+```sh
+brew update
+brew install --cask mg-chao/tap/snow-shot
+brew upgrade --cask snow-shot
+brew uninstall --cask snow-shot
+```
+
+For beta releases, use `brew install --cask mg-chao/tap/snow-shot@beta` and
+`brew upgrade --cask snow-shot@beta`. Quit the app and uninstall the current cask
+before switching channels because both install `Snow Shot.app`. User data and
+the signing identity are retained. Each release needs its versioned DMG and a
+GitHub SHA-256 digest or matching `.sha256` asset. When both are present, both
+must match; the workflow packages only verified release assets.
+
+If Homebrew says `Casks/snow-shot.rb` does not exist and suggests only
+`snow-shot@beta`, its local tap checkout has not received the stable cask yet.
+Refresh the tap before retrying:
+
+```sh
+brew update
+brew info --cask mg-chao/tap/snow-shot
+brew install --cask mg-chao/tap/snow-shot
+```
+
+Homebrew may defer automatic updates, and `HOMEBREW_NO_AUTO_UPDATE` disables
+them. If the stable cask is still missing after `brew update`, inspect the tap
+checkout and its remote before changing or removing it:
+
+```sh
+tap_dir="$(brew --repository mg-chao/tap)"
+git -C "$tap_dir" status --short --branch
+git -C "$tap_dir" remote -v
+ls "$tap_dir/Casks/snow-shot.rb"
+```
+
+Finish recordings and quit Snow Shot before upgrading or uninstalling. Homebrew
+owns the final application placement and removal; the cask's preflight verifies
+and locally signs a staged copy. The archive includes the DMG, its checksum, and
+the installer from the matching release source. Its SHA-256 is pinned in the tap.
+Installation never downloads a newer installer or follows the website's mutable
+latest-package URL.
+
+The first installation may request login Keychain access or code-signing trust.
+The same local identity and designated requirement used by the standalone
+installer are retained under `~/Library/Application Support/Snow Shot/Installer`.
+Use the same installing account for upgrades. Uninstall does not delete the
+identity, installer state, settings, or captures; there is no destructive `zap`
+rule. Local signing is not Developer ID notarization and does not guarantee that
+macOS will retain Screen Recording or Accessibility consent.
+
+### Migrating an existing installation
+
+Quit Snow Shot and move `/Applications/Snow Shot.app` (or the legacy
+`/Applications/snow_shot.app`) to a backup folder outside Applications before
+running `brew install`. Keep the installer state directory and original Keychain
+identity. Do not use `--force` to overwrite an existing app. Confirm that the new
+copy launches and can capture before deleting the backup. If installation fails,
+restore the backup to its original location. Use Homebrew for subsequent upgrades.
+
+A custom destination is supported through Homebrew's standard option:
+
+```sh
+mkdir -p "$HOME/Applications"
+brew install --cask --appdir="$HOME/Applications" mg-chao/tap/snow-shot
+```
+
+If signing fails, follow the identity recovery instructions below; do not delete
+state to bypass a missing identity. Homebrew handles application rollback during
+an upgrade. Its restored staged backup is signature-verified without requiring
+the signing key again. Inspect its reported recovery result before retrying. Retain the
+previous app backup and original identity until the installation is working.
+
+### Installer staging interface
+
+`install-snow-shot-macos.sh --dmg PATH --prepare-app /absolute/New.app` validates
+and signs a local DMG into a fresh `.app` directory. The adjacent `PATH.sha256`
+is mandatory. The destination's parent must already exist, and an existing output
+or symlink is rejected. This mode saves the validated signing requirement but
+does not close, replace, or launch any installed application. On failure it removes
+only its own incomplete output. The standalone installer still installs normally
+when `--prepare-app` is absent.
+
+Focused checks:
+
+```sh
+python3 scripts/test-snow-shot-homebrew.py
+python3 scripts/test-macos-installer.py
+bash -n scripts/install-snow-shot-macos.sh
+```
+
+Native release qualification uses a disposable macOS desktop account with
+Homebrew: install, launch, upgrade between two stable releases, uninstall, and
+repeat with `--appdir`. Check that the signing identity stays the same, the OCR
+helper and manifest bytes remain unchanged, and uninstall preserves user data.
+In that disposable account, test an inaccessible signing identity and verify
+that Homebrew restores the previous app after the failed upgrade. Restore the
+identity and retry. This qualification is separate from the mocked regression
+checks and requires real release assets and interactive Keychain/privacy consent.
+
 ## Install a packaged release (no build tools required)
 
 The standalone installer supports macOS 15+, Apple Silicon (including a terminal
-running under Rosetta), and Intel. It uses only macOS system tools. After this
-script and the release assets are published, download it and run it as your normal
-desktop user:
+running under Rosetta), and Intel. It uses only macOS system tools. After the
+release assets are published, choose a Snow Shot release tag and run its installer
+asset as your normal desktop user:
 
 ```sh
 curl --fail --location --proto '=https' --proto-redir '=https' \
   --output install-snow-shot-macos.sh \
-  https://raw.githubusercontent.com/mg-chao/snow-apps/main/scripts/install-snow-shot-macos.sh
+  "https://github.com/mg-chao/snow-apps/releases/download/v<version>_snow-shot/install-snow-shot-macos.sh"
 bash install-snow-shot-macos.sh --lang en
 ```
 
@@ -33,7 +176,7 @@ Language is detected automatically without `--lang`. Supported overrides are
 `--dmg "/path/to/package.dmg"` to use a local DMG with a required adjacent
 `package.dmg.sha256`. Use `--help` for the complete interface. System diagnostics
 and macOS authentication dialogs use the system's own language. Missing uploads,
-invalid packages, and GitHub rate limits produce a nonzero exit without replacing
+invalid packages, and release API limits produce a nonzero exit without replacing
 the installed application.
 
 ### 中文安装说明
@@ -45,7 +188,7 @@ the installed application.
 bash install-snow-shot-macos.sh --lang zh-CN
 ```
 
-脚本会自动识别芯片架构，优先从官网下载安装包，失败时尝试 GitHub Releases，
+脚本会自动识别芯片架构，并行检查 GitHub 和 Gitee Releases，优先使用先完成验证的渠道，
 验证后安装到 `/Applications/Snow Shot.app`（已有旧路径安装会迁移到新名称）。仅在替换应用需要管理员权限时请求密码，
 无需在命令前添加 `sudo`。首次创建签名身份时，系统可能要求确认钥匙串访问或代码签名信任。
 首次安装或从旧签名迁移后，仍需按系统提示授予屏幕录制和辅助功能权限。
@@ -65,7 +208,7 @@ bash install-snow-shot-macos.sh --lang zh-TW
 ```
 
 不需要 Homebrew、Python、Xcode 或 Apple 開發者會員。指令碼會自動辨識晶片架構，
-優先從官網下載，失敗時改用 GitHub Releases，驗證後安裝到
+並行檢查 GitHub 與 Gitee Releases，優先使用先完成驗證的管道，驗證後安裝到
 `/Applications/Snow Shot.app`（既有舊路徑安裝會遷移至新名稱）。不必加上 `sudo`；需要管理員權限時才會要求密碼。
 首次建立簽署身分時，系統可能要求確認鑰匙圈存取或程式碼簽署信任。首次安裝或從舊簽署遷移後，
 請依系統提示授予螢幕錄製和輔助使用權限。之後請繼續使用此指令碼更新，以保留本機簽署身分；
@@ -76,23 +219,24 @@ bash install-snow-shot-macos.sh --lang zh-TW
 
 ### Installer publishing contract
 
-Publish the latest stable DMG and its SHA-256 sidecar at each applicable pair of
-URLs. These are macOS endpoints; the Windows portable ZIP is not used.
+The local publisher includes `install-snow-shot-macos.sh`, a versioned DMG,
+and its matching `.sha256` asset in the GitHub release when macOS packaging
+is configured. The Gitee release workflow mirrors these exact bytes after
+GitHub publication.
 
-| Architecture | Primary DMG URL | GitHub release asset |
-| --- | --- | --- |
-| Apple Silicon | `https://snowshot.top/setup/snow-shot_macos-arm64.dmg` | `snow-shot-<version>-macos-arm64.dmg` |
-| Intel | `https://snowshot.top/setup/snow-shot_macos-x64.dmg` | `snow-shot-<version>-macos-x86_64.dmg` |
+| Architecture | Release asset |
+| --- | --- |
+| Apple Silicon | `snow-shot-<version>-macos-arm64.dmg` |
+| Intel | `snow-shot-<version>-macos-x86_64.dmg` |
 
-Append `.sha256` to each URL or asset name for its checksum. Each sidecar must
-contain exactly one nonempty line beginning with the 64-character SHA-256 digest;
-CPack's checksum format is supported even when the primary mirror renames the
-DMG. Publish matching DMG/checksum pairs together. The installer treats the primary
-endpoint as authoritative for the latest stable version; it does not compare its
-version with GitHub. GitHub fallback uses `/repos/mg-chao/snow-apps/releases/latest`
-and requires exactly one matching architecture DMG and checksum asset. Pre-release
-and draft assets are not selected. Checksums detect corruption; they are downloaded
-over HTTPS from the same release source, not a separate publisher-signature system.
+Append `.sha256` for each checksum asset. A sidecar has exactly one nonempty
+line beginning with the 64-character SHA-256 digest. The standalone installer
+races the GitHub and Gitee release lists, includes published previews, and
+ignores drafts. It selects the newest valid SemVer release within each channel.
+A channel is ready only when it has exact architecture DMG and sidecar asset
+names and release download URLs. The first ready channel provides the package;
+if download or validation fails, the installer tries the same version on the
+other channel. The checksum and DMG come from one channel over HTTPS.
 
 The DMG contains `WingShot.app` at its root (the installer also accepts legacy
 `snow_shot.app` packages), with bundle ID
@@ -148,8 +292,8 @@ If the original key cannot be recovered, explicitly move the state directory
 aside before reinstalling. This creates a new identity and requires granting
 permissions again. Users sharing a Mac should use the same installing account
 for updates to the shared `/Applications` copy. The application updater and
-Finder drag-and-drop do not reuse this installer's identity; use the script for
-subsequent updates. Local signing does not provide Apple notarization or silently
+Finder drag-and-drop do not reuse this installer's identity; use the script or
+Homebrew for subsequent updates. Local signing does not provide Apple notarization or silently
 grant privacy permissions. Only the validated staged copy is eligible for removal
 of its quarantine attribute; Gatekeeper and TCC remain enabled.
 
@@ -240,6 +384,12 @@ reuses a matching installation; pass `--force` only when intentionally replacing
 that prefix. Release and fast entry points reject a shared, unstamped, wrong-arch,
 or wrong-version Qt kit.
 
+The feature-policy fingerprint and installed Qt target exports are also checked
+before reusing a production kit. Time-zone handling remains enabled; Cocoa
+continues to provide native time-zone names, and Qt's optional CLDR name tables
+remain disabled on Apple platforms. Use a distinct install prefix to preserve
+an older kit when refreshing the audited schema.
+
 ## Presets and targeted checks
 
 Names follow `snow-shot-macos-{arm64|x64}-{debug|performance|release|fast}`.
@@ -272,7 +422,8 @@ Only run tests covering your change. Test presets exclude Windows-only,
 interactive, end-to-end and benchmark labels. Build a benchmark explicitly with
 `--target` using the performance preset. Running an Intel executable on Apple
 Silicon requires Rosetta. `build.sh` defaults to the application target; use
-`--target snow-all` only when all enabled targets are needed.
+`--target snow-all` only when all enabled targets are needed. On Apple Silicon,
+the default application build includes both Snow Shot editions.
 
 For direct CMake use, put the host tools on PATH and supply `-DQt6_DIR=...`:
 `cmake --preset snow-shot-macos-arm64-debug`, then
@@ -290,13 +441,14 @@ the CPU OCR helper. Other changed Rust crates should be linted individually.
 scripts/package-snow-shot.sh snow-shot-macos-arm64-release
 ```
 
-The release script builds and produces a DMG plus SHA-256 checksum under the
+The release script builds and produces edition DMGs plus SHA-256 checksums under the
 preset's build directory. Pass `--parallel N` to control the build or
 `--skip-build` to package an already validated release cache. CPack installs only
-the Snow Shot component and verifies the bundle signature. Static packages import
+the corresponding Snow Shot component and verifies the bundle signature. Static packages import
 the Cocoa, macOS style, Secure Transport, SVG, and offscreen Qt plugins at link
 time and reject every non-system Mach-O dependency. The bundle includes the OCR
-helper and updater, QR models, shutter audio, and project license notices. Executable-relative
+helper, shutter audio, and project license notices; the full edition also includes
+QR models. Executable-relative
 asset lookup paths remain under `Contents/MacOS`; deployment moves data into
 `Contents/Resources` and creates relative `assets`/`audios` directory links so
 code signing seals them as resources. Static Qt and vcpkg source-license notices
@@ -350,8 +502,9 @@ avoid that identity change. Switching from ad-hoc to certificate signing require
 granting permission to the new identity once; later rebuilds retain that grant.
 
 Apple Silicon OCR uses native CPU inference with all seven existing V4/V5/V6
-models. The ARM64 app bundles its worker, ONNX Runtime, and Small V6 model;
-other models download on demand into application storage. No OCR runtime code
+models. Both ARM64 editions bundle their worker and ONNX Runtime. Full also
+bundles Small V6; Mini bundles no model files. Missing selected models download
+on demand into application storage. No OCR runtime code
 is downloaded on macOS. Intel OCR qualification is outside this delivery.
 The Windows updater/installer and DirectML remain Windows-only.
 
@@ -380,7 +533,7 @@ remain available for media harness development.
 
 ## Apple Silicon OCR validation
 
-The runtime uses protocol 3. Its generated schema-3 manifest records
+The runtime uses protocol 4. Its generated schema-3 manifest records
 `macos-arm64`, `delivery: bundled`, static linkage, the executable name, and the
 size/SHA-256 of the worker. ONNX Runtime is linked into the worker in release
 packages; shared development builds still stage `libonnxruntime.dylib`. The
@@ -394,7 +547,9 @@ the ARM64 app; verified downloaded models remain reusable.
 
 Build staging checks content on every relevant target build, including a worker-only
 change followed by a host build. Model downloads are verified before promotion and
-cached under `artifacts/`. Packaging requires a complete Small V6 payload. Deployment
+cached under `artifacts/`. Full packaging requires a complete Small V6 payload;
+Mini staging removes previously bundled models and packaging rejects model files
+or directories. Deployment
 resolves the pinned native dependency closure, rewrites relocatable Mach-O loads,
 and signs nested code, generates hashes of the finalized
 runtime, then seals the enclosing app. CPack signs and verifies the DMG before
@@ -435,22 +590,36 @@ the same session, and the worker's resident bytes sampled after each result (not
 peak RSS). Cold means a new worker/model session, without flushing the operating
 system's file cache. They are hardware-dependent observations, not a latency guarantee.
 
-After packaging, relocate the app to a path containing spaces or Unicode and test
-the exact bundle without modifying its signature:
+For a shared performance deployment, relocate the app to a path containing
+spaces or Unicode and test the exact bundle with the matching shared-runtime
+recognition helper, without modifying its signature:
 
 ```sh
 "$OCR_TEST" --bundle="/path/to/Relocated Snow Shot.app" --offline
 "$OCR_TEST" --bundle="/path/to/Relocated Snow Shot.app" --model=extra_small --cache="/tmp/snow-ocr-cache"
 "$OCR_TEST" --bundle="/path/to/Relocated Snow Shot.app" --model=extra_small --cache="/tmp/snow-ocr-cache" --offline
-python3 scripts/snow-shot-macos-ocr.py verify \
-  --runtime-dir="/path/to/Relocated Snow Shot.app/Contents/MacOS" \
-  --app="/path/to/Relocated Snow Shot.app"
 ```
 
-The first run uses a fresh temporary cache and an unreachable download proxy. The
-second acquires another model; the third proves cache reuse without network access.
+For a static Release package, verify its finalized runtime and startup separately:
+
+```sh
+python3 scripts/snow-shot-macos-ocr.py verify \
+  --static-runtime \
+  --runtime-dir="/path/to/Relocated Snow Shot.app/Contents/MacOS" \
+  --app="/path/to/Relocated Snow Shot.app"
+"/path/to/Relocated Snow Shot.app/Contents/MacOS/snow_shot" --startup-probe
+```
+
+The recognition helper's first run uses a fresh temporary cache and an unreachable
+download proxy. The second acquires another model; the third proves cache reuse
+without network access.
 Run with `DYLD_LIBRARY_PATH`, `DYLD_FALLBACK_LIBRARY_PATH`, and `ORT_DYLIB_PATH` unset.
 Also launch the packaged app through Finder and check its screenshot-to-OCR flow.
+
+For Mini, add `--runtime-only` to the Python verification command and use
+`Snow Shot Mini.app` / `snow_shot_mini` for the app and executable paths. A fresh Mini
+cache needs the selected model download before offline recognition can work;
+repeat recognition with the same cache to verify offline reuse.
 
 ## Screenshots
 
@@ -459,6 +628,10 @@ for supported workflows, point-based editing, mixed-display export sizing,
 permission recovery, targeted checks and native hardware acceptance steps.
 Screenshot capture uses ScreenCaptureKit; Windows-only backend preferences remain
 stored but are not used on macOS.
+
+See [macOS cursor coordination](snow_shot/tests/macos_cursors.md) for the shared
+screenshot, recording and pinned-window cursor contract and the native checks
+required when upgrading Qt or macOS.
 
 ## Pin to Screen
 

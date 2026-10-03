@@ -2,6 +2,50 @@ use super::*;
 use snow_draw_engine_core::arrow::{BindMode, EngineContext};
 
 impl Editor {
+    pub(crate) fn snap_point_to_external_guides(
+        &self,
+        source: Point<f64>,
+        mut snapped: Point<f64>,
+        mut guides: Vec<SnapGuide>,
+    ) -> (Point<f64>, Vec<SnapGuide>) {
+        for (axis, lines, coordinate) in [
+            (
+                SnapGuideAxis::Vertical,
+                &self.view.snap_guide_targets.vertical_xs[..],
+                source.x,
+            ),
+            (
+                SnapGuideAxis::Horizontal,
+                &self.view.snap_guide_targets.horizontal_ys[..],
+                source.y,
+            ),
+        ] {
+            let nearest = lines
+                .iter()
+                .flatten()
+                .map(|line| *line - coordinate)
+                .filter(|offset| offset.abs() <= self.zoom_adjusted_snap_distance())
+                .min_by(|left, right| left.abs().total_cmp(&right.abs()));
+            if let Some(offset) = nearest {
+                let object_present = guides.iter().any(|guide| guide.axis == axis);
+                let object_offset = if axis == SnapGuideAxis::Vertical {
+                    snapped.x - source.x
+                } else {
+                    snapped.y - source.y
+                };
+                if !object_present || offset.abs() <= object_offset.abs() {
+                    guides.retain(|guide| guide.axis != axis);
+                    if axis == SnapGuideAxis::Vertical {
+                        snapped.x = coordinate + offset;
+                    } else {
+                        snapped.y = coordinate + offset;
+                    }
+                }
+            }
+        }
+        (snapped, guides)
+    }
+
     pub(crate) fn bindable_elements(
         &self,
         document: &DocumentModel,
@@ -120,12 +164,69 @@ impl Editor {
             .collect()
     }
 
-    pub(crate) fn effective_snapping_mode(&self, modifiers: Modifiers) -> SnappingMode {
+    fn element_snapping_mode(&self, modifiers: Modifiers) -> SnappingMode {
         resolve_effective_snapping_mode(
             self.config.grid.enabled,
             self.config.snap.enabled,
             modifiers.ctrl,
         )
+    }
+
+    pub(crate) fn effective_snapping_mode(&self, modifiers: Modifiers) -> SnappingMode {
+        let mode = self.element_snapping_mode(modifiers);
+        let guides = self.view.snap_guide_targets;
+        let has_guide_targets = guides
+            .vertical_xs
+            .iter()
+            .chain(guides.horizontal_ys.iter())
+            .any(Option::is_some);
+        // Visible guides are additional targets, not a persistent element-snap
+        // setting. They must not reverse Ctrl's temporary element-snap toggle.
+        if mode == SnappingMode::None && !modifiers.ctrl && has_guide_targets {
+            SnappingMode::Object
+        } else {
+            mode
+        }
+    }
+
+    pub(crate) fn snap_creation_point(
+        &self,
+        document: &DocumentModel,
+        current: Point<f64>,
+        modifiers: Modifiers,
+    ) -> (Point<f64>, Vec<SnapGuide>) {
+        match self.effective_snapping_mode(modifiers) {
+            SnappingMode::Grid => (
+                GRID_SNAP_SERVICE.snap_point(current, self.config.grid.size),
+                Vec::new(),
+            ),
+            SnappingMode::Object => {
+                let (point, guides) = if self.element_snapping_mode(modifiers)
+                    == SnappingMode::Object
+                    && self.config.snap.enable_point_snaps
+                {
+                    let snap = document.snap_point(&snow_draw_engine_core::SnapQuery {
+                        point: current,
+                        threshold: self.zoom_adjusted_snap_distance(),
+                        include_grid: false,
+                        grid_size: self.config.grid.size,
+                    });
+                    (snap.point, snap.guides)
+                } else {
+                    (current, Vec::new())
+                };
+                let (point, guides) = self.snap_point_to_external_guides(current, point, guides);
+                (
+                    point,
+                    if self.config.snap.show_guides {
+                        guides
+                    } else {
+                        Vec::new()
+                    },
+                )
+            }
+            SnappingMode::None => (current, Vec::new()),
+        }
     }
 
     pub(crate) fn snap_creation_start_position(
@@ -183,7 +284,7 @@ impl Editor {
             document,
             ObjectSnapActor::Creation(self.state.active_tool),
             &[],
-            snapping_mode,
+            modifiers,
         ) else {
             return (preview, Vec::new());
         };
@@ -205,7 +306,7 @@ impl Editor {
         let mut preview = Some(rect);
         let move_min_x = constrained_current.x < start.x;
         let move_min_y = constrained_current.y < start.y;
-        let mut snap_result = OBJECT_SNAP_SERVICE.snap_rect(ObjectSnapRectRequest {
+        let mut snap_result = plan.snap_rect(ObjectSnapRectRequest {
             target_rect: rectangle_to_draw_rect(&rect),
             reference_rects: &plan.references,
             snap_distance: plan.snap_distance,
@@ -288,7 +389,7 @@ impl Editor {
                     } else {
                         Vec::new()
                     };
-                    let verified_snap = OBJECT_SNAP_SERVICE.snap_rect(ObjectSnapRectRequest {
+                    let verified_snap = plan.snap_rect(ObjectSnapRectRequest {
                         target_rect: rectangle_to_draw_rect(&next),
                         reference_rects: &plan.references,
                         snap_distance: plan.snap_distance,
@@ -351,17 +452,27 @@ impl Editor {
                     document,
                     ObjectSnapActor::selection(document, original_elements, original_arrows),
                     &excluded,
-                    snapping_mode,
+                    modifiers,
                 ) else {
                     return ObjectSnapResult::new(base_dx, base_dy, Vec::new());
                 };
-                let snap_result = OBJECT_SNAP_SERVICE.snap_move(
+                let snap_result = plan.snap_rect(ObjectSnapRectRequest {
                     target_rect,
-                    &plan.references,
-                    plan.snap_distance,
-                    plan.enable_point_snaps,
-                    plan.enable_gap_snaps,
-                );
+                    reference_rects: &plan.references,
+                    snap_distance: plan.snap_distance,
+                    target_anchors_x: &[
+                        SnapAxisAnchor::Start,
+                        SnapAxisAnchor::Center,
+                        SnapAxisAnchor::End,
+                    ],
+                    target_anchors_y: &[
+                        SnapAxisAnchor::Start,
+                        SnapAxisAnchor::Center,
+                        SnapAxisAnchor::End,
+                    ],
+                    enable_point_snaps: plan.enable_point_snaps,
+                    enable_gap_snaps: plan.enable_gap_snaps,
+                });
 
                 ObjectSnapResult::new(
                     base_dx + snap_result.dx,
@@ -386,20 +497,36 @@ impl Editor {
         document: &DocumentModel,
         actor: ObjectSnapActor<'_>,
         excluded_ids: &[ElementId],
-        snapping_mode: SnappingMode,
+        modifiers: Modifiers,
     ) -> Option<ObjectSnapPlan> {
-        if snapping_mode != SnappingMode::Object || !actor.participates() {
+        if self.effective_snapping_mode(modifiers) != SnappingMode::Object || !actor.participates()
+        {
             return None;
         }
-        if !self.config.snap.enable_point_snaps && !self.config.snap.enable_gap_snaps {
+        let element_snapping = self.element_snapping_mode(modifiers) == SnappingMode::Object;
+        let targets = self.view.snap_guide_targets;
+        let has_targets = targets
+            .vertical_xs
+            .iter()
+            .chain(targets.horizontal_ys.iter())
+            .any(Option::is_some);
+        if !has_targets
+            && (!element_snapping
+                || (!self.config.snap.enable_point_snaps && !self.config.snap.enable_gap_snaps))
+        {
             return None;
         }
         Some(ObjectSnapPlan {
-            references: Self::visible_reference_rects(document, excluded_ids),
+            references: if element_snapping {
+                Self::visible_reference_rects(document, excluded_ids)
+            } else {
+                Vec::new()
+            },
             snap_distance: self.zoom_adjusted_snap_distance(),
-            enable_point_snaps: self.config.snap.enable_point_snaps,
-            enable_gap_snaps: self.config.snap.enable_gap_snaps,
+            enable_point_snaps: element_snapping && self.config.snap.enable_point_snaps,
+            enable_gap_snaps: element_snapping && self.config.snap.enable_gap_snaps,
             show_guides: self.config.snap.show_guides,
+            guide_targets: targets,
         })
     }
 
@@ -564,9 +691,71 @@ pub(crate) struct ObjectSnapPlan {
     pub(crate) enable_point_snaps: bool,
     enable_gap_snaps: bool,
     show_guides: bool,
+    guide_targets: SnapGuideTargets,
 }
 
 impl ObjectSnapPlan {
+    pub(crate) fn snap_rect(&self, request: ObjectSnapRectRequest<'_>) -> ObjectSnapResult {
+        let mut result = OBJECT_SNAP_SERVICE.snap_rect(request);
+        for (axis, lines, anchors) in [
+            (
+                SnapGuideAxis::Vertical,
+                &self.guide_targets.vertical_xs[..],
+                request.target_anchors_x,
+            ),
+            (
+                SnapGuideAxis::Horizontal,
+                &self.guide_targets.horizontal_ys[..],
+                request.target_anchors_y,
+            ),
+        ] {
+            let coordinates = match axis {
+                SnapGuideAxis::Vertical => [
+                    request.target_rect.min_x,
+                    request.target_rect.center_x(),
+                    request.target_rect.max_x,
+                ],
+                SnapGuideAxis::Horizontal => [
+                    request.target_rect.min_y,
+                    request.target_rect.center_y(),
+                    request.target_rect.max_y,
+                ],
+            };
+            let nearest = lines
+                .iter()
+                .flatten()
+                .flat_map(|line| {
+                    anchors.iter().map(move |anchor| {
+                        let index = match anchor {
+                            SnapAxisAnchor::Start => 0,
+                            SnapAxisAnchor::Center => 1,
+                            SnapAxisAnchor::End => 2,
+                        };
+                        *line - coordinates[index]
+                    })
+                })
+                .filter(|offset| offset.abs() <= self.snap_distance)
+                .min_by(|left, right| left.abs().total_cmp(&right.abs()));
+            if let Some(offset) = nearest {
+                let object_present = result.guides.iter().any(|guide| guide.axis == axis);
+                let object_offset = if axis == SnapGuideAxis::Vertical {
+                    result.dx
+                } else {
+                    result.dy
+                };
+                if !object_present || offset.abs() <= object_offset.abs() {
+                    result.guides.retain(|guide| guide.axis != axis);
+                    if axis == SnapGuideAxis::Vertical {
+                        result.dx = offset;
+                    } else {
+                        result.dy = offset;
+                    }
+                }
+            }
+        }
+        result
+    }
+
     pub(crate) fn guides(&self, guides: Vec<SnapGuide>) -> Vec<SnapGuide> {
         if self.show_guides { guides } else { Vec::new() }
     }
@@ -638,4 +827,298 @@ fn preview_rectangle(
         corner_radii: normalize_corner_radii(width, height, style.corner_radii),
         opacity: 1.0,
     })
+}
+
+#[cfg(test)]
+mod external_guide_tests {
+    use super::*;
+    use snow_draw_engine_document::ElementMeta;
+
+    fn element_snap_fixture(with_guides: bool) -> (Editor, DocumentModel) {
+        let mut editor = Editor::new(EngineConfig::default()).unwrap();
+        if with_guides {
+            // Keep guides away from the element so they cannot mask its snap.
+            editor.view.snap_guide_targets.vertical_xs[0] = Some(400.0);
+            editor.view.snap_guide_targets.horizontal_ys[0] = Some(400.0);
+        }
+        let mut document = DocumentModel::new();
+        let rectangle = preview_rectangle(
+            Point::new(-100.0, -100.0),
+            Point::new(100.0, 100.0),
+            editor.state.default_rectangle_shape_style,
+            false,
+            false,
+        )
+        .unwrap();
+        let mut transaction = Transaction::new("insert snap reference");
+        transaction.insert_rectangle(
+            document.peek_next_element_id(),
+            ElementMeta::default(),
+            rectangle,
+        );
+        document.apply_transaction(transaction).unwrap();
+        (editor, document)
+    }
+
+    #[test]
+    fn ctrl_temporarily_enables_element_snapping_with_or_without_visible_guides() {
+        for with_guides in [false, true] {
+            let (editor, document) = element_snap_fixture(with_guides);
+            for ctrl in [false, true] {
+                let (preview, guides) = editor.preview_rectangle_with_snapping(
+                    &document,
+                    Point::new(250.0, -180.0),
+                    Point::new(103.0, -103.0),
+                    Modifiers {
+                        ctrl,
+                        ..Default::default()
+                    },
+                );
+                let bounds = rectangle_to_draw_rect(&preview.unwrap());
+                assert_eq!(bounds.min_x, if ctrl { 100.0 } else { 103.0 });
+                assert_eq!(bounds.max_y, if ctrl { -100.0 } else { -103.0 });
+                assert_eq!(!guides.is_empty(), ctrl);
+                assert!(!editor.snap_config().enabled);
+            }
+        }
+    }
+
+    #[test]
+    fn ctrl_temporarily_enables_arrow_and_serial_number_point_snapping() {
+        for with_guides in [false, true] {
+            let (editor, document) = element_snap_fixture(with_guides);
+            for ctrl in [false, true] {
+                let source = Point::new(-97.0, -103.0);
+                let modifiers = Modifiers {
+                    ctrl,
+                    ..Default::default()
+                };
+                let expected = if ctrl {
+                    // Point snapping uses painted bounds, including the 2 px stroke.
+                    Point::new(-101.0, -101.0)
+                } else {
+                    source
+                };
+                for (point, guides) in [
+                    editor.snap_arrow_creation_point(&document, source, modifiers),
+                    editor.snap_serial_number_creation_center(&document, source, modifiers),
+                ] {
+                    assert_eq!(point, expected);
+                    assert_eq!(!guides.is_empty(), ctrl);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn ctrl_toggles_element_snapping_for_move_and_resize_without_changing_config() {
+        for with_guides in [false, true] {
+            let (mut editor, mut document) = element_snap_fixture(with_guides);
+            let rectangle = preview_rectangle(
+                Point::new(200.0, 200.0),
+                Point::new(300.0, 300.0),
+                editor.state.default_rectangle_shape_style,
+                false,
+                false,
+            )
+            .unwrap();
+            let id = document.peek_next_element_id();
+            let mut transaction = Transaction::new("insert selected rectangle");
+            transaction.insert_rectangle(id, ElementMeta::default(), rectangle);
+            document.apply_transaction(transaction).unwrap();
+            let elements = [SelectionRectState {
+                id,
+                rect: rectangle,
+            }];
+            let bounds = SelectionBounds {
+                center: rectangle.center,
+                width: rectangle.width,
+                height: rectangle.height,
+                rotation: 0.0,
+            };
+            for persistent in [false, true] {
+                editor.config.snap.enabled = persistent;
+                for ctrl in [false, true] {
+                    let modifiers = Modifiers {
+                        ctrl,
+                        ..Default::default()
+                    };
+                    let should_snap = persistent != ctrl;
+                    let moved = editor.resolve_move_snap(MoveSnapRequest {
+                        document: &document,
+                        original_bounds: &bounds,
+                        original_elements: &elements,
+                        original_arrows: &[],
+                        base_dx: -97.0,
+                        base_dy: -97.0,
+                        modifiers,
+                    });
+                    let expected_delta = if should_snap { -100.0 } else { -97.0 };
+                    assert_eq!((moved.dx, moved.dy), (expected_delta, expected_delta));
+                    assert_eq!(!moved.guides.is_empty(), should_snap);
+
+                    let resized = editor.resize_selection_preview(
+                        &document,
+                        ResizeSelectionContext {
+                            original_elements: &elements,
+                            original_arrows: &[],
+                            original_bounds: &bounds,
+                            handle: ResizeHandle::TopLeft,
+                            handle_offset_canvas: Point::new(0.0, 0.0),
+                            frame_padding: 0.0,
+                            corner_handle_outset: 0.0,
+                        },
+                        Point::new(103.0, 103.0),
+                        modifiers,
+                        None,
+                    );
+                    let rect = rectangle_to_draw_rect(&resized.elements[0].rect);
+                    let expected_min = if should_snap { 100.0 } else { 103.0 };
+                    assert!((rect.min_x - expected_min).abs() < 1e-9);
+                    assert!((rect.min_y - expected_min).abs() < 1e-9);
+                    assert_eq!(!resized.snap_guides.is_empty(), should_snap);
+                    assert_eq!(editor.snap_config().enabled, persistent);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn temporary_element_snapping_respects_disabled_snap_kinds() {
+        let (mut editor, document) = element_snap_fixture(false);
+        editor.config.snap.enable_point_snaps = false;
+        editor.config.snap.enable_gap_snaps = false;
+        let modifiers = Modifiers {
+            ctrl: true,
+            ..Default::default()
+        };
+        let (preview, guides) = editor.preview_rectangle_with_snapping(
+            &document,
+            Point::new(250.0, -180.0),
+            Point::new(103.0, -103.0),
+            modifiers,
+        );
+        assert_eq!(rectangle_to_draw_rect(&preview.unwrap()).min_x, 103.0);
+        assert!(guides.is_empty());
+        let source = Point::new(-97.0, -103.0);
+        assert_eq!(
+            editor.snap_creation_point(&document, source, modifiers),
+            (source, Vec::new())
+        );
+    }
+
+    fn plan(references: Vec<DrawRect>, element_snapping: bool) -> ObjectSnapPlan {
+        ObjectSnapPlan {
+            references,
+            snap_distance: 8.0,
+            enable_point_snaps: element_snapping,
+            enable_gap_snaps: false,
+            show_guides: true,
+            guide_targets: SnapGuideTargets {
+                vertical_xs: [Some(100.0), None],
+                horizontal_ys: [Some(80.0), None],
+            },
+        }
+    }
+
+    fn snap(plan: &ObjectSnapPlan, rect: DrawRect) -> ObjectSnapResult {
+        plan.snap_rect(ObjectSnapRectRequest {
+            target_rect: rect,
+            reference_rects: &plan.references,
+            snap_distance: plan.snap_distance,
+            target_anchors_x: &[SnapAxisAnchor::Center],
+            target_anchors_y: &[SnapAxisAnchor::Center],
+            enable_point_snaps: plan.enable_point_snaps,
+            enable_gap_snaps: false,
+        })
+    }
+
+    #[test]
+    fn stationary_guides_snap_without_document_elements() {
+        let snap = snap(
+            &plan(Vec::new(), false),
+            DrawRect::new(91.0, 72.0, 107.0, 88.0),
+        );
+        assert_eq!((snap.dx, snap.dy), (1.0, 0.0));
+    }
+
+    #[test]
+    fn closer_guide_beats_element_candidate() {
+        let references = vec![DrawRect::new(93.0, 72.0, 109.0, 88.0)];
+        let snap = snap(
+            &plan(references, true),
+            DrawRect::new(91.0, 72.0, 107.0, 88.0),
+        );
+        assert_eq!(snap.dx, 1.0);
+    }
+
+    #[test]
+    fn guide_wins_an_exact_tie_with_an_element_candidate() {
+        let references = vec![DrawRect::new(92.0, 72.0, 108.0, 88.0)];
+        let snapped = snap(
+            &plan(references, true),
+            DrawRect::new(91.0, 72.0, 107.0, 88.0),
+        );
+        assert_eq!(snapped.dx, 1.0);
+        assert!(
+            snapped
+                .guides
+                .iter()
+                .all(|guide| guide.axis != SnapGuideAxis::Vertical),
+            "the visible guide should replace the element snap marker on a tie"
+        );
+    }
+
+    #[test]
+    fn resize_snap_uses_only_the_dragged_edge_anchor() {
+        let plan = plan(Vec::new(), false);
+        let target_rect = DrawRect::new(20.0, 20.0, 97.0, 60.0);
+        let snapped = plan.snap_rect(ObjectSnapRectRequest {
+            target_rect,
+            reference_rects: &[],
+            snap_distance: plan.snap_distance,
+            target_anchors_x: &[SnapAxisAnchor::End],
+            target_anchors_y: &[],
+            enable_point_snaps: false,
+            enable_gap_snaps: false,
+        });
+        assert_eq!((snapped.dx, snapped.dy), (3.0, 0.0));
+    }
+
+    #[test]
+    fn visible_guides_do_not_change_the_persistent_snapping_toggle() {
+        let mut editor = Editor::new(EngineConfig::default()).unwrap();
+        editor.view.snap_guide_targets.vertical_xs[0] = Some(100.0);
+        assert_eq!(
+            editor.effective_snapping_mode(Modifiers::default()),
+            SnappingMode::Object
+        );
+        assert_eq!(
+            editor.effective_snapping_mode(Modifiers {
+                ctrl: true,
+                ..Default::default()
+            }),
+            SnappingMode::Object
+        );
+        editor.config.snap.enabled = true;
+        assert_eq!(
+            editor.effective_snapping_mode(Modifiers {
+                ctrl: true,
+                ..Default::default()
+            }),
+            SnappingMode::None
+        );
+        editor.config.grid.enabled = true;
+        assert_eq!(
+            editor.effective_snapping_mode(Modifiers::default()),
+            SnappingMode::Grid
+        );
+        assert_eq!(
+            editor.effective_snapping_mode(Modifiers {
+                ctrl: true,
+                ..Default::default()
+            }),
+            SnappingMode::None
+        );
+    }
 }

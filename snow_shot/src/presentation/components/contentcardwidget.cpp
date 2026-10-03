@@ -1,7 +1,11 @@
 #include "snow_shot/presentation/components/contentcardwidget.h"
 
+#include "snow_shot/presentation/editionfeatures.h"
+
 #include "snow_shot/presentation/components/aboutpagewidget.h"
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
 #include "snow_shot/presentation/components/translationpagewidget.h"
+#endif
 #include "snow_shot/presentation/components/settingspagewidget.h"
 #include "snow_shot/presentation/components/screenshothistorypagewidget.h"
 #include "snow_shot/presentation/components/pinnedwindowmanagementpagewidget.h"
@@ -18,13 +22,17 @@
 #include <QStackedWidget>
 #include <QVBoxLayout>
 
+#include <algorithm>
+#include <cmath>
+
 ContentCardWidget::ContentCardWidget(
     const snow_shot::presentation::settings::SettingsRegistry& registry,
     snow_shot::presentation::settings::SettingsRuntimeSession& runtimeSession, QWidget* parent,
     SnowShotApiClient* translationClient)
     : QFrame(parent), m_registry(registry), m_runtimeSession(runtimeSession),
       m_translationClient(translationClient),
-      m_colorScheme(snow_shot::presentation::styles::ThemeManager::instance().themeColorScheme()) {
+      m_colorScheme(snow_shot::presentation::styles::ThemeManager::instance().themeColorScheme()),
+      m_backgroundBrush(m_colorScheme.map.colorBgContainer) {
     setFrameShape(QFrame::NoFrame);
     setLineWidth(0);
     setAutoFillBackground(false);
@@ -40,6 +48,7 @@ ContentCardWidget::ContentCardWidget(
 
     cardLayout->addWidget(m_stack, 1);
     navigateTo(m_registry.defaultLocation());
+#if SNOW_SHOT_ENABLE_EXTENDED_FEATURES
     auto& applicationStorage = snow_shot::storage::ApplicationStorage::instance();
     if (!applicationStorage.isInitialized()) {
         static_cast<void>(applicationStorage.initialize());
@@ -55,6 +64,7 @@ ContentCardWidget::ContentCardWidget(
                 }
             });
 
+#endif
     const auto& themeManager = snow_shot::presentation::styles::ThemeManager::instance();
     connect(&themeManager, &snow_shot::presentation::styles::ThemeManager::themeChanged, this,
             &ContentCardWidget::applyTheme);
@@ -62,9 +72,11 @@ ContentCardWidget::ContentCardWidget(
 }
 
 ContentCardWidget::~ContentCardWidget() {
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     if (auto* page = qobject_cast<TranslationPageWidget*>(m_activePage.data())) {
         page->deactivate();
     }
+#endif
 }
 
 QString ContentCardWidget::currentRoute() const {
@@ -100,11 +112,13 @@ void ContentCardWidget::activateSection(const QString& sectionId) {
 void ContentCardWidget::navigateTo(
     const snow_shot::presentation::settings::SettingsLocation& requested) {
     auto resolved = m_registry.catalog().resolveLocation(requested);
+#if SNOW_SHOT_ENABLE_EXTENDED_FEATURES
     if (resolved.pageId == QStringLiteral("translation") &&
         !snow_shot::storage::ExtendedFeaturesSettings().translationPageEnabled()) {
         resolved = m_registry.catalog().resolveLocation(
             {QStringLiteral("extended-features"), QStringLiteral("translation"), {}});
     }
+#endif
     const auto* pageDefinition = m_registry.catalog().page(resolved.pageId);
     if (pageDefinition == nullptr || m_stack == nullptr) {
         return;
@@ -162,10 +176,13 @@ QWidget* ContentCardWidget::createPage(
         page = new PinnedWindowManagementPageWidget(m_stack);
     } else if (definition.kind ==
                snow_shot::presentation::settings::SettingsPageKind::Translation) {
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
         auto* translationPage = new TranslationPageWidget(m_stack, m_translationClient);
         connect(translationPage, &TranslationPageWidget::closeWindowRequested, this,
                 &ContentCardWidget::closeWindowRequested);
         page = translationPage;
+#endif
+
     } else if (definition.kind == snow_shot::presentation::settings::SettingsPageKind::About) {
         page = new AboutPageWidget(m_stack);
     } else {
@@ -194,9 +211,12 @@ QWidget* ContentCardWidget::createPage(
 
 void ContentCardWidget::destroyActivePage() {
     QWidget* page = m_activePage.data();
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     if (auto* translationPage = qobject_cast<TranslationPageWidget*>(page)) {
         translationPage->deactivate();
     }
+#endif
+
     if (page == nullptr) {
         m_activePageId.clear();
         return;
@@ -232,10 +252,14 @@ void ContentCardWidget::destroyActivePage() {
 }
 
 void ContentCardWidget::showTranslation(const QString& text) {
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     setCurrentRoute(QStringLiteral("/tools/translation"));
     if (auto* page = qobject_cast<TranslationPageWidget*>(m_activePage.data())) {
         page->setSourceText(text);
     }
+#else
+    Q_UNUSED(text);
+#endif
 }
 
 void ContentCardWidget::showFunctionSettings() {
@@ -267,13 +291,17 @@ void ContentCardWidget::handleCommand(
 void ContentCardWidget::applyTheme(
     const snow_shot::presentation::styles::ThemeColorScheme& scheme) {
     m_colorScheme = scheme;
+    updateBackgroundBrush();
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     if (auto* page = qobject_cast<TranslationPageWidget*>(m_activePage.data())) {
         page->applyTheme(scheme);
     }
-    if (auto* page = dynamic_cast<SettingsPageWidget*>(m_activePage.data()); page != nullptr) {
-        page->applyTheme(scheme);
-    } else if (auto* historyPage = dynamic_cast<ScreenshotHistoryPageWidget*>(m_activePage.data());
-               historyPage != nullptr) {
+#endif
+
+    // Generated settings pages subscribe to the theme themselves, including when
+    // used outside this card. Do not deliver a second full-page theme pass.
+    if (auto* historyPage = dynamic_cast<ScreenshotHistoryPageWidget*>(m_activePage.data());
+        historyPage != nullptr) {
         historyPage->applyTheme(scheme);
     } else if (auto* pinnedPage =
                    dynamic_cast<PinnedWindowManagementPageWidget*>(m_activePage.data());
@@ -284,13 +312,15 @@ void ContentCardWidget::applyTheme(
 }
 
 void ContentCardWidget::retranslateUi() {
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     if (auto* page = qobject_cast<TranslationPageWidget*>(m_activePage.data())) {
         page->retranslateUi();
     }
-    if (auto* page = dynamic_cast<SettingsPageWidget*>(m_activePage.data()); page != nullptr) {
-        page->retranslateUi();
-    } else if (auto* historyPage = dynamic_cast<ScreenshotHistoryPageWidget*>(m_activePage.data());
-               historyPage != nullptr) {
+#endif
+
+    // SettingsPageWidget handles its own LanguageChange event.
+    if (auto* historyPage = dynamic_cast<ScreenshotHistoryPageWidget*>(m_activePage.data());
+        historyPage != nullptr) {
         historyPage->retranslateUi();
     } else if (auto* pinnedPage =
                    dynamic_cast<PinnedWindowManagementPageWidget*>(m_activePage.data());
@@ -298,6 +328,24 @@ void ContentCardWidget::retranslateUi() {
         pinnedPage->retranslateUi();
     }
     emit sectionListChanged();
+}
+
+void ContentCardWidget::setSkinMaskOpacity(qreal opacity) {
+    const qreal normalized = std::isfinite(opacity) ? std::clamp(opacity, 0.0, 1.0) : 1.0;
+    if (m_skinMaskOpacity == normalized) {
+        return;
+    }
+    m_skinMaskOpacity = normalized;
+    updateBackgroundBrush();
+    update();
+}
+
+void ContentCardWidget::updateBackgroundBrush() {
+    QColor background = m_colorScheme.map.colorBgContainer;
+    if (m_skinMaskOpacity != 1.0) {
+        background.setAlphaF(background.alphaF() * static_cast<float>(m_skinMaskOpacity));
+    }
+    m_backgroundBrush = QBrush(background);
 }
 
 void ContentCardWidget::changeEvent(QEvent* event) {
@@ -315,7 +363,7 @@ void ContentCardWidget::paintEvent(QPaintEvent* event) {
         snow_shot::presentation::styles::buildMainWindowComponentMetricToken(m_colorScheme);
     const QRectF cardRect = QRectF(rect()).adjusted(0.5, 0.5, -0.5, -0.5);
     painter.setPen(Qt::NoPen);
-    painter.setBrush(m_colorScheme.map.colorBgContainer);
+    painter.setBrush(m_backgroundBrush);
     painter.drawRoundedRect(cardRect, static_cast<qreal>(mainWindowMetric.cardRadius),
                             static_cast<qreal>(mainWindowMetric.cardRadius));
 }

@@ -1,6 +1,8 @@
 #include "snow_shot/presentation/components/pinnedwindowmanagementpagewidget.h"
 #include "snow_shot/presentation/components/thumbnailcache.h"
+#include "snow_shot/presentation/styles/thememanager.h"
 #include "snow_shot/storage/applicationstorage.h"
+#include "theme/theme_manager.h"
 #include "widgets/select.h"
 #include "widgets/date_picker.h"
 #include "widgets/button.h"
@@ -13,6 +15,7 @@
 #include <QThread>
 #include <QUuid>
 #include <QFile>
+#include <QDir>
 #include <QApplication>
 #include <QTemporaryDir>
 #include <QLabel>
@@ -23,7 +26,10 @@
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QPointer>
+#include <QPainter>
+#include <QSemaphore>
 #include <QStackedWidget>
+#include <QStringList>
 #include <algorithm>
 #include <cstdlib>
 #include <iostream>
@@ -41,24 +47,34 @@ class Fixture final : public PinnedWindowManagementDataSource {
     QVector<QString> removed;
     QVector<QSize> previewSizes;
     int fullImageRequests = 0;
+    bool previewFailure = false;
+    mutable int recordRequests = 0;
+    QHash<QString, quint64> previewRevisions;
+    QString lastFullImageId;
     QVector<storage::PinnedWindowSummary> records() const override {
+        ++recordRequests;
         return items;
     }
     QVector<storage::PinnedWindowGroup> groups() const override {
         return {{QStringLiteral("default"), QStringLiteral("Default"), true},
                 {QStringLiteral("work"), QStringLiteral("Work"), false}};
     }
-    std::optional<quint64> previewRevision(const QString&) const override {
-        return 1;
+    std::optional<quint64> previewRevision(const QString& id) const override {
+        return previewRevisions.value(id, 1);
     }
     void requestPreview(const QString& id, quint64 requestId, const QSize& targetSize) override {
         previewSizes.push_back(targetSize);
+        if (previewFailure) {
+            emit previewReady(id, requestId, {}, {});
+            return;
+        }
         QImage image(120, 60, QImage::Format_RGB32);
         image.fill(Qt::green);
         emit previewReady(id, requestId, image, image.size());
     }
     void requestFullImage(const QString& id, quint64 requestId) override {
         ++fullImageRequests;
+        lastFullImageId = id;
         QImage image(120, 60, QImage::Format_RGB32);
         image.fill(Qt::green);
         emit fullImageReady(id, requestId, image);
@@ -70,9 +86,309 @@ class Fixture final : public PinnedWindowManagementDataSource {
         removed = ids;
     }
 };
+
+class SkinBackdrop final : public QWidget {
+  public:
+    QColor color = QColor(35, 90, 145);
+
+  protected:
+    void paintEvent(QPaintEvent*) override {
+        QPainter painter(this);
+        painter.fillRect(rect(), color);
+    }
+};
+
+class StyleChangeRecorder final : public QObject {
+  public:
+    QStringList styles;
+
+  protected:
+    bool eventFilter(QObject* watched, QEvent* event) override {
+        if (event->type() == QEvent::StyleChange) {
+            styles.push_back(static_cast<QWidget*>(watched)->styleSheet());
+        }
+        return false;
+    }
+};
+
+void pinnedThemeChangesDoNotRestyleTwice(const QVector<storage::PinnedWindowSummary>& records) {
+    auto& themeManager = presentation::styles::ThemeManager::instance();
+    themeManager.setThemeAppearance(presentation::styles::ThemeAppearance::Light);
+    Fixture fixture;
+    fixture.items = records;
+    PinnedWindowManagementPageWidget page(&fixture, nullptr);
+    page.resize(980, 640);
+    page.show();
+    QCoreApplication::processEvents();
+    auto* row = page.findChild<QFrame*>(QStringLiteral("pinnedManagementRecord"));
+    require(row != nullptr, "the pinned theme regression needs a seeded row");
+    StyleChangeRecorder recorder;
+    row->installEventFilter(&recorder);
+    for (const auto appearance : {presentation::styles::ThemeAppearance::Dark,
+                                  presentation::styles::ThemeAppearance::Light}) {
+        const QString previous = row->styleSheet();
+        recorder.styles.clear();
+        themeManager.setThemeAppearance(appearance);
+        require(recorder.styles.size() == 1 && recorder.styles.first() != previous,
+                "an unskinned pinned theme change must apply each row background exactly once");
+    }
+    QWidget unrelated;
+    adqt::theme::ThemeOverride overrideValue;
+    overrideValue.backgroundOpacity = 0.4;
+    auto& controlTheme = adqt::theme::ThemeManager::instance();
+    recorder.styles.clear();
+    controlTheme.setScopeOverride(&unrelated, overrideValue);
+    controlTheme.clearScopeOverride(&unrelated);
+    require(recorder.styles.isEmpty(), "an unrelated skin must not restyle unskinned pinned rows");
+}
+
+void pinnedRowsRespectSkinMask(const QVector<storage::PinnedWindowSummary>& records) {
+    Fixture fixture;
+    fixture.items = records;
+    SkinBackdrop backdrop;
+    backdrop.resize(980, 640);
+    PinnedWindowManagementPageWidget page(&fixture, &backdrop);
+    page.resize(backdrop.size());
+    backdrop.show();
+    page.show();
+    QCoreApplication::processEvents();
+    auto* row = page.findChild<QFrame*>(QStringLiteral("pinnedManagementRecord"));
+    require(row != nullptr && row->width() > 100, "seeded pinned mask fixture has a visible row");
+    const QColor fill =
+        presentation::styles::ThemeManager::instance().themeColorScheme().map.colorBgContainer;
+    auto& manager = adqt::theme::ThemeManager::instance();
+    for (const qreal opacity : {0.4, 0.0, 1.0}) {
+        adqt::theme::ThemeOverride overrideValue;
+        overrideValue.backgroundOpacity = opacity;
+        manager.setScopeOverride(&backdrop, overrideValue);
+        QCoreApplication::processEvents();
+        QImage rendered(backdrop.size(), QImage::Format_ARGB32_Premultiplied);
+        rendered.fill(Qt::transparent);
+        backdrop.render(&rendered);
+        const QPoint sample = row->mapTo(&backdrop, QPoint(row->width() / 2, 5));
+        const QColor actual = rendered.pixelColor(sample);
+        const qreal alpha = static_cast<qreal>(fill.alphaF()) * opacity;
+        require(std::abs(actual.red() -
+                         qRound(fill.red() * alpha + backdrop.color.red() * (1 - alpha))) <= 1 &&
+                    std::abs(actual.green() - qRound(fill.green() * alpha +
+                                                     backdrop.color.green() * (1 - alpha))) <= 1 &&
+                    std::abs(actual.blue() - qRound(fill.blue() * alpha +
+                                                    backdrop.color.blue() * (1 - alpha))) <= 1,
+                "pinned row background must paint one mask and expose the backdrop at zero");
+        const QString reviewDirectory = qEnvironmentVariable("SNOW_SKIN_PAGE_REVIEW_DIR");
+        if (!reviewDirectory.isEmpty()) {
+            require(QDir().mkpath(reviewDirectory), "create seeded pinned review directory");
+            require(rendered.save(QDir(reviewDirectory)
+                                      .filePath(QStringLiteral("seeded-pinned-mask-%1.png")
+                                                    .arg(qRound(opacity * 100)))),
+                    "save seeded pinned skin review");
+        }
+    }
+    manager.clearScopeOverride(&backdrop);
+}
+
+void pinnedChangesRefreshOnlyVisiblePages(const QVector<storage::PinnedWindowSummary>& records) {
+    Fixture source;
+    source.items = records;
+    QWidget owner;
+    owner.resize(980, 640);
+    auto* layout = new QVBoxLayout(&owner);
+    auto* page = new PinnedWindowManagementPageWidget(&source, &owner);
+    layout->addWidget(page);
+    auto* viewer = page->findChild<adqt::widgets::AdImageViewer*>();
+    auto* model = page->findChild<adqt::widgets::AdImageListModel*>();
+    require(source.recordRequests == 1 && viewer != nullptr && model != nullptr,
+            "constructing a hidden page prepares its initial records");
+    for (int index = 0; index < 20; ++index)
+        emit source.changed();
+    QApplication::processEvents();
+    require(source.recordRequests == 1, "a hidden page must defer a burst of repository snapshots");
+    owner.show();
+    QApplication::processEvents();
+    require(source.recordRequests == 2,
+            "showing a dirty page takes one current repository snapshot");
+
+    viewer->openAt(0);
+    QApplication::processEvents();
+    const QString previewId = viewer->itemAt(0).source.path();
+    int modelResets = 0;
+    QObject::connect(model, &QAbstractItemModel::modelReset, page,
+                     [&modelResets]() { ++modelResets; });
+    for (auto& record : source.items)
+        if (record.id == previewId)
+            record.ignored = !record.ignored;
+    emit source.changed();
+    require(source.recordRequests == 3 && viewer->isVisible() && modelResets == 0,
+            "visible metadata changes refresh immediately and preserve the current preview");
+    source.previewRevisions.insert(previewId, 2);
+    emit source.changed();
+    require(!viewer->isVisible() && modelResets == 0,
+            "changed image pixels invalidate the preview without resetting an unchanged list");
+
+    viewer->openAt(0);
+    owner.hide();
+    require(!viewer->isVisible(), "hiding the page closes its independent image viewer");
+    const int requestsBeforeHiddenChanges = source.recordRequests;
+    auto newest = records.front();
+    newest.id = QStringLiteral("latest-visible-refresh");
+    source.items = {newest};
+    for (int index = 0; index < 20; ++index)
+        emit source.changed();
+    QApplication::processEvents();
+    require(source.recordRequests == requestsBeforeHiddenChanges && viewer->rowCount() == 2,
+            "parent-window hiding suppresses catalog and preview-list rebuilding");
+    owner.show();
+    QApplication::processEvents();
+    require(source.recordRequests == requestsBeforeHiddenChanges + 1 && viewer->rowCount() == 1 &&
+                viewer->itemAt(0).source.path() == newest.id,
+            "showing the page reconciles all hidden changes with one fresh snapshot");
+}
+
+void pinnedFailedPreviewsRetryOnRefresh(const QVector<storage::PinnedWindowSummary>& records) {
+    Fixture source;
+    source.items = records;
+    source.previewFailure = true;
+    PinnedWindowManagementPageWidget page(&source, nullptr);
+    page.resize(980, 640);
+    page.show();
+    QCoreApplication::processEvents();
+    QPointer<adqt::widgets::AdImage> failedPreview =
+        page.findChild<adqt::widgets::AdImage*>(QStringLiteral("pinnedManagementPreview"));
+    QElapsedTimer timer;
+    timer.start();
+    while (failedPreview && !failedPreview->loadFailed() && timer.elapsed() < 5000) {
+        failedPreview->grab();
+        QCoreApplication::processEvents();
+        QThread::msleep(1);
+    }
+    require(failedPreview && failedPreview->loadFailed(), "seed a transient preview failure");
+    source.previewFailure = false;
+    emit source.changed();
+    QCoreApplication::processEvents();
+    auto* recovered =
+        page.findChild<adqt::widgets::AdImage*>(QStringLiteral("pinnedManagementPreview"));
+    timer.restart();
+    while (recovered && (recovered->loading() || source.previewSizes.size() < 3) &&
+           timer.elapsed() < 5000) {
+        recovered->grab();
+        QCoreApplication::processEvents();
+        QThread::msleep(1);
+    }
+    require(failedPreview.isNull() && recovered && !recovered->loading() &&
+                !recovered->loadFailed(),
+            "refresh retries a failed preview with unchanged record IDs and payload revisions");
+    const QPointer<adqt::widgets::AdImage> successfulPreview = recovered;
+    emit source.changed();
+    require(!successfulPreview.isNull(), "refresh preserves a successfully recovered preview");
+}
+
+void pinnedPreviewRetriesAcrossStorageMigration(const QString& destination) {
+    auto& applicationStorage = storage::ApplicationStorage::instance();
+    auto& repository = applicationStorage.pinnedWindows();
+    storage::PinnedWindowRecord record;
+    record.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    record.image = QImage(64, 32, QImage::Format_RGB32);
+    record.image.fill(Qt::yellow);
+    record.nativeGeometry = QRect(QPoint(0, 0), record.image.size());
+    record.canvasSourceRect = QRectF(record.nativeGeometry);
+    record.contentCanvasRect = record.canvasSourceRect;
+    record.surfaceCanvasRect = record.canvasSourceRect;
+    record.initialWindowSize = record.image.size();
+    require(repository.upsert(record).success && repository.flush().success,
+            "seed a persisted preview for migration recovery");
+    const auto payloadRevision = repository.previewSourceRevision(record.id);
+    PinnedWindowManagementPageWidget page;
+    auto* source = page.findChild<PinnedWindowManagementDataSource*>();
+    int replies = 0;
+    bool lastSucceeded = false;
+    QObject::connect(source, &PinnedWindowManagementDataSource::previewReady, &page,
+                     [&](const QString&, quint64, const QImage& image, const QSize&) {
+                         ++replies;
+                         lastSucceeded = !image.isNull();
+                     });
+
+    repository.suspendWrites(true);
+    source->requestPreview(record.id, 700000, QSize(31, 13));
+    require(applicationStorage.pinnedPreviewPool().waitForDone(5000),
+            "queue a rejected preview before delivering the completion generation");
+    repository.suspendWrites(false);
+    // Deliver the migration completion before the already queued worker reply.
+    emit applicationStorage.directoryChangeFinished({true, {}, {}});
+    QElapsedTimer timer;
+    timer.start();
+    while (replies == 0 && timer.elapsed() < 5000) {
+        QCoreApplication::processEvents();
+        QThread::msleep(1);
+    }
+    require(replies == 1 && lastSucceeded,
+            "a failed reply delivered after migration finishes retries the current generation");
+    repository.suspendWrites(true);
+    source->requestPreview(record.id, 700003, QSize(37, 19));
+    require(applicationStorage.pinnedPreviewPool().waitForDone(5000),
+            "queue a preview that remains unavailable after completion");
+    emit applicationStorage.directoryChangeFinished({false, {}, {}});
+    timer.restart();
+    while (replies < 2 && timer.elapsed() < 5000) {
+        QCoreApplication::processEvents();
+        QThread::msleep(1);
+    }
+    require(replies == 2 && !lastSucceeded,
+            "an unavailable preview reports failure after one migration retry");
+    repository.suspendWrites(false);
+
+#ifdef Q_OS_WIN
+    PinnedWindowManagementPageWidget cancelledPage;
+    auto* cancelledSource = cancelledPage.findChild<PinnedWindowManagementDataSource*>();
+    int cancelledReplies = 0;
+    QObject::connect(cancelledSource, &PinnedWindowManagementDataSource::previewReady,
+                     &cancelledPage,
+                     [&](const auto&, auto, const auto&, const auto&) { ++cancelledReplies; });
+    repository.suspendWrites(true);
+    source->requestPreview(record.id, 700001, QSize(33, 15));
+    cancelledSource->requestPreview(record.id, 700002, QSize(35, 17));
+    require(applicationStorage.pinnedPreviewPool().waitForDone(5000),
+            "queue rejected previews before the migration drain");
+    QSemaphore migrationDrain;
+    applicationStorage.setDirectoryChangeHooks([]() { return storage::StorageResult::ok(); }, {},
+                                               [&]() { migrationDrain.acquire(); });
+    bool finished = false;
+    bool succeeded = false;
+    const auto connection =
+        QObject::connect(&applicationStorage, &storage::ApplicationStorage::directoryChangeFinished,
+                         &page, [&](const auto& result) {
+                             finished = true;
+                             succeeded = result.success;
+                         });
+    require(applicationStorage.requestDirectoryChange(destination, true).success,
+            "start a migration held at its drain boundary");
+    QCoreApplication::processEvents();
+    require(applicationStorage.directoryChanging() && replies == 2 && cancelledReplies == 0,
+            "rejected previews wait while migration is active");
+    cancelledSource->cancelPreviews();
+    migrationDrain.release();
+    timer.restart();
+    while ((!finished || replies < 3) && timer.elapsed() < 15000) {
+        QCoreApplication::processEvents();
+        QThread::msleep(1);
+    }
+    applicationStorage.setDirectoryChangeHooks({}, {}, {});
+    QObject::disconnect(connection);
+    require(finished && succeeded && replies == 3 && lastSucceeded && cancelledReplies == 0,
+            "migration retries a waiting preview once and respects cancellation");
+    require(repository.previewSourceRevision(record.id) == payloadRevision,
+            "migration recovery does not depend on a changed payload revision");
+#else
+    Q_UNUSED(destination);
+    Q_UNUSED(payloadRevision);
+#endif
+    require(repository.remove(record.id).success && repository.flush().success,
+            "remove the migration recovery fixture");
+}
+
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
     QTemporaryDir directory;
+    QTemporaryDir migratedDirectory;
     require(storage::ApplicationStorage::instance()
                 .initialize({directory.path(), directory.path(), 30000})
                 .success,
@@ -91,6 +407,51 @@ int main(int argc, char** argv) {
     second.ignored = true;
     second.creationSource = storage::PinnedWindowCreationSource::Screenshot;
     fixture.items = {first, second};
+    pinnedThemeChangesDoNotRestyleTwice(fixture.items);
+    pinnedRowsRespectSkinMask(fixture.items);
+    pinnedChangesRefreshOnlyVisiblePages(fixture.items);
+    pinnedFailedPreviewsRetryOnRefresh(fixture.items);
+    pinnedPreviewRetriesAcrossStorageMigration(migratedDirectory.path());
+    {
+        Fixture many;
+        for (int index = 0; index < 15; ++index) {
+            auto record = first;
+            record.id = QStringLiteral("many-%1").arg(index);
+            record.createdUtc = today.addSecs(-index);
+            record.creationSource = index % 2 == 0
+                                        ? storage::PinnedWindowCreationSource::Clipboard
+                                        : storage::PinnedWindowCreationSource::Screenshot;
+            many.items.push_back(record);
+        }
+        PinnedWindowManagementPageWidget page(&many, nullptr);
+        auto* viewer = page.findChild<adqt::widgets::AdImageViewer*>();
+        auto* pagination = page.findChild<adqt::widgets::AdPagination*>();
+        require(viewer->rowCount() == 15, "pinned viewer includes records beyond the first page");
+        viewer->openAt(9);
+        viewer->activate(1);
+        application.processEvents();
+        require(viewer->currentRow() == 10 && many.lastFullImageId == QStringLiteral("many-10"),
+                "pinned next control crosses page boundaries");
+        viewer->close();
+        pagination->setCurrentPage(2);
+        application.processEvents();
+        auto* preview =
+            page.findChild<adqt::widgets::AdImage*>(QStringLiteral("pinnedManagementPreview"));
+        require(preview && preview->previewRow() == 10,
+                "second-page thumbnails use absolute preview rows");
+        auto* filter = page.findChild<adqt::widgets::AdSelect*>();
+        filter->setCurrentValues(
+            {static_cast<int>(storage::PinnedWindowCreationSource::Clipboard)});
+        application.processEvents();
+        require(viewer->rowCount() == 8 &&
+                    viewer->itemAt(1).source.path() == QStringLiteral("many-2"),
+                "pinned continuous preview follows active filters");
+        viewer->openAt(0);
+        many.items.removeFirst();
+        page.refresh();
+        require(!viewer->isVisible() && viewer->rowCount() == 7,
+                "refresh closes stale pinned preview and removes deleted records");
+    }
     {
         QStackedWidget pages;
         pages.resize(980, 640);
@@ -162,6 +523,19 @@ int main(int argc, char** argv) {
                     !fixture.previewSizes.isEmpty() && fixture.previewSizes.front().isValid() &&
                     fixture.fullImageRequests == 0,
                 "pinned thumbnails use AdImage and request bounded previews without full images");
+        auto* viewer = sharedImage->viewer();
+        require(viewer != nullptr && viewer->rowCount() == 2 && sharedImage->previewRow() == 0,
+                "pinned preview contains every record in activity order");
+        viewer->openAt(sharedImage->previewRow());
+        viewer->activate(1);
+        application.processEvents();
+        require(viewer->currentRow() == 1 && fixture.lastFullImageId == QStringLiteral("first"),
+                "next preview loads the next record, not the originally clicked record");
+        viewer->activate(-1);
+        application.processEvents();
+        require(viewer->currentRow() == 0 && fixture.lastFullImageId == QStringLiteral("second"),
+                "previous preview returns to the original record");
+        viewer->close();
         require(page.findChild<QWidget*>(QStringLiteral("pinnedManagementPageContainer")) &&
                     page.findChild<QWidget*>(QStringLiteral("pinnedManagementSelectionBar")) &&
                     page.findChild<adqt::widgets::AdPagination*>(
@@ -409,8 +783,8 @@ int main(int argc, char** argv) {
         require(imageRow != nullptr, "saved image has a management row");
         auto* imagePreview =
             imageRow->findChild<adqt::widgets::AdImage*>(QStringLiteral("pinnedManagementPreview"));
-        auto* viewer = imageRow->findChild<adqt::widgets::AdImageViewer*>();
-        require(imagePreview != nullptr && viewer != nullptr && viewer->rowCount() == 1,
+        auto* viewer = imagePreview->viewer();
+        require(imagePreview != nullptr && viewer != nullptr && viewer->rowCount() == 3,
                 "saved image has a preview viewer");
         const QColor idleCorner = imagePreview->grab().toImage().pixelColor(20, 20);
         const QPointF hoverPoint = imagePreview->rect().center();

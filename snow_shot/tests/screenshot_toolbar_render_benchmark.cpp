@@ -347,7 +347,7 @@ class NoOpToolbarCommands final : public ScreenshotToolbarCommandSink {
     void startScreenRecording() override {}
     void setShapeStyleFromToolbar(const SnowCanvasShapeStyle&, quint32,
                                   SnowCanvasShapeKind) override {}
-    void setTextStyleFromToolbar(const SnowCanvasTextStyle&) override {}
+    void setTextStyleFromToolbar(const SnowCanvasTextStyle&, quint32) override {}
     void setSerialNumberStyleFromToolbar(const SnowCanvasSerialNumberStyle&) override {}
     void decrementSelectedSerialNumbers() override {}
     void incrementSelectedSerialNumbers() override {}
@@ -787,6 +787,8 @@ constexpr ToolCase kTools[] = {
     {"rectangle_highlight", ScreenshotToolPalette::Tool::RectangleHighlight},
     {"pen_highlight", ScreenshotToolPalette::Tool::PenHighlight},
     {"eraser", ScreenshotToolPalette::Tool::Eraser},
+    {"rectangle_eraser", ScreenshotToolPalette::Tool::RectangleEraser},
+    {"brush_eraser", ScreenshotToolPalette::Tool::BrushEraser},
     {"filter", ScreenshotToolPalette::Tool::Filter},
     {"watermark", ScreenshotToolPalette::Tool::Watermark},
     {"text", ScreenshotToolPalette::Tool::Text},
@@ -826,6 +828,10 @@ constexpr SourceCase kSources[] = {
     {"selected_pen_highlight", SnowCanvasStyleToolbarSource::SelectedPenHighlight,
      ScreenshotToolPalette::Tool::PenHighlight},
     {"eraser", SnowCanvasStyleToolbarSource::Eraser, ScreenshotToolPalette::Tool::Eraser},
+    {"rectangle_eraser", SnowCanvasStyleToolbarSource::DefaultRectangleEraser,
+     ScreenshotToolPalette::Tool::RectangleEraser},
+    {"brush_eraser", SnowCanvasStyleToolbarSource::DefaultBrushEraser,
+     ScreenshotToolPalette::Tool::BrushEraser},
     {"default_filter", SnowCanvasStyleToolbarSource::DefaultFilter,
      ScreenshotToolPalette::Tool::Filter},
     {"selected_filter", SnowCanvasStyleToolbarSource::SelectedFilter,

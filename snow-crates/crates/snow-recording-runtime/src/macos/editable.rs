@@ -245,30 +245,45 @@ impl NativeEditableSession {
                 .collect(),
         };
         let intermediate = root.join("video.mp4");
-        snow_recording_model::write_recording_bundle(&intermediate, &manifest, &assets)?;
-        cancellation
-            .commit(|| std::fs::rename(&intermediate, &self.destination))
-            .map_err(|_| native_error(MacError::Canceled))??;
-        let artifact = RecordingArtifact {
-            session_id: manifest.session_id,
-            output_dir,
-            local_paths: LocalRecordingPaths {
-                temp_dir: PathBuf::new(),
-                video_intermediate_path: self.destination.clone(),
-                video_index_path: PathBuf::new(),
-                mouse_path: PathBuf::new(),
-            },
-            bundle_path: self.destination,
-            audio_tracks: manifest.audio_tracks,
-        };
-        // Embedded metadata supersedes the intermediate's temporary sidecar.
-        recording.manifest_path = artifact.bundle_path.clone();
+        let artifact = publish_editable_bundle(
+            &intermediate,
+            self.destination,
+            manifest,
+            &assets,
+            &cancellation,
+        )?;
         Ok(NativeEditableReport {
             artifact,
             recording,
         })
     }
 }
+// Editable output owns metadata persistence and publishes one self-contained file.
+fn publish_editable_bundle(
+    intermediate: &std::path::Path,
+    destination: PathBuf,
+    manifest: SessionManifest,
+    assets: &[RecordingBundleAsset<'_>],
+    cancellation: &CancellationToken,
+) -> Result<RecordingArtifact> {
+    snow_recording_model::write_recording_bundle(intermediate, &manifest, assets)?;
+    cancellation
+        .commit(|| std::fs::rename(intermediate, &destination))
+        .map_err(|_| native_error(MacError::Canceled))??;
+    Ok(RecordingArtifact {
+        session_id: manifest.session_id,
+        output_dir: manifest.output_dir,
+        local_paths: LocalRecordingPaths {
+            temp_dir: PathBuf::new(),
+            video_intermediate_path: destination.clone(),
+            video_index_path: PathBuf::new(),
+            mouse_path: PathBuf::new(),
+        },
+        bundle_path: destination,
+        audio_tracks: manifest.audio_tracks,
+    })
+}
+
 struct FrameIndexWriter {
     writer: BufWriter<std::fs::File>,
     fps: u32,
@@ -329,6 +344,127 @@ impl FrameIndexWriter {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn editable_publication_embeds_metadata_without_touching_sidecars() {
+        for canceled in [false, true] {
+            let directory = tempfile::tempdir().unwrap();
+            let intermediate = directory.path().join("video.mp4");
+            let destination = directory.path().join("session.snowrec");
+            let sidecar = directory.path().join("session.snowrec.snowmedia");
+            let video_bytes = b"encoded video payload";
+            std::fs::write(&intermediate, video_bytes).unwrap();
+            std::fs::write(&sidecar, b"caller-owned metadata").unwrap();
+            if canceled {
+                std::fs::write(&destination, b"previous recording").unwrap();
+            }
+            let mut media = snow_recording_model::media::RecordedMedia::new(
+                snow_media::ColorDescription::HDR10,
+                snow_media::CursorMode::Separate,
+                vec![snow_recording_model::media::GeometryChange {
+                    timestamp_ms: 0,
+                    generation: 1,
+                    transform: DesktopTransform::new(
+                        snow_media::geometry::DesktopRect {
+                            space: snow_media::geometry::DesktopSpace::Points,
+                            x: -16.0,
+                            y: 0.0,
+                            width: 16.0,
+                            height: 16.0,
+                        },
+                        PixelSize::new(16, 16).unwrap(),
+                    )
+                    .unwrap(),
+                    destination: PixelRect {
+                        x: 0,
+                        y: 0,
+                        width: 16,
+                        height: 16,
+                    },
+                }],
+            );
+            media
+                .discontinuities
+                .push(snow_recording_model::media::TimelineDiscontinuity {
+                    timestamp: snow_media::time::MediaTime {
+                        value: 100,
+                        timescale: 1000,
+                        epoch: 0,
+                        domain: snow_media::time::ClockDomain::Session,
+                    },
+                    duration: None,
+                    reason: snow_recording_model::media::DiscontinuityReason::SourceInterrupted,
+                });
+            let manifest = SessionManifest {
+                video_codec: VideoCodec::H265,
+                media,
+                session_id: "editable-metadata-test".into(),
+                output_dir: directory.path().to_path_buf(),
+                keep_temp_files: false,
+                fps: 30,
+                intermediate_profile: snow_recording_model::IntermediateRecordingProfile::EditFast,
+                recording_video: Default::default(),
+                width: 16,
+                height: 16,
+                capture_origin_x: 0,
+                capture_origin_y: 0,
+                audio_tracks: vec![],
+                pause_intervals: vec![],
+            };
+            let cancellation = CancellationToken::default();
+            if canceled {
+                cancellation.cancel();
+            }
+            let result = publish_editable_bundle(
+                &intermediate,
+                destination.clone(),
+                manifest,
+                &[],
+                &cancellation,
+            );
+            if canceled {
+                assert!(matches!(
+                    result,
+                    Err(ScreenRecorderError::Capture(
+                        snow_capture::error::CaptureError::Canceled
+                    ))
+                ));
+                assert_eq!(std::fs::read(&destination).unwrap(), b"previous recording");
+            } else {
+                let artifact = result.unwrap();
+                assert_eq!(artifact.bundle_path, destination);
+                assert_eq!(artifact.local_paths.video_intermediate_path, destination);
+                assert!(!intermediate.exists());
+                let footer =
+                    snow_recording_model::read_recording_bundle_footer(&destination).unwrap();
+                assert_eq!(footer.video_payload_len, video_bytes.len() as u64);
+                assert!(
+                    std::fs::read(&destination)
+                        .unwrap()
+                        .starts_with(video_bytes)
+                );
+                let restored = artifact.load_manifest().unwrap();
+                assert_eq!(restored.session_id, "editable-metadata-test");
+                assert_eq!(restored.media.color, snow_media::ColorDescription::HDR10);
+                assert_eq!(restored.media.cursor, snow_media::CursorMode::Separate);
+                restored.media.validate().unwrap();
+                assert_eq!(restored.media.geometry.len(), 1);
+                assert_eq!(restored.media.geometry[0].generation, 1);
+                assert_eq!(restored.media.geometry[0].destination.width, 16);
+                assert_eq!(restored.media.discontinuities.len(), 1);
+                let gap = &restored.media.discontinuities[0];
+                assert_eq!(gap.timestamp.value, 100);
+                assert_eq!(gap.timestamp.timescale, 1000);
+                assert!(matches!(
+                    gap.reason,
+                    snow_recording_model::media::DiscontinuityReason::SourceInterrupted
+                ));
+                assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 2);
+            }
+            assert_eq!(std::fs::read(&sidecar).unwrap(), b"caller-owned metadata");
+            assert!(!directory.path().join("video.mp4.snowmedia").exists());
+        }
+    }
+
     #[test]
     fn incremental_index_preserves_dropped_frame_time_and_final_duration() {
         let directory = tempfile::tempdir().unwrap();

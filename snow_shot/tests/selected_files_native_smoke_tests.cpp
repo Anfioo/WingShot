@@ -123,11 +123,18 @@ ComPtr<IDispatch> explorerAt(IShellWindows* windows, const QString& path) {
 void verifyCapture(const QStringList& expected, bool desktop) {
     const auto backend = createSelectedFileBackend();
     SelectedFileTarget target;
-    require(waitFor([&] {
-                target = backend->captureTarget();
-                return target.window != 0 && target.desktop == desktop;
-            }),
-            "foreground selection target was not detected");
+    const bool found = waitFor([&] {
+        target = backend->captureTarget();
+        return target.window != 0 && target.desktop == desktop;
+    });
+    if (!found) {
+        const HWND foreground = GetForegroundWindow();
+        wchar_t className[128]{};
+        GetClassNameW(foreground, className, 128);
+        std::wcerr << L"foreground HWND=" << foreground << L" class=" << className
+                   << L" captured HWND=" << target.window << L"\n";
+    }
+    require(found, "foreground selection target was not detected");
     const DWORD clipboardSequence = GetClipboardSequenceNumber();
     auto future = std::async(std::launch::async, [backend, target] {
         return backend->selectedFiles(target, [] { return false; });
@@ -163,6 +170,21 @@ void chord(WORD key) {
     events[3].ki.wVk = VK_CONTROL;
     events[3].ki.dwFlags = KEYEVENTF_KEYUP;
     require(SendInput(4, events, sizeof(INPUT)) == 4, "Explorer tab shortcut could not be sent");
+}
+
+bool focusWindow(HWND window) {
+    ShowWindow(window, SW_RESTORE);
+    const HWND foreground = GetForegroundWindow();
+    const DWORD foregroundThread = GetWindowThreadProcessId(foreground, nullptr);
+    const DWORD currentThread = GetCurrentThreadId();
+    const bool attached = foregroundThread != 0 && foregroundThread != currentThread &&
+                          AttachThreadInput(currentThread, foregroundThread, TRUE) != FALSE;
+    BringWindowToTop(window);
+    SetForegroundWindow(window);
+    if (attached) {
+        AttachThreadInput(currentThread, foregroundThread, FALSE);
+    }
+    return waitFor([&] { return GetForegroundWindow() == window; });
 }
 void smoke() {
     ComPtr<IShellWindows> windows;
@@ -212,7 +234,7 @@ void smoke() {
     auto view = shellView(dispatch.Get());
     require(view && waitFor([&] { return selectPaths(view.Get(), files); }),
             "Explorer fixtures must be selectable");
-    SetForegroundWindow(window);
+    require(focusWindow(window), "test Explorer window did not become foreground");
     verifyCapture(files, false);
     std::cout << "Explorer multi-selection and clipboard preservation passed\n";
 
@@ -309,7 +331,8 @@ void smoke() {
             "desktop fixture must be selectable");
     HWND desktopWindow = nullptr;
     desktopView->GetWindow(&desktopWindow);
-    SetForegroundWindow(GetAncestor(desktopWindow, GA_ROOT));
+    require(focusWindow(GetAncestor(desktopWindow, GA_ROOT)),
+            "test desktop did not become foreground");
     verifyCapture({desktopFile.fileName()}, true);
     std::cout << "Desktop selection and clipboard preservation passed\n";
 }

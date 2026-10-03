@@ -1,12 +1,17 @@
 #include "snow_shot/presentation/settings/settingsruntimesession.h"
+#if SNOW_SHOT_ENABLE_API_CONFIGURATION
+#include "snow_shot/serverconfiguration.h"
+#endif
 
 #include "snow_shot/presentation/settings/settingscatalog.h"
 #include "snow_shot/presentation/globalmousegesture.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/settingsadapters.h"
 
+#include <QCoreApplication>
 #include <QMetaType>
 #include <QJsonObject>
+#include <QTimer>
 
 #include <utility>
 
@@ -18,6 +23,8 @@ SettingsCustomRenderer toolbarRenderer(storage::ScreenshotToolbarLayoutKind kind
         return SettingsCustomRenderer::DrawingToolbarEditor;
     case storage::ScreenshotToolbarLayoutKind::ActionTools:
         return SettingsCustomRenderer::ScreenshotToolbarEditor;
+    case storage::ScreenshotToolbarLayoutKind::FloatingTools:
+        return SettingsCustomRenderer::FloatingToolbarEditor;
     case storage::ScreenshotToolbarLayoutKind::PinnedActionTools:
         return SettingsCustomRenderer::PinnedToolbarEditor;
     }
@@ -51,7 +58,8 @@ QVariant globalMouseCombinationVariant(const SettingsGlobalMouseCombination& com
 }
 
 bool sameStorageStatus(const storage::StorageStatus& first, const storage::StorageStatus& second) {
-    return first.requestedDirectory == second.requestedDirectory &&
+    return first.directoryChanging == second.directoryChanging &&
+           first.requestedDirectory == second.requestedDirectory &&
            first.effectiveDirectory == second.effectiveDirectory &&
            first.fallbackReason == second.fallbackReason &&
            first.effectiveMode == second.effectiveMode &&
@@ -84,13 +92,27 @@ SettingsRuntimeSession::SettingsRuntimeSession(const SettingsRegistry& registry,
     qRegisterMetaType<SettingsGlobalMouseCombination>();
     qRegisterMetaType<shortcuts::ShortcutBinding>();
     qRegisterMetaType<shortcuts::ShortcutBindingList>();
+    connect(&m_backend, &SettingsBackend::directoryChangeProgress, this,
+            &SettingsRuntimeSession::directoryChangeProgress);
+    connect(&m_backend, &SettingsBackend::directoryChangeFinished, this,
+            &SettingsRuntimeSession::directoryChangeFinished);
     connect(&m_backend, &SettingsBackend::operationMessage, this,
             &SettingsRuntimeSession::operationMessage);
     connect(&m_backend, &SettingsBackend::actionFinished, this,
             &SettingsRuntimeSession::actionFinished);
-    connect(
-        &m_backend, &SettingsBackend::synchronized, this, [this]() { refreshAll(); },
-        Qt::QueuedConnection);
+    connect(&m_backend, &SettingsBackend::synchronized, this, [this] {
+        // A reset/import may notify once per key. Read the final backend snapshot once
+        // after the burst, without reentering the write that emitted the notification.
+        if (m_refreshPending) {
+            return;
+        }
+        m_refreshPending = true;
+        QTimer::singleShot(0, this, [this] {
+            if (m_refreshPending) {
+                refreshAll();
+            }
+        });
+    });
     connect(
         &m_backend, &SettingsBackend::shortcutStateChanged, this,
         [this](GlobalShortcutAction action, const GlobalShortcutRegistrationState&) {
@@ -770,9 +792,15 @@ void SettingsRuntimeSession::refreshField(const QString& fieldId,
 }
 
 void SettingsRuntimeSession::refreshAll() {
+    m_refreshPending = false;
     for (const SettingsFieldDescriptor& descriptor : m_registry.fields()) {
         refreshField(descriptor.id);
         refreshOptions(descriptor);
+        if (descriptor.definition != nullptr) {
+            if (const auto* file =
+                    std::get_if<SettingsFilePathDefinition>(&descriptor.definition->payload))
+                refreshFilePathStatus(file->binding);
+        }
     }
     refreshAuxiliaryInteger(SettingsIntegerBinding::ScreenshotDelaySeconds);
     refreshCommandStates();
@@ -785,6 +813,18 @@ void SettingsRuntimeSession::refreshAll() {
         emit storageStateChanged(currentStatus);
     }
     emit refreshed();
+}
+
+void SettingsRuntimeSession::refreshFilePathStatus(SettingsFilePathBinding binding) {
+    const int key = static_cast<int>(binding);
+    const FilePathStatus next{m_backend.filePathStatus(binding),
+                              m_backend.filePathStatusError(binding)};
+    const auto current = m_filePathStatuses.constFind(key);
+    if (current != m_filePathStatuses.cend() && current->text == next.text &&
+        current->error == next.error)
+        return;
+    m_filePathStatuses.insert(key, next);
+    emit filePathStatusChanged(binding);
 }
 
 void SettingsRuntimeSession::refreshAuxiliaryInteger(SettingsIntegerBinding binding) {
@@ -926,6 +966,7 @@ QVariant SettingsRuntimeSession::readValue(const SettingsFieldDescriptor& descri
                 return QVariantList{state.enabled, state.busy};
             } else if constexpr (std::is_same_v<Payload, SettingsCustomDefinition>) {
                 switch (payload.renderer) {
+                case SettingsCustomRenderer::McpStatus:
                 case SettingsCustomRenderer::PermissionScreenRecording:
                 case SettingsCustomRenderer::PermissionAccessibility:
                 case SettingsCustomRenderer::PermissionInputMonitoring:
@@ -934,6 +975,9 @@ QVariant SettingsRuntimeSession::readValue(const SettingsFieldDescriptor& descri
                 case SettingsCustomRenderer::DrawingToolbarEditor:
                     return QVariant::fromValue(m_backend.toolbarLayout(
                         storage::ScreenshotToolbarLayoutKind::DrawingTools));
+                case SettingsCustomRenderer::FloatingToolbarEditor:
+                    return QVariant::fromValue(m_backend.toolbarLayout(
+                        storage::ScreenshotToolbarLayoutKind::FloatingTools));
                 case SettingsCustomRenderer::PinnedToolbarEditor:
                     return QVariant::fromValue(m_backend.toolbarLayout(
                         storage::ScreenshotToolbarLayoutKind::PinnedActionTools));
@@ -943,7 +987,17 @@ QVariant SettingsRuntimeSession::readValue(const SettingsFieldDescriptor& descri
                 case SettingsCustomRenderer::TrayMenuOptions:
                     return m_backend.multiSelectValue(SettingsMultiSelectBinding::TrayMenuOptions);
                 case SettingsCustomRenderer::CustomAiModels:
+#if SNOW_SHOT_ENABLE_API_CONFIGURATION
                     return QVariant::fromValue(m_backend.customAiModels());
+#else
+                    return {};
+#endif
+                case SettingsCustomRenderer::TextTranslationConfigurations:
+#if SNOW_SHOT_ENABLE_API_CONFIGURATION
+                    return QVariant::fromValue(m_backend.textTranslationConfigurations());
+#else
+                    return {};
+#endif
                 case SettingsCustomRenderer::StorageStatus:
                     return QVariant::fromValue(m_backend.storageStatus());
                 }
@@ -996,11 +1050,17 @@ bool SettingsRuntimeSession::writeValue(const SettingsFieldDescriptor& descripto
                     payload.action, value.value<SettingsGlobalMouseCombination>());
             } else if constexpr (std::is_same_v<Payload, SettingsCustomDefinition>) {
                 switch (payload.renderer) {
+                case SettingsCustomRenderer::McpStatus:
                 case SettingsCustomRenderer::PermissionScreenRecording:
                 case SettingsCustomRenderer::PermissionAccessibility:
                 case SettingsCustomRenderer::PermissionInputMonitoring:
                 case SettingsCustomRenderer::PermissionMicrophone:
                     return {};
+                case SettingsCustomRenderer::FloatingToolbarEditor:
+                    return value.canConvert<storage::ScreenshotToolbarLayout>() &&
+                           m_backend.applyToolbarLayout(
+                               storage::ScreenshotToolbarLayoutKind::FloatingTools,
+                               value.value<storage::ScreenshotToolbarLayout>());
                 case SettingsCustomRenderer::PinnedToolbarEditor:
                     return value.canConvert<storage::ScreenshotToolbarLayout>() &&
                            m_backend.applyToolbarLayout(
@@ -1020,8 +1080,20 @@ bool SettingsRuntimeSession::writeValue(const SettingsFieldDescriptor& descripto
                     return m_backend.applyMultiSelectValue(
                         SettingsMultiSelectBinding::TrayMenuOptions, value.toList());
                 case SettingsCustomRenderer::CustomAiModels:
+#if SNOW_SHOT_ENABLE_API_CONFIGURATION
                     return value.canConvert<CustomAiModels>() &&
                            m_backend.applyCustomAiModels(value.value<CustomAiModels>());
+#else
+                    return false;
+#endif
+                case SettingsCustomRenderer::TextTranslationConfigurations:
+#if SNOW_SHOT_ENABLE_API_CONFIGURATION
+                    return value.canConvert<TextTranslationConfigurations>() &&
+                           m_backend.applyTextTranslationConfigurations(
+                               value.value<TextTranslationConfigurations>());
+#else
+                    return false;
+#endif
                 case SettingsCustomRenderer::StorageStatus:
                     return false;
                 }
@@ -1062,6 +1134,14 @@ bool SettingsRuntimeSession::isPending(const SettingsFieldDescriptor& descriptor
 }
 
 QString SettingsRuntimeSession::writeError(const SettingsFieldDescriptor& descriptor) const {
+#if SNOW_SHOT_ENABLE_API_CONFIGURATION
+    if (descriptor.configurationKey == QStringLiteral("api_configuration/server_url") &&
+        !normalizedServerUrl(state(descriptor.id).draftValue.toString())) {
+        return QCoreApplication::translate("SettingsBackend",
+                                           "Enter a valid HTTP or HTTPS server address without "
+                                           "credentials, a query, or a fragment.");
+    }
+#endif
     const QString currentError = backendError(descriptor);
     if (!currentError.isEmpty()) {
         return currentError;
@@ -1071,6 +1151,13 @@ QString SettingsRuntimeSession::writeError(const SettingsFieldDescriptor& descri
 
 bool SettingsRuntimeSession::valuesEqual(const SettingsFieldDescriptor& descriptor,
                                          const QVariant& first, const QVariant& second) const {
+#if SNOW_SHOT_ENABLE_API_CONFIGURATION
+    if (descriptor.configurationKey == QStringLiteral("api_configuration/server_url")) {
+        const auto a = normalizedServerUrl(first.toString());
+        const auto b = normalizedServerUrl(second.toString());
+        return a && b && *a == *b;
+    }
+#endif
     if (descriptor.definition == nullptr) {
         return first == second;
     }
@@ -1093,7 +1180,8 @@ bool SettingsRuntimeSession::valuesEqual(const SettingsFieldDescriptor& descript
         const auto& custom = std::get<SettingsCustomDefinition>(descriptor.definition->payload);
         if (custom.renderer == SettingsCustomRenderer::DrawingToolbarEditor ||
             custom.renderer == SettingsCustomRenderer::ScreenshotToolbarEditor ||
-            custom.renderer == SettingsCustomRenderer::PinnedToolbarEditor) {
+            custom.renderer == SettingsCustomRenderer::PinnedToolbarEditor ||
+            custom.renderer == SettingsCustomRenderer::FloatingToolbarEditor) {
             return first.value<storage::ScreenshotToolbarLayout>() ==
                    second.value<storage::ScreenshotToolbarLayout>();
         }
@@ -1135,7 +1223,7 @@ SettingsRuntimeSession::buildOptions(const SettingsFieldDescriptor& descriptor) 
         for (const SettingsOptionDefinition& option : select->options) {
             result.values.push_back({option.value, option.label.translated()});
         }
-        result.values.append(m_backend.dynamicSelectOptions(select->binding));
+        result.values.append(dynamicSelectOptions(select->binding));
     } else if (const auto* multi =
                    std::get_if<SettingsMultiSelectDefinition>(&descriptor.definition->payload)) {
         for (const SettingsOptionDefinition& option : multi->options) {
@@ -1209,8 +1297,22 @@ void SettingsRuntimeSession::updateState(const QString& fieldId, const SettingsF
 
 SESSION_DELEGATE_SELECT(selectValue, SettingsSelectBinding, descriptorForSelect)
 
+void SettingsRuntimeSession::requestFontOptions() {
+    if (m_fontOptionsLoaded) {
+        return;
+    }
+    m_fontOptionsLoaded = true;
+    m_fontOptions = m_backend.dynamicSelectOptions(SettingsSelectBinding::AppFont);
+    if (const auto* descriptor = descriptorForSelect(SettingsSelectBinding::AppFont)) {
+        refreshOptions(*descriptor);
+    }
+}
+
 QVector<SettingsRuntimeOption>
 SettingsRuntimeSession::dynamicSelectOptions(SettingsSelectBinding binding) const {
+    if (binding == SettingsSelectBinding::AppFont) {
+        return m_fontOptions;
+    }
     return m_backend.dynamicSelectOptions(binding);
 }
 
@@ -1318,7 +1420,27 @@ QString SettingsRuntimeSession::filePathValue(SettingsFilePathBinding binding) c
 bool SettingsRuntimeSession::applyFilePathValue(SettingsFilePathBinding binding,
                                                 const QString& value) {
     const auto* descriptor = descriptorForFile(binding);
-    return descriptor != nullptr && submitDraft(descriptor->id, value);
+    if (descriptor == nullptr)
+        return false;
+    const bool skinPath = binding == SettingsFilePathBinding::SkinPath ||
+                          binding == SettingsFilePathBinding::ToolbarSkinPath ||
+                          binding == SettingsFilePathBinding::TrayMenuSkinPath;
+    const QString normalizedValue = skinPath ? value.trimmed() : value;
+    const QString previousValue = m_backend.filePathValue(binding);
+    const bool accepted = submitDraft(descriptor->id, normalizedValue);
+    // Re-entering the same skin path explicitly reloads the file, including a
+    // file that was replaced or repaired without changing its name.
+    if (accepted && skinPath && previousValue == normalizedValue)
+        m_backend.reloadFilePathValue(binding);
+    return accepted;
+}
+
+QString SettingsRuntimeSession::filePathStatus(SettingsFilePathBinding binding) const {
+    return m_backend.filePathStatus(binding);
+}
+
+bool SettingsRuntimeSession::filePathStatusError(SettingsFilePathBinding binding) const {
+    return m_backend.filePathStatusError(binding);
 }
 
 QString SettingsRuntimeSession::directoryPathValue(SettingsDirectoryPathBinding binding) const {
@@ -1462,10 +1584,12 @@ SettingsActionState SettingsRuntimeSession::actionState(SettingsActionBinding bi
     return m_backend.actionState(binding);
 }
 
-bool SettingsRuntimeSession::triggerAction(SettingsActionBinding binding, const QString& filePath) {
-    return m_backend.triggerAction(binding, filePath);
+bool SettingsRuntimeSession::triggerAction(SettingsActionBinding binding, const QString& filePath,
+                                           bool includeToolbarStyles) {
+    return m_backend.triggerAction(binding, filePath, includeToolbarStyles);
 }
 
+#if SNOW_SHOT_ENABLE_API_CONFIGURATION
 CustomAiModels SettingsRuntimeSession::customAiModels() const {
     return state(QStringLiteral("api.custom-models")).acceptedValue.value<CustomAiModels>();
 }
@@ -1476,6 +1600,20 @@ bool SettingsRuntimeSession::applyCustomAiModels(const CustomAiModels& models) {
                        QVariant::fromValue(valid ? normalized : models));
 }
 
+TextTranslationConfigurations SettingsRuntimeSession::textTranslationConfigurations() const {
+    return state(QStringLiteral("api.text-translation"))
+        .acceptedValue.value<TextTranslationConfigurations>();
+}
+bool SettingsRuntimeSession::applyTextTranslationConfigurations(
+    const TextTranslationConfigurations& models) {
+    bool valid = false;
+    const auto normalized =
+        textTranslationConfigurationsFromJson(textTranslationConfigurationsToJson(models), &valid);
+    return submitDraft(QStringLiteral("api.text-translation"),
+                       QVariant::fromValue(valid ? normalized : models));
+}
+
+#endif
 storage::StorageStatus SettingsRuntimeSession::storageStatus() const {
     return m_backend.storageStatus();
 }

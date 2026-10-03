@@ -5,6 +5,11 @@ if(CMAKE_HOST_APPLE AND NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)
     set(CMAKE_OSX_DEPLOYMENT_TARGET "15.0" CACHE STRING "Minimum supported macOS version.")
 endif()
 
+if(CMAKE_HOST_WIN32 AND CMAKE_CXX_COMPILER MATCHES "clang-cl")
+    find_program(SNOW_MSVC_LIB_EXECUTABLE NAMES lib.exe REQUIRED)
+    set(CMAKE_AR "${SNOW_MSVC_LIB_EXECUTABLE}" CACHE FILEPATH "MSVC archiver for clang-cl." FORCE)
+endif()
+
 project(snow_apps VERSION 0.2.0 LANGUAGES CXX)
 
 set(SNOW_SHOT_VERSION "1.1.2-beta")
@@ -23,7 +28,7 @@ set(SNOW_SHOT_COPYRIGHT "Copyright (C) 2025-2026 mg-chao")
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
-if(MSVC)
+if(MSVC AND NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     add_compile_options(/MP)
 elseif(APPLE)
     # Preserve source/line information in optimized objects for release dSYMs.
@@ -42,6 +47,17 @@ option(SNOW_APPS_BUILD_DRAW_ENGINE "Build the Snow Draw Engine Qt library." ON)
 option(SNOW_APPS_BUILD_DRAW_ENGINE_DEMO "Build the Snow Draw Engine Qt demo." OFF)
 option(SNOW_APPS_BUILD_IMAGE_VIEWER "Build Snow Image Viewer." ON)
 option(SNOW_APPS_BUILD_SNOW_SHOT "Build Snow Shot." ON)
+set(_snow_mini_default ${SNOW_APPS_BUILD_SNOW_SHOT})
+if(APPLE AND NOT CMAKE_OSX_ARCHITECTURES STREQUAL "arm64")
+    set(_snow_mini_default OFF)
+endif()
+option(SNOW_APPS_BUILD_SNOW_SHOT_MINI "Build Snow Shot Mini alongside Snow Shot." ${_snow_mini_default})
+if(SNOW_APPS_BUILD_SNOW_SHOT_MINI AND NOT SNOW_APPS_BUILD_SNOW_SHOT)
+    message(FATAL_ERROR "Snow Shot Mini requires SNOW_APPS_BUILD_SNOW_SHOT=ON")
+endif()
+if(SNOW_APPS_BUILD_SNOW_SHOT_MINI AND APPLE AND NOT CMAKE_OSX_ARCHITECTURES STREQUAL "arm64")
+    message(FATAL_ERROR "Snow Shot Mini supports Apple Silicon (arm64) only on macOS")
+endif()
 option(SNOW_APPS_BUILD_TESTS "Build tests for all enabled projects." ON)
 option(SNOW_APPS_BUILD_BENCHMARKS "Build opt-in benchmark targets." OFF)
 option(SNOW_SHOT_SCROLLING_PERF_DETAIL "Compile detailed scrolling C++ and Rust timings." OFF)
@@ -152,36 +168,22 @@ if(SNOW_APPS_BUILD_SNOW_SHOT)
         FEATURES ${_snow_scrolling_perf_features}
         STRIP_MSVC_DIRECTIVES
     )
+    snow_add_rust_bundle_selector(snow_shot_rust_ffi_selector snow_shot_rust_ffi_bundle)
     foreach(_snow_rust_ffi_target IN ITEMS
             snow_capture_c
             snow_recording_c
             snow_recording_effects_c
             snow_ui_selector_c
-            snow_selected_text_c
             snow_stitch_images_c
             snow_draw_engine_c
             snow_visual_region_detector_c)
         add_library("${_snow_rust_ffi_target}" INTERFACE)
         target_link_libraries("${_snow_rust_ffi_target}" INTERFACE
-            snow_shot_rust_ffi_bundle)
+            snow_shot_rust_ffi_selector)
     endforeach()
     unset(_snow_rust_ffi_target)
     target_include_directories(snow_recording_effects_c INTERFACE
         "${CMAKE_CURRENT_SOURCE_DIR}/snow-crates/crates/snow-recording-effects-c/include")
-    target_include_directories(snow_selected_text_c INTERFACE
-        "${CMAKE_CURRENT_SOURCE_DIR}/snow-crates/crates/snow-selected-text-c/include")
-    if(APPLE)
-        find_library(SNOW_SELECTED_TEXT_APPKIT_FRAMEWORK NAMES AppKit REQUIRED)
-        find_library(SNOW_SELECTED_TEXT_APPLICATION_SERVICES_FRAMEWORK
-            NAMES ApplicationServices REQUIRED)
-        find_library(SNOW_SELECTED_TEXT_CORE_FOUNDATION_FRAMEWORK NAMES CoreFoundation REQUIRED)
-        find_library(SNOW_SELECTED_TEXT_CORE_GRAPHICS_FRAMEWORK NAMES CoreGraphics REQUIRED)
-        target_link_libraries(snow_selected_text_c INTERFACE
-            "${SNOW_SELECTED_TEXT_APPKIT_FRAMEWORK}"
-            "${SNOW_SELECTED_TEXT_APPLICATION_SERVICES_FRAMEWORK}"
-            "${SNOW_SELECTED_TEXT_CORE_FOUNDATION_FRAMEWORK}"
-            "${SNOW_SELECTED_TEXT_CORE_GRAPHICS_FRAMEWORK}")
-    endif()
 endif()
 
 if(SNOW_APPS_BUILD_IMAGE_VIEWER AND NOT SNOW_APPS_BUILD_SNOW_IMAGE)
@@ -218,6 +220,20 @@ if(SNOW_APPS_BUILD_SNOW_IMAGE)
 endif()
 
 if(SNOW_APPS_BUILD_ANT_DESIGN_QT)
+    # Shipping builds retain all themes of icons used by the app and its widgets.
+    # Development, benchmarks and other apps keep the public library's full pack.
+    if(SNOW_APPS_ENABLE_RELEASE_SIZE_OPTIMIZATION AND
+       SNOW_APPS_BUILD_SNOW_SHOT AND SNOW_APPS_PACKAGE_SNOW_SHOT AND
+       NOT SNOW_APPS_BUILD_TESTS AND NOT SNOW_APPS_BUILD_BENCHMARKS AND
+       NOT SNOW_APPS_BUILD_IMAGE_VIEWER)
+        set(ADQT_ICON_USAGE_ROOTS
+            "${CMAKE_CURRENT_SOURCE_DIR}/snow_shot/src"
+            "${CMAKE_CURRENT_SOURCE_DIR}/snow_shot/include"
+            "${CMAKE_CURRENT_SOURCE_DIR}/snow_draw_engine_qt/src"
+            "${CMAKE_CURRENT_SOURCE_DIR}/snow_draw_engine_qt/include")
+    else()
+        set(ADQT_ICON_USAGE_ROOTS "")
+    endif()
     add_subdirectory(ant_design_qt "${CMAKE_BINARY_DIR}/ant_design_qt")
 endif()
 
@@ -396,6 +412,8 @@ if(SNOW_APPS_PACKAGE_SNOW_SHOT AND NOT APPLE)
         message(FATAL_ERROR "SNOW_APPS_PACKAGE_SNOW_SHOT requires SNOW_APPS_BUILD_SNOW_SHOT=ON")
     endif()
     set(CPACK_PACKAGE_NAME "snow-shot")
+    set(CPACK_INSTALL_CMAKE_PROJECTS "${CMAKE_BINARY_DIR};${CMAKE_PROJECT_NAME};SnowShot;/")
+    set(CPACK_COMPONENTS_ALL SnowShot)
     set(CPACK_PACKAGE_VENDOR "${SNOW_SHOT_VENDOR}")
     set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "${SNOW_SHOT_PRODUCT_NAME} screenshot utility")
     set(CPACK_PACKAGE_DESCRIPTION "${SNOW_SHOT_DESCRIPTION}")
@@ -406,10 +424,6 @@ if(SNOW_APPS_PACKAGE_SNOW_SHOT AND NOT APPLE)
     set(CPACK_PACKAGE_FILE_NAME "snow-shot-${SNOW_SHOT_VERSION}-windows-x64")
     set(CPACK_PACKAGE_DIRECTORY "${CMAKE_BINARY_DIR}")
     set(CPACK_PACKAGE_CHECKSUM "SHA256")
-    # LZMA gives the smallest installer while solid compression keeps repeated
-    # Qt/runtime data from being stored more than once.
-    set(CPACK_NSIS_COMPRESSOR "lzma")
-    set(CPACK_NSIS_COMPRESSOR_SOLID ON)
     set(CPACK_PACKAGE_DESCRIPTION_FILE
         "${CMAKE_CURRENT_SOURCE_DIR}/snow_shot/packaging/README.txt")
     set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/snow_shot/LICENSE")
@@ -448,6 +462,12 @@ if(SNOW_APPS_PACKAGE_SNOW_SHOT AND NOT APPLE)
     set(CPACK_NSIS_URL_INFO_ABOUT "${SNOW_SHOT_HOMEPAGE_URL}")
     set(CPACK_NSIS_CONTACT "${SNOW_SHOT_SUPPORT_EMAIL}")
     set(CPACK_VERBATIM_VARIABLES ON)
+    include(cmake/SnowShotPackageCompression.cmake)
+    snow_shot_apply_nsis_compression()
     include(cmake/SnowShotInstaller.cmake)
     include(CPack)
+endif()
+
+if(SNOW_APPS_PACKAGE_SNOW_SHOT)
+    include(cmake/SnowShotMiniPackage.cmake)
 endif()

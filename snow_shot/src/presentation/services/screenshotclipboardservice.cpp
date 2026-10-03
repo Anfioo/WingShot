@@ -4,11 +4,17 @@
 
 #include "screenshotclipboardperfinstrumentation.h"
 #include "snowimageqtcodec.h"
+#ifdef Q_OS_MACOS
+#include "../../platform/macos/imageclipboard.h"
+#endif
 
 #include <QClipboard>
+#include <QBuffer>
 #include <QCoreApplication>
 #include <QDebug>
 #include <QElapsedTimer>
+#include <QHash>
+#include <QGuiApplication>
 #include <QMimeData>
 #include <QPointer>
 #include <QThread>
@@ -22,13 +28,34 @@
 #include <memory>
 #include <utility>
 
+struct ScreenshotClipboardCommitState {
+    std::atomic_bool cancelled{false};
+    std::atomic_bool finished{false};
+    std::atomic_bool completionEnabled{true};
+    std::weak_ptr<ScreenshotClipboardCommitScopeState> scope;
+};
+
+struct ScreenshotClipboardCommitScopeState {
+    QHash<ScreenshotClipboardCommitState*, std::shared_ptr<ScreenshotClipboardCommitState>> pending;
+};
+
 namespace {
 #if !defined(Q_OS_WIN)
 // Keep canonical PNG bytes for native consumers and lazily provide Qt's image
-// representation when a local reader requests it. Publishing never decodes.
+// representation when a reader requests it. Decoded pixels belong to that reader.
 class PngClipboardMimeData final : public QMimeData {
   public:
-    explicit PngClipboardMimeData(QByteArray png) {
+    explicit PngClipboardMimeData(QByteArray png, QByteArray placement = {},
+                                  QByteArray appearance = {}) {
+#ifdef Q_OS_MACOS
+        snow_shot::platform::macos::initializeImageClipboardConverter();
+#endif
+        ensureScreenshotClipboardPlacementMimeSupport();
+        ensureScreenshotClipboardAppearanceMimeSupport();
+        if (!appearance.isEmpty())
+            setData(screenshotClipboardAppearanceNativeMimeType(), std::move(appearance));
+        if (!placement.isEmpty())
+            setData(screenshotClipboardPlacementNativeMimeType(), std::move(placement));
         setData(QStringLiteral("image/png"), std::move(png));
     }
     QStringList formats() const override {
@@ -43,18 +70,27 @@ class PngClipboardMimeData final : public QMimeData {
   protected:
     QVariant retrieveData(const QString& mime, QMetaType type) const override {
         if (mime == QStringLiteral("application/x-qt-image")) {
-            if (m_image.isNull()) {
-                m_image = snow_shot::image_codec::decode(data(QStringLiteral("image/png")),
-                                                         snow::image::Format::png, "clipboard.png");
-            }
-            return m_image;
+            return snow_shot::image_codec::decode(data(QStringLiteral("image/png")),
+                                                  snow::image::Format::png, "clipboard.png");
         }
         return QMimeData::retrieveData(mime, type);
     }
-
-  private:
-    mutable QImage m_image;
 };
+
+bool publishPngClipboard(QClipboard* clipboard, const QByteArray& png, const QByteArray& placement,
+                         const QByteArray& appearance) {
+#ifdef Q_OS_MACOS
+    if (QGuiApplication::platformName() == QStringLiteral("cocoa")) {
+        ensureScreenshotClipboardPlacementMimeSupport();
+        ensureScreenshotClipboardAppearanceMimeSupport();
+        return snow_shot::platform::macos::publishImageClipboard(clipboard, png, placement,
+                                                                 appearance);
+    }
+#endif
+    clipboard->setMimeData(new PngClipboardMimeData(png, placement, appearance),
+                           QClipboard::Clipboard);
+    return true;
+}
 #endif
 
 constexpr int kMaximumCommitAttempts = 5;
@@ -75,10 +111,10 @@ class ClipboardCommitOperation final : public QObject {
   public:
     using Attempt = std::function<ClipboardPublishAttempt()>;
 
-    ClipboardCommitOperation(QObject* receiver, std::shared_ptr<std::atomic_bool> cancelled,
-                             Attempt attempt,
+    ClipboardCommitOperation(QObject* receiver,
+                             std::shared_ptr<ScreenshotClipboardCommitState> state, Attempt attempt,
                              ScreenshotClipboardService::CommitCompletion completion)
-        : m_receiver(receiver), m_cancelled(std::move(cancelled)), m_attempt(std::move(attempt)),
+        : m_receiver(receiver), m_state(std::move(state)), m_attempt(std::move(attempt)),
           m_completion(std::move(completion)) {
         if (receiver != nullptr) {
             connect(receiver, &QObject::destroyed, this, [this]() { finish({}, false); });
@@ -95,7 +131,7 @@ class ClipboardCommitOperation final : public QObject {
         if (m_finished) {
             return;
         }
-        if (m_cancelled == nullptr || m_cancelled->load(std::memory_order_acquire)) {
+        if (m_state->cancelled.load(std::memory_order_acquire)) {
             ScreenshotClipboardCommitResult result;
             result.failure = ScreenshotClipboardCommitFailure::Cancelled;
             result.attempts = m_attempts;
@@ -104,7 +140,16 @@ class ClipboardCommitOperation final : public QObject {
         }
 
         ++m_attempts;
-        const ClipboardPublishAttempt attempt = m_attempt();
+        // Publication emits clipboard signals synchronously. A listener can
+        // destroy the receiver and finish this operation during the call.
+        // Keep the callable and its payload alive until publication returns.
+        const QPointer<ClipboardCommitOperation> guardedOperation(this);
+        Attempt publish = m_attempt;
+        const ClipboardPublishAttempt attempt = publish();
+        publish = {};
+        if (guardedOperation.isNull() || m_finished) {
+            return;
+        }
         if (attempt.succeeded()) {
             ScreenshotClipboardCommitResult result;
             result.attempts = m_attempts;
@@ -136,8 +181,15 @@ class ClipboardCommitOperation final : public QObject {
             return;
         }
         m_finished = true;
-        const bool cancelled =
-            !notify || result.failure == ScreenshotClipboardCommitFailure::Cancelled;
+        m_attempt = {};
+        if (const auto scope = m_state->scope.lock()) {
+            scope->pending.remove(m_state.get());
+        }
+        m_state->scope.reset();
+        m_state->finished.store(true, std::memory_order_release);
+        const bool cancelled = !notify ||
+                               !m_state->completionEnabled.load(std::memory_order_acquire) ||
+                               result.failure == ScreenshotClipboardCommitFailure::Cancelled;
         snow_shot::diagnostics::logEvent(
             QStringLiteral("snow_shot.clipboard"), QStringLiteral("clipboard.finished"),
             {{QStringLiteral("operation"), m_operation},
@@ -148,16 +200,16 @@ class ClipboardCommitOperation final : public QObject {
                                          : result.succeeded() ? QStringLiteral("succeeded")
                                                               : QStringLiteral("failed")}},
             cancelled || result.succeeded() ? QtInfoMsg : QtWarningMsg);
-        if (notify && !m_receiver.isNull() && m_completion) {
-            m_completion(result);
+        auto completion = std::move(m_completion);
+        if (notify && m_state->completionEnabled.load(std::memory_order_acquire) &&
+            !m_receiver.isNull() && completion) {
+            completion(result);
         }
-        m_completion = {};
-        m_attempt = {};
         deleteLater();
     }
 
     QPointer<QObject> m_receiver;
-    std::shared_ptr<std::atomic_bool> m_cancelled;
+    std::shared_ptr<ScreenshotClipboardCommitState> m_state;
     Attempt m_attempt;
     ScreenshotClipboardService::CommitCompletion m_completion;
     QElapsedTimer m_elapsed;
@@ -263,14 +315,20 @@ HGLOBAL prepareDib(const ScreenshotImageRowSource& source) {
     return static_cast<HGLOBAL>(allocation.release());
 }
 
-ClipboardPublishAttempt publishClipboardPayload(void** pngHandle, void** dibHandle) {
+ClipboardPublishAttempt publishClipboardPayload(void** pngHandle, void** dibHandle,
+                                                void** placementHandle, void** appearanceHandle) {
     SNOW_SHOT_CLIPBOARD_PERF_SCOPE("clipboard.publish_total");
     if (*pngHandle == nullptr || *dibHandle == nullptr) {
         return {ScreenshotClipboardCommitFailure::InvalidPayload, ERROR_INVALID_DATA};
     }
     const UINT pngFormat = RegisterClipboardFormatW(L"PNG");
+    const UINT placementFormat =
+        *placementHandle ? RegisterClipboardFormatW(L"SnowShotScreenshotPlacement") : 0;
+    const UINT appearanceFormat =
+        *appearanceHandle ? RegisterClipboardFormatW(L"SnowShotScreenshotAppearance") : 0;
     const HWND owner = clipboardOwnerWindow();
-    if (pngFormat == 0 || owner == nullptr) {
+    if (pngFormat == 0 || (*placementHandle && placementFormat == 0) ||
+        (*appearanceHandle && appearanceFormat == 0) || owner == nullptr) {
         return {ScreenshotClipboardCommitFailure::ClipboardUnavailable, GetLastError()};
     }
     if (!OpenClipboard(owner)) {
@@ -288,6 +346,18 @@ ClipboardPublishAttempt publishClipboardPayload(void** pngHandle, void** dibHand
         published = SetClipboardData(CF_DIB, static_cast<HGLOBAL>(*dibHandle)) != nullptr;
         if (published)
             *dibHandle = nullptr;
+    }
+    if (published && *placementHandle) {
+        published =
+            SetClipboardData(placementFormat, static_cast<HGLOBAL>(*placementHandle)) != nullptr;
+        if (published)
+            *placementHandle = nullptr;
+    }
+    if (published && *appearanceHandle) {
+        published =
+            SetClipboardData(appearanceFormat, static_cast<HGLOBAL>(*appearanceHandle)) != nullptr;
+        if (published)
+            *appearanceHandle = nullptr;
     }
     const DWORD error = published ? ERROR_SUCCESS : GetLastError();
     if (!published) {
@@ -331,21 +401,86 @@ QString ScreenshotClipboardCommitResult::errorString() const {
 }
 
 ScreenshotClipboardCommitHandle::ScreenshotClipboardCommitHandle(
-    std::shared_ptr<std::atomic_bool> cancelled)
-    : m_cancelled(std::move(cancelled)) {}
+    std::shared_ptr<ScreenshotClipboardCommitState> state)
+    : m_state(std::move(state)) {}
 
 void ScreenshotClipboardCommitHandle::cancel() const {
-    if (m_cancelled != nullptr) {
-        m_cancelled->store(true, std::memory_order_release);
+    if (m_state != nullptr) {
+        m_state->cancelled.store(true, std::memory_order_release);
     }
 }
 
 bool ScreenshotClipboardCommitHandle::isValid() const {
-    return m_cancelled != nullptr;
+    return m_state != nullptr;
 }
 
 bool ScreenshotClipboardCommitHandle::isCancellationRequested() const {
-    return !isValid() || m_cancelled->load(std::memory_order_acquire);
+    return !isValid() || m_state->cancelled.load(std::memory_order_acquire);
+}
+
+bool ScreenshotClipboardCommitHandle::isFinished() const {
+    return !isValid() || m_state->finished.load(std::memory_order_acquire);
+}
+
+ScreenshotClipboardCommitScope::~ScreenshotClipboardCommitScope() {
+    cancelAll();
+}
+
+ScreenshotClipboardCommitHandle
+ScreenshotClipboardCommitScope::commit(QClipboard* clipboard, QObject* receiver,
+                                       ScreenshotClipboardPayload payload,
+                                       ScreenshotClipboardService::CommitCompletion completion,
+                                       ScreenshotClipboardService::PublicationId publicationId) {
+    if (publicationId == 0) {
+        publicationId = ScreenshotClipboardService::reservePublication();
+    }
+    auto handle = ScreenshotClipboardService::commit(clipboard, receiver, std::move(payload),
+                                                     publicationId, std::move(completion));
+    track(handle);
+    return handle;
+}
+
+ScreenshotClipboardCommitHandle ScreenshotClipboardCommitScope::commitMimeData(
+    QClipboard* clipboard, QObject* receiver, QMimeData* mimeData,
+    ScreenshotClipboardService::CommitCompletion completion,
+    ScreenshotClipboardService::PublicationId publicationId) {
+    if (publicationId == 0) {
+        publicationId = ScreenshotClipboardService::reservePublication();
+    }
+    auto handle = ScreenshotClipboardService::commitMimeData(clipboard, receiver, mimeData,
+                                                             publicationId, std::move(completion));
+    track(handle);
+    return handle;
+}
+
+void ScreenshotClipboardCommitScope::track(const ScreenshotClipboardCommitHandle& handle) {
+    if (handle.isFinished()) {
+        return;
+    }
+    if (!m_state) {
+        m_state = std::make_shared<ScreenshotClipboardCommitScopeState>();
+    }
+    handle.m_state->scope = m_state;
+    m_state->pending.insert(handle.m_state.get(), handle.m_state);
+}
+
+void ScreenshotClipboardCommitScope::cancelAll() {
+    // Detach the batch so a new publication cannot inherit cancellation or be
+    // removed when an older cancelled operation eventually finishes.
+    const auto state = std::exchange(m_state, {});
+    if (!state) {
+        return;
+    }
+    for (const auto& commit : state->pending) {
+        commit->completionEnabled.store(false, std::memory_order_release);
+        commit->cancelled.store(true, std::memory_order_release);
+        commit->scope.reset();
+    }
+    state->pending.clear();
+}
+
+qsizetype ScreenshotClipboardCommitScope::pendingCount() const {
+    return m_state ? m_state->pending.size() : 0;
 }
 
 ScreenshotClipboardPayload::~ScreenshotClipboardPayload() {
@@ -358,10 +493,18 @@ void ScreenshotClipboardPayload::reset() noexcept {
         GlobalFree(static_cast<HGLOBAL>(m_dibHandle));
     if (m_pngHandle != nullptr)
         GlobalFree(static_cast<HGLOBAL>(m_pngHandle));
+    if (m_placementHandle != nullptr)
+        GlobalFree(static_cast<HGLOBAL>(m_placementHandle));
     m_dibHandle = nullptr;
     m_pngHandle = nullptr;
+    if (m_appearanceHandle != nullptr)
+        GlobalFree(static_cast<HGLOBAL>(m_appearanceHandle));
+    m_placementHandle = nullptr;
+    m_appearanceHandle = nullptr;
 #endif
     m_pngBytes.clear();
+    m_placementBytes.clear();
+    m_appearanceBytes.clear();
 }
 
 ScreenshotClipboardPayload::ScreenshotClipboardPayload(
@@ -377,14 +520,20 @@ ScreenshotClipboardPayload::operator=(ScreenshotClipboardPayload&& other) noexce
 #if defined(Q_OS_WIN) || defined(_WIN32)
     m_dibHandle = std::exchange(other.m_dibHandle, nullptr);
     m_pngHandle = std::exchange(other.m_pngHandle, nullptr);
+    m_placementHandle = std::exchange(other.m_placementHandle, nullptr);
+    m_appearanceHandle = std::exchange(other.m_appearanceHandle, nullptr);
 #endif
     m_pngBytes = std::move(other.m_pngBytes);
+    m_placementBytes = std::move(other.m_placementBytes);
+    m_appearanceBytes = std::move(other.m_appearanceBytes);
     return *this;
 }
 
 bool ScreenshotClipboardPayload::isValid() const {
 #if defined(Q_OS_WIN) || defined(_WIN32)
-    return m_dibHandle != nullptr && m_pngHandle != nullptr && !m_pngBytes.isEmpty();
+    return m_dibHandle != nullptr && m_pngHandle != nullptr && !m_pngBytes.isEmpty() &&
+           (m_placementBytes.isEmpty() || m_placementHandle != nullptr) &&
+           (m_appearanceBytes.isEmpty() || m_appearanceHandle != nullptr);
 #else
     return !m_pngBytes.isEmpty();
 #endif
@@ -392,22 +541,54 @@ bool ScreenshotClipboardPayload::isValid() const {
 
 ScreenshotClipboardPayload
 ScreenshotClipboardService::prepare(const ScreenshotImageRowSource& source,
-                                    const QByteArray& canonicalPng) {
+                                    ScreenshotImageEncodingOptions encoding,
+                                    std::optional<ScreenshotClipboardPlacement> placement,
+                                    std::optional<ScreenshotClipboardAppearance> appearance) {
     SNOW_SHOT_CLIPBOARD_PERF_SCOPE("clipboard.prepare_total");
-    if (!source.isValid() || (source.cancellationRequested && source.cancellationRequested())) {
+    QByteArray png;
+    {
+        SNOW_SHOT_CLIPBOARD_PERF_SCOPE("clipboard.encode_png");
+        QBuffer buffer(&png);
+        if (!buffer.open(QIODevice::WriteOnly) ||
+            !snow_shot::image_codec::encodeToDevice(
+                source, &buffer, snow::image::Format::png,
+                ScreenshotImageFileService::encodeOptions(ScreenshotImageFileFormat::Png,
+                                                          encoding))) {
+            return {};
+        }
+    }
+    SNOW_SHOT_CLIPBOARD_PERF_COUNTER("clipboard.png_encoded", 1);
+    return prepareEncoded(source, png, std::move(placement), std::move(appearance));
+}
+
+ScreenshotClipboardPayload ScreenshotClipboardService::prepareEncoded(
+    const ScreenshotImageRowSource& source, const QByteArray& png,
+    std::optional<ScreenshotClipboardPlacement> placement,
+    std::optional<ScreenshotClipboardAppearance> appearance) {
+    SNOW_SHOT_CLIPBOARD_PERF_SCOPE("clipboard.prepare_native");
+    if (!source.isValid() || png.isEmpty() ||
+        (source.cancellationRequested && source.cancellationRequested())) {
         return {};
     }
     ScreenshotClipboardPayload payload;
-    payload.m_pngBytes =
-        canonicalPng.isEmpty() ? snow_shot::image_codec::encodePng(source, 0) : canonicalPng;
-    SNOW_SHOT_CLIPBOARD_PERF_COUNTER("clipboard.png_encoded", canonicalPng.isEmpty() ? 1 : 0);
-    if (payload.m_pngBytes.isEmpty())
-        return {};
+    if (placement) {
+        placement->rasterSize = source.size;
+        payload.m_placementBytes = encodeScreenshotClipboardPlacement(*placement);
+    }
+    if (appearance) {
+        appearance->rasterSize = source.size;
+        payload.m_appearanceBytes = encodeScreenshotClipboardAppearance(*appearance);
+    }
+    payload.m_pngBytes = png;
 #if defined(Q_OS_WIN) || defined(_WIN32)
     payload.m_dibHandle = prepareDib(source);
     if (payload.m_dibHandle == nullptr)
         return {};
     payload.m_pngHandle = copyToGlobal(payload.m_pngBytes);
+    if (!payload.m_placementBytes.isEmpty())
+        payload.m_placementHandle = copyToGlobal(payload.m_placementBytes);
+    if (!payload.m_appearanceBytes.isEmpty())
+        payload.m_appearanceHandle = copyToGlobal(payload.m_appearanceBytes);
 #endif
     if (source.cancellationRequested && source.cancellationRequested())
         return {};
@@ -415,8 +596,12 @@ ScreenshotClipboardService::prepare(const ScreenshotImageRowSource& source,
 }
 
 ScreenshotClipboardPayload
-ScreenshotClipboardService::prepareImage(const QImage& image, const QByteArray& canonicalPng) {
-    return prepare(snow_shot::image_codec::srgbRowSource(image), canonicalPng);
+ScreenshotClipboardService::prepareImage(const QImage& image,
+                                         ScreenshotImageEncodingOptions encoding,
+                                         std::optional<ScreenshotClipboardPlacement> placement,
+                                         std::optional<ScreenshotClipboardAppearance> appearance) {
+    return prepare(snow_shot::image_codec::srgbRowSource(image), encoding, std::move(placement),
+                   std::move(appearance));
 }
 
 ScreenshotClipboardCommitHandle
@@ -441,7 +626,7 @@ ScreenshotClipboardService::commit(QClipboard* clipboard, QObject* receiver,
         return {};
     }
 
-    auto cancelled = std::make_shared<std::atomic_bool>(false);
+    auto state = std::make_shared<ScreenshotClipboardCommitState>();
     auto sharedPayload = std::make_shared<ScreenshotClipboardPayload>(std::move(payload));
 #if defined(Q_OS_WIN) || defined(_WIN32)
     Q_UNUSED(clipboard);
@@ -449,7 +634,11 @@ ScreenshotClipboardService::commit(QClipboard* clipboard, QObject* receiver,
         if (publicationId != g_latestPublicationId.load(std::memory_order_acquire)) {
             return ClipboardPublishAttempt{};
         }
-        return publishClipboardPayload(&sharedPayload->m_pngHandle, &sharedPayload->m_dibHandle);
+        if (!sharedPayload->isValid())
+            return ClipboardPublishAttempt{ScreenshotClipboardCommitFailure::InvalidPayload, 0};
+        return publishClipboardPayload(&sharedPayload->m_pngHandle, &sharedPayload->m_dibHandle,
+                                       &sharedPayload->m_placementHandle,
+                                       &sharedPayload->m_appearanceHandle);
     };
 #else
     const QPointer<QClipboard> guardedClipboard(clipboard);
@@ -464,16 +653,19 @@ ScreenshotClipboardService::commit(QClipboard* clipboard, QObject* receiver,
         if (!sharedPayload->isValid()) {
             return ClipboardPublishAttempt{ScreenshotClipboardCommitFailure::InvalidPayload, 0};
         }
-        auto* mime = new PngClipboardMimeData(sharedPayload->m_pngBytes);
-        guardedClipboard->setMimeData(mime, QClipboard::Clipboard);
+        const bool published =
+            publishPngClipboard(guardedClipboard, sharedPayload->m_pngBytes,
+                                sharedPayload->m_placementBytes, sharedPayload->m_appearanceBytes);
         sharedPayload->reset();
-        return ClipboardPublishAttempt{};
+        return ClipboardPublishAttempt{published ? ScreenshotClipboardCommitFailure::None
+                                                 : ScreenshotClipboardCommitFailure::PublishFailed,
+                                       0};
     };
 #endif
-    auto* operation = new ClipboardCommitOperation(receiver, cancelled, std::move(attempt),
-                                                   std::move(completion));
+    auto* operation =
+        new ClipboardCommitOperation(receiver, state, std::move(attempt), std::move(completion));
     operation->start();
-    return ScreenshotClipboardCommitHandle(std::move(cancelled));
+    return ScreenshotClipboardCommitHandle(std::move(state));
 }
 
 ScreenshotClipboardCommitHandle
@@ -494,13 +686,24 @@ ScreenshotClipboardService::commitMimeData(QClipboard* clipboard, QObject* recei
         return {};
     }
 
-    auto cancelled = std::make_shared<std::atomic_bool>(false);
+    auto state = std::make_shared<ScreenshotClipboardCommitState>();
     auto holder = std::make_shared<std::unique_ptr<QMimeData>>(mimeData);
-    const QList<QUrl> fileUrls = mimeData->formats() == QStringList{QStringLiteral("text/uri-list")}
-                                     ? mimeData->urls()
-                                     : QList<QUrl>{};
+    const auto placementFormat = screenshotClipboardPlacementNativeMimeType();
+    const auto appearanceFormat = screenshotClipboardAppearanceNativeMimeType();
+    const auto formats = mimeData->formats();
+    const bool fileOnly = mimeData->hasUrls() &&
+                          std::all_of(formats.begin(), formats.end(),
+                                      [&placementFormat, &appearanceFormat](const QString& format) {
+                                          return format == QStringLiteral("text/uri-list") ||
+                                                 format == placementFormat ||
+                                                 format == appearanceFormat;
+                                      });
+    const QList<QUrl> fileUrls = fileOnly ? mimeData->urls() : QList<QUrl>{};
+    const QByteArray placementBytes = fileOnly ? mimeData->data(placementFormat) : QByteArray{};
+    const QByteArray appearanceBytes = fileOnly ? mimeData->data(appearanceFormat) : QByteArray{};
     const QPointer<QClipboard> guardedClipboard(clipboard);
-    auto attempt = [guardedClipboard, holder, publicationId, fileUrls]() {
+    auto attempt = [guardedClipboard, holder, publicationId, fileUrls, placementFormat,
+                    placementBytes, appearanceFormat, appearanceBytes]() {
         if (publicationId != g_latestPublicationId.load(std::memory_order_acquire)) {
             return ClipboardPublishAttempt{};
         }
@@ -515,6 +718,10 @@ ScreenshotClipboardService::commitMimeData(QClipboard* clipboard, QObject* recei
             // Qt owns each attempted MIME object, including failed native publications.
             auto* attemptMime = new QMimeData();
             attemptMime->setUrls(fileUrls);
+            if (!placementBytes.isEmpty())
+                attemptMime->setData(placementFormat, placementBytes);
+            if (!appearanceBytes.isEmpty())
+                attemptMime->setData(appearanceFormat, appearanceBytes);
             guardedClipboard->setMimeData(attemptMime, QClipboard::Clipboard);
             if (!guardedClipboard->ownsClipboard() && guardedClipboard->mimeData() != attemptMime) {
                 return ClipboardPublishAttempt{ScreenshotClipboardCommitFailure::Busy, 0};
@@ -524,29 +731,33 @@ ScreenshotClipboardService::commitMimeData(QClipboard* clipboard, QObject* recei
         guardedClipboard->setMimeData(holder->release(), QClipboard::Clipboard);
         return ClipboardPublishAttempt{};
     };
-    auto* operation = new ClipboardCommitOperation(receiver, cancelled, std::move(attempt),
-                                                   std::move(completion));
+    auto* operation =
+        new ClipboardCommitOperation(receiver, state, std::move(attempt), std::move(completion));
     operation->start();
-    return ScreenshotClipboardCommitHandle(std::move(cancelled));
+    return ScreenshotClipboardCommitHandle(std::move(state));
 }
 
 bool ScreenshotClipboardService::publish(QClipboard* clipboard,
                                          ScreenshotClipboardPayload payload) {
     static_cast<void>(reservePublication());
+    if (!payload.isValid())
+        return false;
 #if defined(Q_OS_WIN) || defined(_WIN32)
     Q_UNUSED(clipboard);
-    return publishClipboardPayload(&payload.m_pngHandle, &payload.m_dibHandle).succeeded();
+    return publishClipboardPayload(&payload.m_pngHandle, &payload.m_dibHandle,
+                                   &payload.m_placementHandle, &payload.m_appearanceHandle)
+        .succeeded();
 #else
     if (clipboard == nullptr || !payload.isValid()) {
         qWarning("Screenshot clipboard is unavailable");
         return false;
     }
-    auto* mime = new PngClipboardMimeData(payload.m_pngBytes);
-    clipboard->setMimeData(mime, QClipboard::Clipboard);
-    return true;
+    return publishPngClipboard(clipboard, payload.m_pngBytes, payload.m_placementBytes,
+                               payload.m_appearanceBytes);
 #endif
 }
 
-bool ScreenshotClipboardService::publishImage(QClipboard* clipboard, const QImage& image) {
-    return publish(clipboard, prepareImage(image));
+bool ScreenshotClipboardService::publishImage(QClipboard* clipboard, const QImage& image,
+                                              ScreenshotImageEncodingOptions encoding) {
+    return publish(clipboard, prepareImage(image, encoding));
 }

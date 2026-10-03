@@ -1,3 +1,4 @@
+#include "snow_shot/presentation/windowcloseshortcut.h"
 #include "snow_shot/presentation/screenshotregiontypeshortcut.h"
 #include "snow_shot/presentation/windowshortcutmanager.h"
 
@@ -32,9 +33,9 @@ bool waitFor(const std::function<bool()>& ready) {
     return ready();
 }
 
-bool postOptionTab(bool reverse) {
-    CGEventRef down = CGEventCreateKeyboardEvent(nullptr, 48, true);
-    CGEventRef up = CGEventCreateKeyboardEvent(nullptr, 48, false);
+bool postKey(CGKeyCode code, CGEventFlags flags) {
+    CGEventRef down = CGEventCreateKeyboardEvent(nullptr, code, true);
+    CGEventRef up = CGEventCreateKeyboardEvent(nullptr, code, false);
     if (down == nullptr || up == nullptr) {
         if (down != nullptr)
             CFRelease(down);
@@ -42,8 +43,6 @@ bool postOptionTab(bool reverse) {
             CFRelease(up);
         return false;
     }
-    const CGEventFlags flags =
-        kCGEventFlagMaskAlternate | (reverse ? kCGEventFlagMaskShift : CGEventFlags{0});
     CGEventSetFlags(down, flags);
     CGEventSetFlags(up, flags);
     CGEventPost(kCGHIDEventTap, down);
@@ -87,6 +86,18 @@ int main(int argc, char** argv) {
                 "native region shortcut registration failed");
     }
 
+    int closes = 0;
+    int selects = 0;
+    snow_shot::presentation::installWindowCloseShortcut(&overlay, [&] { ++closes; });
+    snow_shot::presentation::WindowShortcutManager::Binding select;
+    select.id = QStringLiteral("native.select");
+    select.shortcutBindings = {
+        snow_shot::shortcuts::bindingFromPortableText(QStringLiteral("Ctrl+A"))};
+    select.activate = [&](const auto&) {
+        ++selects;
+        return true;
+    };
+    require(manager.addBinding(&overlay, std::move(select)) != 0, "register physical A");
     overlay.show();
     [NSApp activate];
     overlay.raise();
@@ -94,10 +105,15 @@ int main(int argc, char** argv) {
     overlay.setFocus();
     const bool active =
         waitFor([&] { return overlay.isActiveWindow() && [NSApp keyWindow] != nil; });
-    const bool forwardPosted = active && postOptionTab(false);
+    const bool forwardPosted = active && postKey(48, kCGEventFlagMaskAlternate);
     const bool forwardDelivered = forwardPosted && waitFor([&] { return forwardCount == 1; });
-    const bool reversePosted = forwardDelivered && postOptionTab(true);
+    const bool reversePosted =
+        forwardDelivered && postKey(48, kCGEventFlagMaskAlternate | kCGEventFlagMaskShift);
     const bool reverseDelivered = reversePosted && waitFor([&] { return reverseCount == 1; });
+    const bool selectDelivered = reverseDelivered && postKey(0, kCGEventFlagMaskCommand) &&
+                                 waitFor([&] { return selects == 1; });
+    const bool closeDelivered = selectDelivered && postKey(13, kCGEventFlagMaskCommand) &&
+                                waitFor([&] { return closes == 1; });
     overlay.hide();
     if (previous != nil) {
         [previous activateWithOptions:0];
@@ -108,5 +124,6 @@ int main(int argc, char** argv) {
     require(forwardPosted && reversePosted, "native Option+Tab events could not be posted");
     require(forwardDelivered && reverseDelivered && forwardCount == 1 && reverseCount == 1,
             "native Option+Tab and Option+Shift+Tab must reach the region shortcuts");
+    require(selectDelivered && closeDelivered, "native A and fixed close must dispatch physically");
     std::cout << "macOS native region shortcuts passed\n";
 }

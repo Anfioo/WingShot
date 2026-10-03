@@ -228,6 +228,49 @@ void testTrackLimitsAllowEveryTransitionFrame() {
     require(unchanged.minimum == minimum && unchanged.maximum == maximum,
             "missing transition geometry must preserve normal scale limits");
 }
+void testCrossingResizeKeepsProportionsAndAnchor() {
+    using H = resize_geometry::DragHandle;
+    const QRect origin(100, 200, 200, 100);
+    const QPoint deltas[] = {{300, 150},   {0, 150},  {-300, 150}, {-300, 0},
+                             {-300, -150}, {0, -150}, {300, -150}, {300, 0}};
+    const QPoint anchors[] = {{300, 300}, {100, 300}, {100, 300}, {100, 200},
+                              {100, 200}, {100, 200}, {300, 200}, {300, 200}};
+    const H opposites[] = {H::BottomRight, H::Bottom, H::BottomLeft, H::Left,
+                           H::TopLeft,     H::Top,    H::TopRight,   H::Right};
+    for (int index = 0; index < 8; ++index) {
+        H effective = H(index);
+        QRect result;
+        require(resize_geometry::dragResizeRect(origin, deltas[index], origin.size(), H(index), .1,
+                                                5., &effective, &result),
+                "crossing resize failed");
+        require(result.size() == QSize(100, 50) && effective == opposites[index],
+                "crossing must switch handles and retain aspect ratio");
+        const bool left =
+            effective == H::Left || effective == H::TopLeft || effective == H::BottomLeft;
+        const bool top = effective == H::Top || effective == H::TopLeft || effective == H::TopRight;
+        require(result.topLeft() + QPoint(left ? result.width() : 0, top ? result.height() : 0) ==
+                    anchors[index],
+                "crossing must preserve the original opposite anchor");
+        require(resize_geometry::dragResizeRect(origin, {}, origin.size(), H(index), .1, 5.,
+                                                &effective, &result) &&
+                    result == origin && effective == H(index),
+                "crossing back must restore the original rectangle");
+    }
+    H effective = H::TopLeft;
+    QRect result;
+    require(resize_geometry::dragResizeRect(origin, QPoint(-201, -101), origin.size(),
+                                            H::BottomRight, .1, 5., &effective, &result) &&
+                result == QRect(80, 190, 20, 10),
+            "minimum scale must apply on the crossed side");
+    require(resize_geometry::dragResizeRect(origin, QPoint(-200, -100), origin.size(),
+                                            H::BottomRight, .1, 5., &effective, &result) &&
+                effective == H::TopLeft,
+            "zero distance must retain the previous corner");
+    require(resize_geometry::dragResizeRect(origin, QPoint(-3000, 0), origin.size(), H::BottomRight,
+                                            .1, 5., &effective, &result) &&
+                result == QRect(-900, 200, 1000, 500),
+            "single-axis crossing must preserve maximum scale and the other axis direction");
+}
 } // namespace
 
 int main(int argc, char* argv[]) {
@@ -235,6 +278,7 @@ int main(int argc, char* argv[]) {
     Q_UNUSED(application);
 
     try {
+        testCrossingResizeKeepsProportionsAndAnchor();
         testEveryHandlePreservesItsFixedAnchor();
         testDraggedEdgeDeterminesScale();
         testScaleLimitsUseExactBaselineMultiples();

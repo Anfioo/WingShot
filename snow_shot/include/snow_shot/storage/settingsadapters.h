@@ -1,11 +1,16 @@
 #ifndef SNOW_SHOT_STORAGE_SETTINGSADAPTERS_H
 #define SNOW_SHOT_STORAGE_SETTINGSADAPTERS_H
 
+#include "snow_shot/app/edition.h"
+#if SNOW_SHOT_ENABLE_API_CONFIGURATION
 #include "snow_shot/customaimodelconfiguration.h"
+#include "snow_shot/texttranslationconfiguration.h"
+#endif
 #include "snow_shot/shortcuts/shortcutbinding.h"
 #include "snow_shot/storage/persistedwindowgeometry.h"
 
 #include <QColor>
+#include <QByteArray>
 #include <QJsonObject>
 #include <QMap>
 #include <QString>
@@ -16,6 +21,7 @@
 #include <optional>
 
 namespace snow_shot::storage {
+#if SNOW_SHOT_ENABLE_EXTENDED_FEATURES
 class ExtendedFeaturesSettings final {
   public:
     [[nodiscard]] bool translationPageEnabled() const;
@@ -25,11 +31,18 @@ class ExtendedFeaturesSettings final {
     [[nodiscard]] bool standaloneTranslationWindow() const;
     bool setStandaloneTranslationWindow(bool enabled) const;
 };
+#endif
 
 class TextRecognitionSettings final {
   public:
     [[nodiscard]] bool saveRecognitionResultAsImage() const;
     bool setSaveRecognitionResultAsImage(bool enabled) const;
+    [[nodiscard]] bool showOriginalImagePreview() const;
+    bool setShowOriginalImagePreview(bool enabled) const;
+    [[nodiscard]] QString defaultFormatting() const;
+    bool setDefaultFormatting(const QString& value) const;
+    [[nodiscard]] QString defaultPunctuation() const;
+    bool setDefaultPunctuation(const QString& value) const;
 };
 
 struct ScreenshotSavePathShortcut {
@@ -57,25 +70,54 @@ enum class ScreenshotToolbarLayoutKind {
     PinnedActionTools,
     DrawingTools,
     ActionTools,
+    FloatingTools,
 };
 
 [[nodiscard]] QColor colorFromRgbaString(const QString& value);
 [[nodiscard]] QString colorToRgbaString(const QColor& color);
 
+#if SNOW_SHOT_ENABLE_API_CONFIGURATION
 class ApiConfigurationSettings final {
   public:
+    [[nodiscard]] QString serverUrl() const;
+    bool setServerUrl(const QString& value) const;
     [[nodiscard]] CustomAiModels customModels() const;
     bool setCustomModels(const CustomAiModels& models) const;
+    [[nodiscard]] TextTranslationConfigurations textTranslationConfigurations() const;
+    bool setTextTranslationConfigurations(const TextTranslationConfigurations& values) const;
 };
+#endif
 
 class InterfaceSettings final {
   public:
     [[nodiscard]] QColor themePrimaryColor() const;
     bool setThemePrimaryColor(const QColor& color) const;
+    [[nodiscard]] QString appFontFamily() const;
+    bool setAppFontFamily(const QString& family) const;
     [[nodiscard]] QString themeMode() const;
     bool setThemeMode(const QString& mode) const;
     [[nodiscard]] QString language() const;
     bool setLanguage(const QString& language) const;
+    [[nodiscard]] QString skinPath() const;
+    bool setSkinPath(const QString& path) const;
+    [[nodiscard]] QString skinPosition() const;
+    bool setSkinPosition(const QString& position) const;
+    [[nodiscard]] QString toolbarSkinPath() const;
+    bool setToolbarSkinPath(const QString& path) const;
+    [[nodiscard]] QString toolbarSkinPosition() const;
+    bool setToolbarSkinPosition(const QString& position) const;
+    [[nodiscard]] QString trayMenuSkinPath() const;
+    bool setTrayMenuSkinPath(const QString& path) const;
+    [[nodiscard]] QString trayMenuSkinPosition() const;
+    bool setTrayMenuSkinPosition(const QString& position) const;
+    [[nodiscard]] QString skinDisplayMode() const;
+    bool setSkinDisplayMode(const QString& mode) const;
+    [[nodiscard]] int skinOpacity() const;
+    bool setSkinOpacity(int opacity) const;
+    [[nodiscard]] int skinBlurLevel() const;
+    bool setSkinBlurLevel(int level) const;
+    [[nodiscard]] int skinMaskOpacity() const;
+    bool setSkinMaskOpacity(int opacity) const;
     [[nodiscard]] bool sidebarCollapsed() const;
     bool setSidebarCollapsed(bool collapsed) const;
 };
@@ -84,8 +126,10 @@ class WindowMemorySettings final {
   public:
     [[nodiscard]] std::optional<PersistedWindowGeometry> mainWindowGeometry() const;
     bool setMainWindowGeometry(const QRect& normalGeometry, bool maximized) const;
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     [[nodiscard]] std::optional<QSize> translationWindowSize() const;
     bool setTranslationWindowSize(const QSize& size) const;
+#endif
 };
 
 class ShortcutSettings final {
@@ -98,8 +142,11 @@ class ShortcutSettings final {
     bool setScreenshotFixed(const shortcuts::ShortcutBindingList& bindings) const;
     [[nodiscard]] shortcuts::ShortcutBindingList screenshotOcr() const;
     bool setScreenshotOcr(const shortcuts::ShortcutBindingList& bindings) const;
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     [[nodiscard]] shortcuts::ShortcutBindingList screenshotTranslation() const;
     bool setScreenshotTranslation(const shortcuts::ShortcutBindingList& bindings) const;
+#endif
+
     [[nodiscard]] shortcuts::ShortcutBindingList screenshotCopy() const;
     bool setScreenshotCopy(const shortcuts::ShortcutBindingList& bindings) const;
     [[nodiscard]] shortcuts::ShortcutBindingList screenshotFullScreen() const;
@@ -114,6 +161,10 @@ class ShortcutSettings final {
     bool setOpenScreenRecordingFolder(const shortcuts::ShortcutBindingList& bindings) const;
     [[nodiscard]] shortcuts::ShortcutBindingList openCaptureHistory() const;
     bool setOpenCaptureHistory(const shortcuts::ShortcutBindingList& bindings) const;
+    [[nodiscard]] shortcuts::ShortcutBindingList switchWindowGroup() const;
+    bool setSwitchWindowGroup(const shortcuts::ShortcutBindingList& bindings) const;
+    [[nodiscard]] shortcuts::ShortcutBindingList globalCanvas() const;
+    bool setGlobalCanvas(const shortcuts::ShortcutBindingList& bindings) const;
     [[nodiscard]] shortcuts::ShortcutBindingList openPinToScreenManagement() const;
     bool setOpenPinToScreenManagement(const shortcuts::ShortcutBindingList& bindings) const;
     [[nodiscard]] shortcuts::ShortcutBindingList openSettings() const;
@@ -124,8 +175,11 @@ class ShortcutSettings final {
     bool setPinSelectedFiles(const shortcuts::ShortcutBindingList& bindings) const;
     [[nodiscard]] shortcuts::ShortcutBindingList restoreLastClosedWindows() const;
     bool setRestoreLastClosedWindows(const shortcuts::ShortcutBindingList& bindings) const;
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     [[nodiscard]] shortcuts::ShortcutBindingList translateSelectedText() const;
     bool setTranslateSelectedText(const shortcuts::ShortcutBindingList& bindings) const;
+#endif
+
     [[nodiscard]] shortcuts::ShortcutBindingList toggleGlobalHotkeys() const;
     bool setToggleGlobalHotkeys(const shortcuts::ShortcutBindingList& bindings) const;
     [[nodiscard]] shortcuts::ShortcutBindingList toggleDisableOnFocusedFullscreenWindow() const;
@@ -143,10 +197,16 @@ class ScreenshotSettings final {
   public:
     [[nodiscard]] bool shutterSoundNotification() const;
     bool setShutterSoundNotification(bool enabled) const;
+#if SNOW_SHOT_ENABLE_QR_RECOGNITION
+    [[nodiscard]] bool autoRecognizeQrCode() const;
+    bool setAutoRecognizeQrCode(bool enabled) const;
+#endif
     [[nodiscard]] bool confirmBeforeExitingViaShortcut() const;
     bool setConfirmBeforeExitingViaShortcut(bool enabled) const;
-    [[nodiscard]] bool captureCursor() const;
-    bool setCaptureCursor(bool enabled) const;
+    [[nodiscard]] bool showCursor() const;
+    bool setShowCursor(bool enabled) const;
+    [[nodiscard]] int scrollingAutoScrollIntervalMs() const;
+    bool setScrollingAutoScrollIntervalMs(int milliseconds) const;
     [[nodiscard]] bool captureUiInScrollingScreenshot() const;
     bool setCaptureUiInScrollingScreenshot(bool enabled) const;
     [[nodiscard]] bool restoreOriginalScreenColors() const;
@@ -163,6 +223,8 @@ class ScreenshotSettings final {
     bool setDoubleClickAction(const QString& action) const;
     [[nodiscard]] QString middleMouseButtonAction() const;
     bool setMiddleMouseButtonAction(const QString& action) const;
+    [[nodiscard]] bool quickSelectionModification() const;
+    bool setQuickSelectionModification(bool enabled) const;
     [[nodiscard]] QString selectionResizeMode() const;
     bool setSelectionResizeMode(const QString& mode) const;
     [[nodiscard]] bool autoSaveAfterCopy() const;
@@ -229,6 +291,8 @@ class ScreenshotShortcutSettings final {
     [[nodiscard]] shortcuts::ShortcutBindingList selectPreviouslySelectedArea() const;
     [[nodiscard]] shortcuts::ShortcutBindingList recapture() const;
     [[nodiscard]] shortcuts::ShortcutBindingList copyColor() const;
+    [[nodiscard]] shortcuts::ShortcutBindingList toggleCoordinateMode() const;
+    [[nodiscard]] shortcuts::ShortcutBindingList toggleGuides() const;
 
     [[nodiscard]] shortcuts::ShortcutBindingList shortcuts(const QString& actionId) const;
     bool setShortcuts(const QString& actionId,
@@ -286,12 +350,15 @@ struct ScreenshotTranslationConfiguration {
                            const ScreenshotTranslationConfiguration& second) = default;
 };
 
+#if SNOW_SHOT_ENABLE_IMAGE_CONVERSION
 class ScreenshotImageConversionSettings final {
   public:
     [[nodiscard]] QString visionModel() const;
     bool setVisionModel(const QString& model) const;
 };
+#endif
 
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
 class ScreenshotTranslationSettings final {
   public:
     [[nodiscard]] bool originalImageTranslationEnabled() const;
@@ -301,6 +368,7 @@ class ScreenshotTranslationSettings final {
     [[nodiscard]] ScreenshotTranslationConfiguration configuration() const;
     bool setConfiguration(const ScreenshotTranslationConfiguration& configuration) const;
 };
+#endif
 
 class ScreenshotUiSettings final {
   public:
@@ -308,8 +376,12 @@ class ScreenshotUiSettings final {
     bool setToolbarSize(const QString& size) const;
     [[nodiscard]] bool selectionTransitionAnimationEnabled() const;
     bool setSelectionTransitionAnimationEnabled(bool enabled) const;
+    [[nodiscard]] QString selectionDisplayUnit() const;
+    bool setSelectionDisplayUnit(const QString& unit) const;
     [[nodiscard]] QString colorPickerDisplayMode() const;
     bool setColorPickerDisplayMode(const QString& mode) const;
+    [[nodiscard]] QString colorPickerCoordinateMode() const;
+    bool setColorPickerCoordinateMode(const QString& mode) const;
     [[nodiscard]] QString colorPickerFormat() const;
     bool setColorPickerFormat(const QString& format) const;
     [[nodiscard]] QColor selectionBorderColor() const;
@@ -320,8 +392,12 @@ class ScreenshotUiSettings final {
     bool setShortcutHintOpacity(int opacity) const;
     [[nodiscard]] bool screenshotAreaTypeHintEnabled() const;
     bool setScreenshotAreaTypeHintEnabled(bool enabled) const;
+    [[nodiscard]] bool showGuidesByDefault() const;
+    bool setShowGuidesByDefault(bool enabled) const;
     [[nodiscard]] QColor cursorGuideLineColor() const;
     bool setCursorGuideLineColor(const QColor& color) const;
+    [[nodiscard]] QColor selectionCenterGuideLineColor() const;
+    bool setSelectionCenterGuideLineColor(const QColor& color) const;
     [[nodiscard]] QColor monitorCenterGuideLineColor() const;
     bool setMonitorCenterGuideLineColor(const QColor& color) const;
     [[nodiscard]] QColor colorPickerCenterGuideLineColor() const;
@@ -330,10 +406,16 @@ class ScreenshotUiSettings final {
 
 class RecordingSettings final {
   public:
+    [[nodiscard]] QString apiMode() const;
+    bool setApiMode(const QString& mode) const;
     [[nodiscard]] bool microphoneEnabled() const;
     bool setMicrophoneEnabled(bool enabled) const;
     [[nodiscard]] bool systemAudioEnabled() const;
     bool setSystemAudioEnabled(bool enabled) const;
+    [[nodiscard]] int microphoneGainDb() const;
+    bool setMicrophoneGainDb(int gainDb) const;
+    [[nodiscard]] int systemAudioGainDb() const;
+    bool setSystemAudioGainDb(int gainDb) const;
     [[nodiscard]] QString screenRecordingClarity() const;
     bool setScreenRecordingClarity(const QString& clarity) const;
     [[nodiscard]] int frameRate() const;
@@ -342,10 +424,18 @@ class RecordingSettings final {
     bool setAnimatedImageClarity(const QString& clarity) const;
     [[nodiscard]] int animatedImageFrameRate() const;
     bool setAnimatedImageFrameRate(int frameRate) const;
+    [[nodiscard]] bool separateAudioTracks() const;
+    bool setSeparateAudioTracks(bool enabled) const;
     [[nodiscard]] bool loopAnimatedImages() const;
     bool setLoopAnimatedImages(bool enabled) const;
     [[nodiscard]] QString outputFormat() const;
     bool setOutputFormat(const QString& format) const;
+    [[nodiscard]] bool postProcessingEnabled() const;
+    bool setPostProcessingEnabled(bool enabled) const;
+    [[nodiscard]] QString postProcessingEffect() const;
+    bool setPostProcessingEffect(const QString& effect) const;
+    [[nodiscard]] QColor progressBarColor() const;
+    bool setProgressBarColor(const QColor& color) const;
     [[nodiscard]] int mouseTrailDurationMs() const;
     bool setMouseTrailDurationMs(int duration) const;
     [[nodiscard]] int keyboardSize() const;
@@ -370,6 +460,8 @@ class RecordingSettings final {
     bool setShowCursor(bool show) const;
     [[nodiscard]] QString encoder() const;
     bool setEncoder(const QString& encoder) const;
+    [[nodiscard]] int videoQuality() const;
+    bool setVideoQuality(int quality) const;
     [[nodiscard]] QString encodingPreset() const;
     bool setEncodingPreset(const QString& preset) const;
     [[nodiscard]] bool captureToolbarInRecording() const;
@@ -384,10 +476,14 @@ class RecordingSettings final {
 
 class ScreenshotToolbarSettings final {
   public:
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION || SNOW_SHOT_ENABLE_QR_RECOGNITION
     [[nodiscard]] QString tableQrTool() const;
     bool setTableQrTool(const QString& tool) const;
+#endif
     [[nodiscard]] QString lastFilterTool() const;
     bool setLastFilterTool(const QString& tool) const;
+    [[nodiscard]] QString lastEraserTool() const;
+    bool setLastEraserTool(const QString& tool) const;
     [[nodiscard]] QString lastHighlightTool() const;
     bool setLastHighlightTool(const QString& tool) const;
     [[nodiscard]] QString lastDrawingTool() const;
@@ -409,8 +505,23 @@ class WatermarkTemplateSettings final {
     bool setTemplates(const QVector<WatermarkTemplate>& templates) const;
 };
 
+struct DrawTemplate {
+    QString name;
+    QByteArray payload;
+
+    friend bool operator==(const DrawTemplate&, const DrawTemplate&) = default;
+};
+
+class DrawTemplateSettings final {
+  public:
+    [[nodiscard]] QVector<DrawTemplate> templates() const;
+    bool setTemplates(const QVector<DrawTemplate>& templates) const;
+};
+
 class PinToScreenSettings final {
   public:
+    [[nodiscard]] bool showWindowButtons() const;
+    bool setShowWindowButtons(bool enabled) const;
     [[nodiscard]] QString doubleClickAction() const;
     bool setDoubleClickAction(const QString& action) const;
     [[nodiscard]] QString middleMouseButtonAction() const;
@@ -421,6 +532,8 @@ class PinToScreenSettings final {
     bool setBorderActiveColor(const QColor& color) const;
     [[nodiscard]] QString mouseWheelZoomMode() const;
     bool setMouseWheelZoomMode(const QString& mode) const;
+    [[nodiscard]] QString duplicateContentAction() const;
+    bool setDuplicateContentAction(const QString& value) const;
     [[nodiscard]] QString textSelectionOnRecognitionResults() const;
     [[nodiscard]] bool setTextSelectionOnRecognitionResults(const QString& mode) const;
     [[nodiscard]] bool automaticTextRecognition() const;

@@ -34,6 +34,10 @@ add_library(snow_shot_diagnostics STATIC
     "${CMAKE_CURRENT_SOURCE_DIR}/src/diagnostics/crashcollector.cpp")
 target_include_directories(snow_shot_diagnostics PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_link_libraries(snow_shot_diagnostics PUBLIC Qt6::Core PRIVATE snow_shot_crash_bridge)
+if(APPLE)
+    target_sources(snow_shot_diagnostics PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/platform/macos/applicationqos.cpp")
+    target_link_libraries(snow_shot_diagnostics PRIVATE snow_shot_rust_ffi_selector)
+endif()
 target_compile_definitions(snow_shot_diagnostics PUBLIC QT_MESSAGELOGCONTEXT)
 target_compile_definitions(snow_shot_diagnostics PRIVATE
     SNOW_DIAGNOSTICS_VERSION="${SNOW_SHOT_VERSION}"
@@ -66,7 +70,8 @@ if(WIN32)
     foreach(_lib vcpkg_crashpad_client vcpkg_crashpad_client_common vcpkg_crashpad_util vcpkg_crashpad_base)
         list(APPEND _snow_crash_links "${CRASHPAD_${_lib}_LIBRARY_RELEASE}")
     endforeach()
-    list(APPEND _snow_crash_links "${ZLIB_LIBRARY_RELEASE}" dbghelp.lib winhttp.lib rpcrt4.lib version.lib)
+    list(APPEND _snow_crash_links "${ZLIB_LIBRARY_RELEASE}" advapi32.lib dbghelp.lib
+        winhttp.lib rpcrt4.lib version.lib)
     list(JOIN _snow_crash_links "\n" _snow_crash_link_manifest)
     file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/generated/snow-ocr-crash-$<CONFIG>.rsp"
         CONTENT "${_snow_crash_link_manifest}\n")

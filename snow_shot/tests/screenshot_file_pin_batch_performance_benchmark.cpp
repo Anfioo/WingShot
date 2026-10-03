@@ -29,6 +29,8 @@
 #include <stdexcept>
 #include <vector>
 
+int runPinnedLifecyclePerformanceBenchmark(QApplication& application);
+
 namespace {
 
 struct Scenario final {
@@ -43,6 +45,7 @@ struct Scenario final {
 struct Sample final {
     qint64 firstPinNanoseconds = 0;
     qint64 totalNanoseconds = 0;
+    qint64 duplicateNanoseconds = 0;
     int presents = 0;
 };
 
@@ -128,7 +131,8 @@ void closePresentedWindows() {
     fail(QStringLiteral("presented windows were not closed between samples"));
 }
 
-Sample runSample(const Scenario& scenario, const QStringList& paths, QScreen& screen) {
+Sample runSample(const Scenario& scenario, const QStringList& paths, QScreen& screen,
+                 bool measureDuplicates) {
     // A fresh services object per sample gives every variant an empty window
     // pool, so "noprewarm" truly pays cold shell construction on the first
     // present and "prewarm" truly benefits from the prebuilt spare.
@@ -144,9 +148,11 @@ Sample runSample(const Scenario& scenario, const QStringList& paths, QScreen& sc
             content.image.size(), screen.availableGeometry(), screen.geometry(),
             ScreenshotGeometryMapper::physicalRectForScreen(screen), 16);
         require(fit.valid, QStringLiteral("pinned geometry fit failed"));
-        static_cast<void>(services.presentPinnedImage(content.image, &screen, fit.nativeGeometry,
-                                                      fit.initialWindowSize, {}, {}, 1.0,
-                                                      std::move(content.originalContent)));
+        static_cast<void>(services.presentPinnedImage(
+            content.image, &screen, fit.nativeGeometry, fit.initialWindowSize, {}, {}, 1.0,
+            std::move(content.originalContent), {}, {}, {}, {},
+            snow_shot::storage::PinnedWindowCreationSource::SelectedFiles,
+            std::move(content.sourceIdentity)));
         return true;
     };
     timer.start();
@@ -166,6 +172,36 @@ Sample runSample(const Scenario& scenario, const QStringList& paths, QScreen& sc
             QStringLiteral("expected %1 pinned files, presented %2")
                 .arg(scenario.fileCount)
                 .arg(sample.presents));
+    if (measureDuplicates) {
+        timer.restart();
+        ScreenshotFilePinBatch::DuplicateFilter filter;
+        filter.identities = services.duplicateSourceKeys();
+        bool restored = false;
+        int duplicates = 0;
+        filter.consume = [&](const auto& identity) {
+            const bool consumed =
+                services.handleDuplicatePin(identity, QStringLiteral("none"), restored);
+            if (consumed)
+                ++duplicates;
+            return consumed;
+        };
+        batch.start(
+            paths,
+            [](ScreenshotClipboardContent) {
+                fail(
+                    QStringLiteral("duplicate benchmark must not decode or present another image"));
+                return false;
+            },
+            filter);
+        timeout.restart();
+        while (batch.active() && timeout.elapsed() < 120000) {
+            QApplication::processEvents(QEventLoop::AllEvents, 20);
+            QThread::msleep(1);
+        }
+        require(!batch.active() && duplicates == scenario.fileCount,
+                QStringLiteral("duplicate batch must consume every existing pin"));
+        sample.duplicateNanoseconds = timer.nsecsElapsed();
+    }
     closePresentedWindows();
     return sample;
 }
@@ -195,6 +231,9 @@ void report(const Scenario& scenario, const std::vector<Sample>& samples) {
               << " total_ms=" << milliseconds(median(values([](const Sample& value) {
                      return value.totalNanoseconds;
                  })))
+              << " duplicate_ms=" << milliseconds(median(values([](const Sample& value) {
+                     return value.duplicateNanoseconds;
+                 })))
               << " presents="
               << median(values([](const Sample& value) { return qint64(value.presents); })) << '\n';
 }
@@ -206,12 +245,24 @@ int main(int argc, char* argv[]) {
     return 2;
 #endif
     QApplication application(argc, argv);
+    if (application.arguments().contains(QStringLiteral("--lifecycle"))) {
+        try {
+            return runPinnedLifecyclePerformanceBenchmark(application);
+        } catch (const std::exception& error) {
+            std::cerr << error.what() << '\n';
+            return 1;
+        }
+    }
     QCommandLineParser parser;
     parser.addHelpOption();
     QCommandLineOption samplesOption(QStringLiteral("samples"),
                                      QStringLiteral("Samples per scenario (median is reported)."),
                                      QStringLiteral("count"), QStringLiteral("5"));
     parser.addOption(samplesOption);
+    parser.addOption(
+        {QStringLiteral("duplicates"),
+         QStringLiteral(
+             "Also measure repeated batches without decoding or presenting duplicate images")});
     parser.process(application);
     bool validSamples = false;
     const int sampleCount = parser.value(samplesOption).toInt(&validSamples);
@@ -248,7 +299,8 @@ int main(int argc, char* argv[]) {
             std::vector<Sample> samples;
             samples.reserve(size_t(sampleCount));
             for (int sample = 0; sample < sampleCount; ++sample)
-                samples.push_back(runSample(scenario, fixturePaths, *screen));
+                samples.push_back(runSample(scenario, fixturePaths, *screen,
+                                            parser.isSet(QStringLiteral("duplicates"))));
             report(scenario, samples);
         }
     } catch (const std::exception& error) {

@@ -2,6 +2,7 @@
 #include "snow_shot/presentation/screenshotscrollingthumbnailwidget.h"
 #include "snowimageqtcodec.h"
 #include "snow_stitch_images.h"
+#include "../src/presentation/capture/scrollingsnapshotrequest.h"
 
 #include <QApplication>
 #include <QEventLoop>
@@ -16,6 +17,7 @@
 #include <condition_variable>
 #include <mutex>
 #include <QTimer>
+#include <QColorSpace>
 
 #include <iostream>
 #include <limits>
@@ -28,6 +30,10 @@ void require(bool value, const char* message) {
         std::cerr << message << '\n';
         throw std::runtime_error(message);
     }
+}
+bool snapshotMatchesSrgbPixels(const QImage& snapshot, QImage expected) {
+    expected.setColorSpace(QColorSpace::SRgb);
+    return snapshot.colorSpace() == QColorSpace(QColorSpace::SRgb) && snapshot == expected;
 }
 void scheduleTests() {
     ReplayState queueState(QImage(16, 32, QImage::Format_RGBA8888), 16, 1, 30);
@@ -285,7 +291,8 @@ void pipelineTest(ScreenshotScrollingRecognitionMode mode) {
     pipeline.reset();
     require(error.isEmpty() && received == 3, "pipeline did not complete");
     const auto expected = source.copy(0, 0, horizontal ? 450 : 400, horizontal ? 400 : 450);
-    require(snapshot == expected, "snapshot pixel content changed");
+    require(snapshotMatchesSrgbPixels(snapshot, expected),
+            "snapshot pixels or sRGB interpretation changed");
     const QSize previewSize(horizontal ? 144 : 128, horizontal ? 128 : 144);
     require(thumbnail.previewImageForTesting().size() == previewSize, "preview scale drift");
     QImage painted(thumbnail.size(), QImage::Format_ARGB32_Premultiplied);
@@ -329,28 +336,267 @@ void pauseWithDispatchedFramePreservesPreview() {
     // dispatching the worker. Its newly posted result stays queued until below.
     QCoreApplication::sendPostedEvents(&pipeline, QEvent::MetaCall);
     require(delivered == 0 && !pipeline.idle(), "frame must be in flight at pause");
-    pipeline.pause(19);
+    bool acknowledged = false;
+    pipeline.pause(19, [&] {
+        {
+            std::lock_guard lock(state->mutex);
+            require(state->stopped, "pause acknowledgment must follow source shutdown");
+        }
+        require(delivered == 1 && pipeline.idle(),
+                "pause acknowledgment must follow the committed frame GUI delivery");
+        acknowledged = true;
+        require(pipeline.requestSnapshot(30, 370, &loop,
+                                         [&](ScreenshotScrollingSnapshot value) {
+                                             snapshot = value.materialize();
+                                             loop.quit();
+                                         }),
+                "paused snapshot must remain available");
+    });
     {
         std::unique_lock lock(state->mutex);
         require(state->wake.wait_for(lock, std::chrono::seconds(5), [&] { return state->stopped; }),
                 "pause must stop the native source");
     }
     state->push(fixture().copy(0, 25, 400, 400));
-    require(pipeline.requestSnapshot(30, 370, &loop,
-                                     [&](ScreenshotScrollingSnapshot value) {
-                                         snapshot = value.materialize();
-                                         loop.quit();
-                                     }),
-            "paused snapshot must remain available");
     QTimer timeout;
     timeout.setSingleShot(true);
     QObject::connect(&timeout, &QTimer::timeout, &loop, &QEventLoop::quit);
     timeout.start(5000);
     loop.exec();
-    require(error.isEmpty() && delivered == 1 && !thumbnail.previewImageForTesting().isNull(),
+    require(error.isEmpty() && acknowledged && delivered == 1 &&
+                !thumbnail.previewImageForTesting().isNull(),
             "committed frame must update the preview while paused");
-    require(snapshot == frame.copy(0, 30, 400, 340),
+    require(snapshotMatchesSrgbPixels(snapshot, frame.copy(0, 30, 400, 340)),
             "pause must preserve the trimmed result and reject later source frames");
+}
+
+void viewportPreviewTest(ScreenshotScrollingRecognitionMode mode) {
+    const bool horizontal = mode == ScreenshotScrollingRecognitionMode::Horizontal;
+    const QImage frame = fixture();
+    auto state = std::make_shared<ManualState>();
+    state->push(frame);
+    QEventLoop loop;
+    QTimer timeout;
+    timeout.setSingleShot(true);
+    QObject::connect(&timeout, &QTimer::timeout, &loop, &QEventLoop::quit);
+    QString error;
+    bool ready = false;
+    ScreenshotScrollingPipeline* target = nullptr;
+    ScreenshotScrollingPipeline pipeline(
+        [&](ScrollingPipelineFrame result) {
+            require(result.changed && !result.fatalError,
+                    "viewport fixture must initialize the stitcher");
+            target->pause(43, [&] {
+                require(target->idle(), "acknowledged hover pause must be idle");
+                {
+                    std::lock_guard lock(state->mutex);
+                    require(state->stopped, "hover pause must join the native source");
+                }
+                ready = true;
+                loop.quit();
+            });
+        },
+        [&](quint64, QString value) {
+            error = std::move(value);
+            loop.quit();
+        });
+    target = &pipeline;
+    pipeline.begin(43, frame.size(), mode,
+                   [state] { return std::make_unique<ManualSource>(state); });
+    timeout.start(5000);
+    loop.exec();
+    require(ready && error.isEmpty(), "viewport fixture did not pause");
+
+    // These 400-pixel windows span unaligned 256-pixel tile boundaries and both image edges.
+    for (const int start : {-200, -73, 0, 113, 240, 440, -500, 700}) {
+        bool delivered = false;
+        QImage preview;
+        require(pipeline.requestViewportPreview(start, start + 400, &loop,
+                                                [&](QImage value) {
+                                                    delivered = true;
+                                                    preview = std::move(value);
+                                                    loop.quit();
+                                                }),
+                "valid viewport request must be accepted while paused");
+        timeout.start(5000);
+        loop.exec();
+        QImage expected(horizontal ? QSize(400, 640) : QSize(640, 400), QImage::Format_RGBA8888);
+        expected.fill(Qt::black);
+        QPainter painter(&expected);
+        painter.drawImage(horizontal ? QPoint(-start, 0) : QPoint(0, -start), frame);
+        painter.end();
+        require(
+            delivered && preview == expected && preview.format() == QImage::Format_RGBA8888,
+            "viewport extraction must preserve source pixels and pad out-of-bounds parts black");
+        require(preview.sizeInBytes() == expected.width() * expected.height() * 4,
+                "viewport output allocation must be bounded by the selected range");
+    }
+
+    require(!pipeline.requestViewportPreview(2, 1, &loop, [](QImage) {}) &&
+                !pipeline.requestViewportPreview(2, 2, &loop, [](QImage) {}) &&
+                !pipeline.requestViewportPreview(std::numeric_limits<int>::min(),
+                                                 std::numeric_limits<int>::max(), &loop,
+                                                 [](QImage) {}) &&
+                !pipeline.requestViewportPreview(0, 400, nullptr, [](QImage) {}) &&
+                !pipeline.requestViewportPreview(0, 400, &loop, {}),
+            "malformed viewport requests must be rejected");
+    int destroyedReceiverDeliveries = 0;
+    auto receiver = std::make_unique<QObject>();
+    require(pipeline.requestViewportPreview(0, 400, receiver.get(),
+                                            [&](QImage) { ++destroyedReceiverDeliveries; }),
+            "live viewport receiver request must be accepted");
+    receiver.reset();
+    bool canceledDelivered = false;
+    bool pauseAcknowledged = false;
+    require(pipeline.requestViewportPreview(
+                0, 400, &loop,
+                [&](QImage value) {
+                    require(value.isNull(),
+                            "superseded control request must deliver an empty image");
+                    canceledDelivered = true;
+                }),
+            "cancelable viewport request must be accepted");
+    pipeline.pause(43, [&] {
+        require(canceledDelivered && destroyedReceiverDeliveries == 0,
+                "pause barrier must follow canceled delivery and suppress destroyed receivers");
+        pauseAcknowledged = true;
+        loop.quit();
+    });
+    timeout.start(5000);
+    loop.exec();
+    require(pauseAcknowledged, "second hover pause did not acknowledge");
+
+    bool oldPauseDelivered = false;
+    bool resetCompleted = false;
+    bool resetImageDelivered = false;
+    pipeline.pause(43, [&] { oldPauseDelivered = true; });
+    require(pipeline.requestViewportPreview(
+                0, 400, &loop,
+                [&](QImage value) {
+                    require(value.isNull(), "session reset must cancel stale preview pixels");
+                    resetImageDelivered = true;
+                }),
+            "session-cancelable viewport request must be accepted");
+    pipeline.reset(44);
+    pipeline.pause(44, [&] {
+        require(!oldPauseDelivered && resetImageDelivered,
+                "new session must cancel old acknowledgment and finish empty viewport delivery");
+        resetCompleted = true;
+        loop.quit();
+    });
+    timeout.start(5000);
+    loop.exec();
+    require(resetCompleted && pipeline.idle(), "session reset pause did not reach quiescence");
+}
+
+void snapshotRequestLifetime() {
+    ScrollingSnapshotRequest request;
+    QObject receiver;
+    int completed = 0;
+    const auto queue = [&]() {
+        auto completion = request.begin([&](ScreenshotScrollingSnapshot) { ++completed; });
+        require(static_cast<bool>(completion), "snapshot must be accepted");
+        QMetaObject::invokeMethod(
+            &receiver, [completion] { completion({}); }, Qt::QueuedConnection);
+        return completion;
+    };
+    auto detached = queue();
+    require(request.pending(), "cached delivery must register as pending before dispatch");
+    require(!request.begin([](ScreenshotScrollingSnapshot) {}),
+            "a pending cached delivery must reject a second request");
+    request.detach();
+    request.cancel(); // capture teardown must not revoke a detached export
+    QCoreApplication::sendPostedEvents(&receiver, QEvent::MetaCall);
+    require(completed == 1, "detached cached delivery must survive capture teardown");
+    detached({});
+    require(completed == 1, "a snapshot completion must run exactly once");
+
+    queue();
+    request.cancel();
+    queue(); // a new capture may start before the old completion arrives
+    QCoreApplication::sendPostedEvents(&receiver, QEvent::MetaCall);
+    require(completed == 2 && !request.pending(),
+            "cancel must discard only its own request and permit the next capture");
+
+    auto oldExport = request.begin([&](ScreenshotScrollingSnapshot) { ++completed; });
+    request.detach();
+    auto nextCapture = request.begin([&](ScreenshotScrollingSnapshot) { ++completed; });
+    oldExport({});
+    require(completed == 3 && request.pending(),
+            "finishing an old export must not release the next capture's pending request");
+    request.cancel();
+    nextCapture({});
+    require(completed == 3, "the next capture still owns cancellation of its request");
+}
+
+void acceptedSnapshotsSurviveTeardown() {
+    for (const auto mode : {ScreenshotScrollingRecognitionMode::Vertical,
+                            ScreenshotScrollingRecognitionMode::Horizontal}) {
+        auto state = std::make_shared<ManualState>();
+        const QImage frame = fixture().copy(0, 0, 400, 400);
+        state->push(frame);
+        QEventLoop loop;
+        bool ready = false;
+        auto pipeline = std::make_unique<ScreenshotScrollingPipeline>(
+            [&](ScrollingPipelineFrame result) {
+                ready = result.changed && !result.fatalError;
+                loop.quit();
+            },
+            [&](quint64, QString) { loop.quit(); });
+        QTimer timeout;
+        timeout.setSingleShot(true);
+        QObject::connect(&timeout, &QTimer::timeout, &loop, &QEventLoop::quit);
+        timeout.start(5000);
+        pipeline->begin(1, frame.size(), mode,
+                        [state] { return std::make_unique<ManualSource>(state); });
+        loop.exec();
+        require(ready, "snapshot teardown fixture must have a stitched frame");
+        int completed = 0;
+        constexpr int requests = 256;
+        for (int index = 0; index < requests; ++index) {
+            require(pipeline->requestSnapshot(
+                        30, 370, &loop,
+                        [&](ScreenshotScrollingSnapshot snapshot) {
+                            const auto expected =
+                                mode == ScreenshotScrollingRecognitionMode::Horizontal
+                                    ? frame.copy(30, 0, 340, 400)
+                                    : frame.copy(0, 30, 400, 340);
+                            require(snapshotMatchesSrgbPixels(snapshot.materialize(), expected),
+                                    "detached snapshot must retain its pixels");
+                            ++completed;
+                        }),
+                    "snapshot request must be accepted before teardown");
+        }
+        // Match export detachment: reset and destroy the workers before the UI
+        // dispatches any result. Accepted snapshots belong to their receivers.
+        pipeline->reset(2);
+        pipeline.reset();
+        QCoreApplication::sendPostedEvents(&loop, QEvent::MetaCall);
+        require(completed == requests,
+                "teardown must deliver every accepted snapshot exactly once");
+    }
+}
+
+void captureReleasesNativeFrameAfterAdmission() {
+    auto state = std::make_shared<ManualState>();
+    std::atomic_bool released = false;
+    QImage pixels = fixture().copy(0, 0, 400, 400);
+    // Match the native source's external-buffer image ownership.
+    QImage frame(
+        pixels.constBits(), pixels.width(), pixels.height(), pixels.bytesPerLine(), pixels.format(),
+        [](void* value) { static_cast<std::atomic_bool*>(value)->store(true); }, &released);
+    state->push(std::move(frame));
+    ScreenshotScrollingPipeline pipeline([](ScrollingPipelineFrame) {}, [](quint64, QString) {});
+    pipeline.begin(1, pixels.size(), ScreenshotScrollingRecognitionMode::Vertical,
+                   [state]() { return std::make_unique<ManualSource>(state); });
+    {
+        std::unique_lock lock(state->mutex);
+        require(state->wake.wait_for(lock, std::chrono::seconds(5),
+                                     [&]() { return state->receiveCalls >= 2; }),
+                "capture must finish admitting the native frame");
+    }
+    require(released.load(),
+            "capture must release native buffers without waiting for another frame or reset");
 }
 
 void overloadTest() {
@@ -648,6 +894,17 @@ int main(int argc, char** argv) {
             interruptedThumbnailDragTest();
             return 0;
         }
+        if (application.arguments().contains(QStringLiteral("--snapshot-teardown-only"))) {
+            snapshotRequestLifetime();
+            acceptedSnapshotsSurviveTeardown();
+            return 0;
+        }
+        if (application.arguments().contains(QStringLiteral("--hover-preview-only"))) {
+            pauseWithDispatchedFramePreservesPreview();
+            viewportPreviewTest(ScreenshotScrollingRecognitionMode::Vertical);
+            viewportPreviewTest(ScreenshotScrollingRecognitionMode::Horizontal);
+            return 0;
+        }
         interruptedThumbnailDragTest();
         scheduleTests();
         std::cerr << "schedule and input validation passed\n";
@@ -655,6 +912,11 @@ int main(int argc, char** argv) {
         std::cerr << "vertical pipeline passed\n";
         pipelineTest(ScreenshotScrollingRecognitionMode::Horizontal);
         pauseWithDispatchedFramePreservesPreview();
+        viewportPreviewTest(ScreenshotScrollingRecognitionMode::Vertical);
+        viewportPreviewTest(ScreenshotScrollingRecognitionMode::Horizontal);
+        snapshotRequestLifetime();
+        acceptedSnapshotsSurviveTeardown();
+        captureReleasesNativeFrameAfterAdmission();
         overloadTest();
         replaySourceTest();
         sourceFailureTest();

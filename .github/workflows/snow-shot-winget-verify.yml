@@ -1,0 +1,102 @@
+name: Snow Shot WinGet verification
+
+on:
+  push:
+    branches: ['codex/winget-*']
+    paths:
+      - 'scripts/*winget*.ps1'
+      - 'scripts/snow-shot-editions.ps1'
+      - 'scripts/test-snow-shot-mini-release.ps1'
+      - '.github/workflows/snow-shot-winget*.yml'
+      - 'cmake/SnowShotInstaller.cmake'
+      - 'snow_shot/tests/installer_packaging/**'
+  pull_request:
+    paths:
+      - 'scripts/*winget*.ps1'
+      - 'scripts/snow-shot-editions.ps1'
+      - 'scripts/test-snow-shot-mini-release.ps1'
+      - '.github/workflows/snow-shot-winget*.yml'
+      - 'cmake/SnowShotInstaller.cmake'
+      - 'snow_shot/tests/installer_packaging/**'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Published version to verify
+        default: v1.1.5-beta
+        required: true
+        type: string
+      previous_tag:
+        description: Older published version used for upgrade verification
+        default: v1.1.4-beta
+        required: true
+        type: string
+      running_app_behavior:
+        description: Expected silent upgrade behavior of the published installer
+        default: Refuse
+        type: choice
+        options: [Refuse, Restart]
+
+permissions:
+  contents: read
+
+jobs:
+  install:
+    runs-on: windows-2025
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test release and submission fixtures
+        shell: pwsh
+        run: |
+          ./scripts/test-snow-shot-winget.ps1
+          ./scripts/test-snow-shot-mini-release.ps1
+      - name: Verify submission credentials without submitting
+        if: github.event_name != 'pull_request'
+        shell: pwsh
+        env:
+          WINGET_CREATE_GITHUB_TOKEN: ${{ secrets.WINGET_CREATE_GITHUB_TOKEN }}
+        run: ./scripts/test-snow-shot-winget-credentials.ps1
+      - name: Provision WinGet in disposable runner
+        if: github.event_name != 'push'
+        shell: pwsh
+        run: |
+          $path = ./scripts/initialize-snow-shot-winget.ps1
+          "WINGET_EXE=$path" >> $env:GITHUB_ENV
+      - name: Verify real installation lifecycle
+        if: github.event_name != 'push'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag || 'v1.1.5-beta' }}
+          PREVIOUS_TAG: ${{ inputs.previous_tag || 'v1.1.4-beta' }}
+          RUNNING_APP_BEHAVIOR: ${{ inputs.running_app_behavior || 'Refuse' }}
+        run: |
+          ./scripts/test-snow-shot-winget-install.ps1 -Tag $env:RELEASE_TAG `
+            -PreviousTag $env:PREVIOUS_TAG -Winget $env:WINGET_EXE -AllowUnrecognizedRelease `
+            -RunningAppBehavior $env:RUNNING_APP_BEHAVIOR
+          . scripts/snow-shot-winget.ps1
+          $current = Invoke-SnowShotWingetApi "repos/mg-chao/snow-apps/releases/tags/$env:RELEASE_TAG"
+          $previous = Invoke-SnowShotWingetApi "repos/mg-chao/snow-apps/releases/tags/$env:PREVIOUS_TAG"
+          $currentEditions = @(Get-SnowShotReleaseEditions $current (Get-SnowShotWingetVersion $env:RELEASE_TAG))
+          $previousEditions = @(Get-SnowShotReleaseEditions $previous (Get-SnowShotWingetVersion $env:PREVIOUS_TAG))
+          if ('Mini' -in $currentEditions -and 'Mini' -in $previousEditions) {
+            ./scripts/test-snow-shot-winget-install.ps1 -Tag $env:RELEASE_TAG -Edition Mini `
+              -PreviousTag $env:PREVIOUS_TAG -Winget $env:WINGET_EXE -AllowUnrecognizedRelease `
+              -RunningAppBehavior $env:RUNNING_APP_BEHAVIOR
+          }
+      - name: Verify generated installer quiet registration through WinGet
+        if: github.event_name != 'push'
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "${env:ProgramFiles(x86)}/NSIS/makensis.exe")) {
+            choco install nsis --yes --no-progress
+            if ($LASTEXITCODE -ne 0) { throw 'NSIS provisioning failed.' }
+          }
+          ./scripts/test-snow-shot-winget-uninstall.ps1 -Winget $env:WINGET_EXE
+      - name: Preserve verification logs and manifests
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: snow-shot-winget-verification
+          path: build/winget-install-test
+          if-no-files-found: ignore

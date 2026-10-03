@@ -8,12 +8,44 @@ bool recognitionTool(ScreenshotActiveTool tool) {
 
 bool drawingToolSupportsCursorMovement(ScreenshotActiveTool tool) {
     return tool != ScreenshotActiveTool::Move && tool != ScreenshotActiveTool::Eraser &&
-           tool != ScreenshotActiveTool::Spotlight && tool != ScreenshotActiveTool::Watermark &&
-           !recognitionTool(tool);
+           tool != ScreenshotActiveTool::RectangleEraser &&
+           tool != ScreenshotActiveTool::BrushEraser && tool != ScreenshotActiveTool::Spotlight &&
+           tool != ScreenshotActiveTool::Watermark && !recognitionTool(tool);
 }
 } // namespace
 
+bool ScreenshotInteractionState::beginEffectDrag(EffectGesture gesture) {
+    if (!movingSelection() || !moveToolActive() || dragging() || m_effectEditorsSuppressed ||
+        gesture.handle == ScreenshotSelectionEffectHandle::None)
+        return false;
+    m_hoveredEffectHandle = gesture.handle;
+    m_effectGesture = std::move(gesture);
+    return true;
+}
+
+void ScreenshotInteractionState::finishEffectDrag() {
+    m_effectGesture.reset();
+}
+
+bool ScreenshotInteractionState::cancelEffectDrag() {
+    if (!m_effectGesture)
+        return false;
+    auto gesture = std::move(*m_effectGesture);
+    m_effectGesture.reset();
+    m_hoveredEffectHandle = ScreenshotSelectionEffectHandle::None;
+    if (gesture.rollback)
+        gesture.rollback();
+    return true;
+}
+
+void ScreenshotInteractionState::resetEffectEditors() {
+    static_cast<void>(cancelEffectDrag());
+    m_hoveredEffectHandle = ScreenshotSelectionEffectHandle::None;
+}
+
 void ScreenshotInteractionState::reset() {
+    resetEffectEditors();
+    m_effectEditorsSuppressed = false;
     m_activeTool = ScreenshotActiveTool::Move;
     m_mode = ScreenshotCaptureMode::Inactive;
     m_dragMode = ScreenshotSelectionDragMode::None;
@@ -22,6 +54,7 @@ void ScreenshotInteractionState::reset() {
 }
 
 void ScreenshotInteractionState::beginCapture() {
+    resetEffectEditors();
     m_activeTool = ScreenshotActiveTool::Move;
     m_mode = ScreenshotCaptureMode::ManualSelecting;
     m_dragMode = ScreenshotSelectionDragMode::None;
@@ -30,6 +63,7 @@ void ScreenshotInteractionState::beginCapture() {
 }
 
 void ScreenshotInteractionState::enterOverlayVisible(bool selectorReady) {
+    resetEffectEditors();
     m_activeTool = ScreenshotActiveTool::Move;
     m_mode = selectorReady ? ScreenshotCaptureMode::IntelligentSelecting
                            : ScreenshotCaptureMode::ManualSelecting;
@@ -39,6 +73,7 @@ void ScreenshotInteractionState::enterOverlayVisible(bool selectorReady) {
 }
 
 void ScreenshotInteractionState::setMoveTool(bool hasSelection, bool selectorReady) {
+    resetEffectEditors();
     m_activeTool = ScreenshotActiveTool::Move;
     m_dragMode = ScreenshotSelectionDragMode::None;
     m_dragging = false;
@@ -52,6 +87,7 @@ void ScreenshotInteractionState::setMoveTool(bool hasSelection, bool selectorRea
 }
 
 void ScreenshotInteractionState::setCanvasTool(ScreenshotActiveTool tool) {
+    resetEffectEditors();
     m_activeTool = tool;
     m_mode = ScreenshotCaptureMode::Editing;
     m_dragMode = ScreenshotSelectionDragMode::None;
@@ -72,7 +108,7 @@ void ScreenshotInteractionState::setQrTool() {
 }
 
 void ScreenshotInteractionState::confirmSelection() {
-    if (m_dragging) {
+    if (dragging()) {
         return;
     }
     m_mode = ScreenshotCaptureMode::MovingSelection;
@@ -85,6 +121,7 @@ void ScreenshotInteractionState::applySelectionParams() {
 }
 
 void ScreenshotInteractionState::enterScrollingCapture() {
+    resetEffectEditors();
     m_activeTool = ScreenshotActiveTool::Move;
     m_mode = ScreenshotCaptureMode::ScrollingCapture;
     m_dragMode = ScreenshotSelectionDragMode::None;
@@ -93,6 +130,7 @@ void ScreenshotInteractionState::enterScrollingCapture() {
 }
 
 void ScreenshotInteractionState::returnToSelectionMode(bool selectorReady) {
+    resetEffectEditors();
     m_activeTool = ScreenshotActiveTool::Move;
     m_mode = selectorReady ? ScreenshotCaptureMode::IntelligentSelecting
                            : ScreenshotCaptureMode::ManualSelecting;
@@ -102,6 +140,7 @@ void ScreenshotInteractionState::returnToSelectionMode(bool selectorReady) {
 }
 
 bool ScreenshotInteractionState::enterSelectionDrag(ScreenshotSelectionDragMode dragMode) {
+    resetEffectEditors();
     if (dragMode == ScreenshotSelectionDragMode::None) {
         return false;
     }
@@ -116,6 +155,7 @@ bool ScreenshotInteractionState::enterSelectionDrag(ScreenshotSelectionDragMode 
 }
 
 void ScreenshotInteractionState::finishDrag() {
+    resetEffectEditors();
     m_dragMode = ScreenshotSelectionDragMode::None;
     m_dragging = false;
 }
@@ -137,7 +177,7 @@ ScreenshotSelectionDragMode ScreenshotInteractionState::dragMode() const {
 }
 
 bool ScreenshotInteractionState::dragging() const {
-    return m_dragging;
+    return m_dragging || m_effectGesture.has_value();
 }
 
 bool ScreenshotInteractionState::inactive() const {

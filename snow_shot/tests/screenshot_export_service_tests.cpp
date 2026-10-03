@@ -2,16 +2,24 @@
 #include "snow_shot/presentation/screenshotdefaultstyles.h"
 #include "snow_shot/presentation/screenshotexportservice.h"
 #include "snow_shot/presentation/screenshotresultcompositor.h"
+#include "snow_shot/presentation/screenshotselectionpin.h"
+#include "snow_shot/storage/applicationstorage.h"
+#include "snow_shot/storage/settingsadapters.h"
+#include "snowimageqtcodec.h"
 
 #include "snow_draw_engine_qt/snow_canvas_runtime.h"
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
 
 #include <QApplication>
+#include <QBuffer>
 #include <QEventLoop>
 #include <QImage>
 #include <QMouseEvent>
 #include <QObject>
 #include <QTimer>
+#include <QTemporaryDir>
+#include <QScopeGuard>
+#include <QColorSpace>
 
 #include <cstdlib>
 #include <iostream>
@@ -38,8 +46,19 @@ QImage patternedImage(const QSize& size, int seed) {
 }
 
 bool hasSamePixels(const QImage& actual, const QImage& expected) {
-    return actual.size() == expected.size() && actual.convertToFormat(QImage::Format_ARGB32) ==
-                                                   expected.convertToFormat(QImage::Format_ARGB32);
+    if (actual.size() != expected.size())
+        return false;
+    // Compare the same straight-alpha storage representation. Color-space
+    // metadata is checked independently by the color regression tests.
+    const auto actualPixels = actual.convertToFormat(QImage::Format_ARGB32);
+    const auto expectedPixels = expected.convertToFormat(QImage::Format_ARGB32);
+    for (int y = 0; y < actual.height(); ++y) {
+        for (int x = 0; x < actual.width(); ++x) {
+            if (actualPixels.pixel(x, y) != expectedPixels.pixel(x, y))
+                return false;
+        }
+    }
+    return true;
 }
 
 class ExportFixture final {
@@ -196,6 +215,121 @@ void styledClipboardResultRetainsPngTransparency() {
             "styled clipboard export did not retain rounded-corner transparency");
 }
 
+void screenshotExportsRetainSrgb() {
+    const QColorSpace srgb(QColorSpace::SRgb);
+    QImage source(40, 30, QImage::Format_ARGB32_Premultiplied);
+    source.fill(QColor(200, 100, 50));
+    source.setColorSpace(srgb);
+    ScreenshotResultStyle compound;
+    compound.region = QRegion(source.rect()).subtracted(QRect(25, 20, 10, 5));
+    for (const auto& style :
+         {ScreenshotResultStyle{}, ScreenshotResultStyle{4, 3, Qt::black}, compound}) {
+        const auto result = ScreenshotResultCompositor::compose(source, style);
+        require(result.colorSpace() == srgb, "styled screenshot lost its sRGB working space");
+        const auto layout = ScreenshotResultCompositor::layoutForContent(source.size(), style);
+        require(result.pixelColor(layout.contentRect.center()) == QColor(200, 100, 50),
+                "sRGB composition changed captured pixel values");
+        const auto png = snow_shot::image_codec::encodePng(result, 1);
+        const auto decoded = QImage::fromData(png, "PNG");
+        require(decoded.colorSpace() == srgb, "PNG round-trip lost its sRGB profile");
+        require(hasSamePixels(decoded, result), "PNG round-trip changed screenshot pixels");
+    }
+    QImage p3 = source;
+    p3.setColorSpace(QColorSpace::DisplayP3);
+    const auto expected = p3.convertedToColorSpace(srgb, QImage::Format_ARGB32_Premultiplied);
+    const auto normalized = ScreenshotResultCompositor::normalizeImage(p3);
+    require(normalized.colorSpace() == srgb && hasSamePixels(normalized, expected) &&
+                normalized.pixelColor(0, 0) != p3.pixelColor(0, 0),
+            "profiled pin must convert its pixels into the raster working space");
+
+    QByteArray encodedP3;
+    QBuffer fixtureBuffer(&encodedP3);
+    require(fixtureBuffer.open(QIODevice::WriteOnly) && p3.save(&fixtureBuffer, "PNG"),
+            "Display P3 import fixture must encode");
+    const auto imported =
+        snow_shot::image_codec::decode(encodedP3, snow::image::Format::png, "image/png");
+    const auto importedResult = ScreenshotResultCompositor::compose(imported, {});
+    require(importedResult.colorSpace() == srgb && hasSamePixels(importedResult, expected),
+            "imported pin must convert the embedded profile before composition");
+    const auto importedExport =
+        QImage::fromData(snow_shot::image_codec::encodePng(imported), "PNG");
+    require(importedExport.colorSpace() == srgb && hasSamePixels(importedExport, expected),
+            "imported pin export must retain the correctly converted sRGB colors");
+
+    QImage largeSource(1200, 1000, QImage::Format_ARGB32_Premultiplied);
+    largeSource.setColorSpace(srgb);
+    largeSource.fill(QColor(200, 100, 50));
+    ScreenshotResultStyle sparse;
+    sparse.region = QRegion(QRect(0, 0, 20, 20)).united(QRect(1180, 980, 20, 20));
+    sparse.shadowWidth = 3;
+    ScreenshotResultStyle tiled;
+    tiled.region = QRegion(largeSource.rect()).subtracted(QRect(100, 100, 20, 20));
+    tiled.shadowWidth = 3;
+    for (const auto& style : {sparse, tiled}) {
+        const auto result = ScreenshotResultCompositor::compose(largeSource, style, 1.0, 0.5);
+        require(result.colorSpace() == srgb && result.pixelColor(13, 13).alpha() == 128,
+                "sparse and tiled region exports must retain sRGB through opacity composition");
+    }
+
+    ExportFixture fixture(true);
+    const auto exported = waitForResult(
+        [&](QObject* receiver, auto callback) {
+            return fixture.service().requestSelectionResult(QRect(0, 0, 40, 30), {}, receiver,
+                                                            std::move(callback));
+        },
+        [](QImage image) { return image; });
+    require(exported.colorSpace() == srgb && hasSamePixels(exported, fixture.displaySnapshot()),
+            "canvas export must retain sRGB without changing Retina capture pixels");
+}
+
+void selectionClipboardSnapshotsExportSettings() {
+    QTemporaryDir directory;
+    auto& storage = snow_shot::storage::ApplicationStorage::instance();
+    require(directory.isValid() &&
+                storage.initialize({directory.filePath(QStringLiteral("bin")), directory.path(), 0})
+                    .success,
+            "clipboard encoding settings fixture could not initialize");
+    const auto cleanup = qScopeGuard([&] { storage.shutdown(); });
+    const snow_shot::storage::ScreenshotSettings settings;
+    ExportFixture fixture;
+    require(fixture.isValid(), "clipboard encoding fixture could not initialize the canvas");
+    const QRect selection(12, 8, 37, 29);
+    for (auto compression : {ScreenshotCompressionLevel::Low, ScreenshotCompressionLevel::Medium,
+                             ScreenshotCompressionLevel::High}) {
+        require(settings.setCompressionLevel(
+                    ScreenshotImageFileService::compressionLevelKey(compression)),
+                "clipboard compression setup failed");
+        require(settings.setImageQuality(35), "clipboard image quality setup failed");
+        const int level = ScreenshotImageFileService::encodeOptions(ScreenshotImageFileFormat::Png,
+                                                                    {35, compression})
+                              .compression_level;
+        const QImage result = waitForResult(
+            [&](QObject* receiver, auto callback) {
+                const bool scheduled = fixture.service().requestSelectionClipboard(
+                    selection, {}, receiver, std::move(callback));
+                // The worker must use the value captured by the request, even when settings
+                // change before its callback is delivered.
+                require(
+                    settings.setCompressionLevel(ScreenshotImageFileService::compressionLevelKey(
+                        compression == ScreenshotCompressionLevel::High
+                            ? ScreenshotCompressionLevel::Low
+                            : ScreenshotCompressionLevel::High)),
+                    "clipboard settings mutation failed");
+                return scheduled;
+            },
+            [&](ScreenshotSelectionClipboardResult value) {
+                require(value.isValid() &&
+                            value.payload.pngBytes() ==
+                                snow_shot::image_codec::encodePng(
+                                    snow_shot::image_codec::srgbRowSource(value.image), level),
+                        "selection clipboard ignored its export settings snapshot");
+                return std::move(value.image);
+            });
+        require(hasSamePixels(result, fixture.displaySnapshot().copy(selection)),
+                "selection clipboard encoding changed the captured pixels");
+    }
+}
+
 void selectionClipboardPreservesEffects() {
     ExportFixture fixture;
     require(fixture.isValid(), "clipboard export fixture could not initialize the canvas runtime");
@@ -212,6 +346,22 @@ void selectionClipboardPreservesEffects() {
                     require(result.isValid(), "selection clipboard export has no payload");
                     require(result.payload.isValid() && !result.payload.pngBytes().isEmpty(),
                             "clipboard export must prepare PNG and its bitmap fallback");
+                    const auto appearance =
+                        decodeScreenshotClipboardAppearance(result.payload.appearanceBytes());
+                    require(
+                        appearance && appearance->rasterSize == result.image.size() &&
+                            appearance->borderAppearance ==
+                                screenshotSelectionBorderAppearance(selection.size(), style) &&
+                            appearance->checkerboardEnabled ==
+                                screenshotSelectionNeedsCheckerboard(appearance->borderAppearance),
+                        "clipboard appearance differs from a direct selection pin");
+                    const auto direct = fixture.service().preparePinnedSelection(selection, style);
+                    const auto placement =
+                        decodeScreenshotClipboardPlacement(result.payload.placementBytes());
+                    require(direct && placement &&
+                                placement->windowRect == direct->geometry.nativeGeometry &&
+                                placement->rasterSize == result.image.size(),
+                            "plain or styled clipboard geometry differs from direct pinning");
                     return std::move(result.image);
                 });
             require(image.size() == selection.size() + QSize(shadow * 2, shadow * 2),
@@ -258,7 +408,8 @@ void pinnedSelectionPreservesFiltersAfterUndoRedo() {
     for (const auto tool : {SnowCanvasTool::RectangleFilter, SnowCanvasTool::PenFilter}) {
         for (const auto type : {SnowCanvasFilterType::Mosaic, SnowCanvasFilterType::GaussianBlur,
                                 SnowCanvasFilterType::Grayscale, SnowCanvasFilterType::Inversion,
-                                SnowCanvasFilterType::Emboss, SnowCanvasFilterType::SmartErase}) {
+                                SnowCanvasFilterType::Emboss, SnowCanvasFilterType::SmartErase,
+                                SnowCanvasFilterType::Brightness}) {
             ExportFixture fixture;
             require(fixture.isValid(), "filter export fixture could not initialize");
             SnowCanvasWidget canvas(fixture.runtime());
@@ -344,10 +495,15 @@ void pinnedSelectionMaterializesCompositedImage() {
             return fixture.service().requestSelectionClipboard(selection, {}, receiver,
                                                                std::move(callback));
         },
-        [](ScreenshotSelectionClipboardResult result) {
+        [&](ScreenshotSelectionClipboardResult result) {
             require(result.isValid(), "annotated selection did not prepare a clipboard payload");
             require(result.payload.isValid() && !result.payload.pngBytes().isEmpty(),
                     "clipboard export must prepare PNG and its bitmap fallback");
+            const auto direct = fixture.service().preparePinnedSelection(selection, {});
+            const auto placement =
+                decodeScreenshotClipboardPlacement(result.payload.placementBytes());
+            require(direct && placement && placement->windowRect == direct->geometry.nativeGeometry,
+                    "annotation must not alter clipboard placement");
             return std::move(result.image);
         });
     require(annotatedCopy.size() == selection.size() &&
@@ -474,13 +630,27 @@ void compoundExportsSnapshotTheirGeometry() {
                     result.pixelColor(5 * scale, 5 * scale).alpha() == 255,
                 "asynchronous export must retain its shape snapshot at backing scale");
         style.region = shape;
+        const auto clipboardPlacement =
+            fixture.service().prepareClipboardPlacement(selection, style);
         const auto clipboard = waitForResult(
             [&](QObject* receiver, auto callback) {
-                return fixture.service().requestSelectionClipboard(selection, style, receiver,
-                                                                   std::move(callback));
+                const bool scheduled = fixture.service().requestSelectionClipboard(
+                    selection, style, receiver, std::move(callback));
+                style.shadowWidth = 8;
+                style.region = QRegion(selection);
+                return scheduled;
             },
-            [](ScreenshotSelectionClipboardResult value) { return value.image; });
+            [&](ScreenshotSelectionClipboardResult value) {
+                const auto metadata =
+                    decodeScreenshotClipboardPlacement(value.payload.placementBytes());
+                require(metadata && clipboardPlacement &&
+                            metadata->windowRect == clipboardPlacement->windowRect,
+                        "asynchronous clipboard export observes later geometry edits");
+                return value.image;
+            });
         require(hasSamePixels(clipboard, result), "clipboard must use the same compound mask");
+        style.shadowWidth = 0;
+        style.region = shape;
         const auto request = fixture.service().preparePinnedSelection(selection, style);
         require(request && request->resultStyle.region == style.region,
                 "pin request carries region snapshot");
@@ -521,14 +691,121 @@ void exportWorkerReleasesSharedDerivedContours() {
     }
 }
 
+void exportWorkerReleasesDocumentSnapshotsBeforeCompletion() {
+    ExportFixture fixture;
+    const QRect selection(0, 0, 40, 30);
+    const auto expected = fixture.displaySnapshot().copy(selection);
+    const auto placement = fixture.service().prepareClipboardPlacement(selection, {});
+    require(placement.has_value(), "prepare snapshot lifetime clipboard placement");
+    for (int mode = 0; mode < 3; ++mode) {
+        auto snapshot = fixture.runtime().smartEraseSnapshot();
+        const std::weak_ptr<const SnowCanvasSmartEraseSnapshot::Data> lifetime = snapshot.data;
+        fixture.runtime().restoreSmartEraseSnapshot(snapshot);
+        snapshot = {};
+        const auto result = waitForResult(
+            [&](QObject* receiver, auto callback) {
+                bool scheduled = false;
+                if (mode == 0) {
+                    scheduled = fixture.service().requestSelectionResult(selection, {}, receiver,
+                                                                         std::move(callback));
+                } else if (mode == 1) {
+                    scheduled = fixture.service().requestSelectionClipboard(
+                        selection, {}, receiver,
+                        [placement,
+                         callback = std::move(callback)](ScreenshotSelectionClipboardResult value) {
+                            const auto metadata =
+                                decodeScreenshotClipboardPlacement(value.payload.placementBytes());
+                            require(metadata && metadata->windowRect == placement->windowRect &&
+                                        metadata->rasterSize == value.image.size(),
+                                    "releasing export snapshots must preserve clipboard placement");
+                            callback(std::move(value.image));
+                        });
+                } else {
+                    const auto request = fixture.service().preparePinnedSelection(selection, {});
+                    require(request.has_value(), "prepare snapshot lifetime pin request");
+                    scheduled = fixture.service().schedulePinnedSelection(
+                        *request, receiver,
+                        [receiver, callback = std::move(callback)](
+                            ScreenshotPinnedSelectionRequest,
+                            ScreenshotPinnedSelectionResultHandle value) {
+                            require(value.subscribe(
+                                        receiver,
+                                        [callback](bool success, QImage image) {
+                                            require(success,
+                                                    "snapshot lifetime pin export must succeed");
+                                            callback(std::move(image));
+                                        }),
+                                    "subscribe snapshot lifetime pin result");
+                        });
+                }
+                require(fixture.runtime().clearDocumentPreservingViewports(),
+                        "retire the capture document while its export is queued");
+                return scheduled;
+            },
+            [&](QImage image) {
+                require(lifetime.expired(),
+                        "completed exports must release worker and request snapshot ownership");
+                return image;
+            });
+        require(hasSamePixels(result, expected), "released export state must leave output intact");
+    }
+}
+
+void clipboardPlacementMatchesDirectPin() {
+    for (const bool points : {false, true}) {
+        ExportFixture fixture(points);
+        for (const int shadow : {0, 4}) {
+            ScreenshotResultStyle style;
+            style.shadowWidth = shadow;
+            style.cornerRadius = 6;
+            QPainterPath ellipse;
+            ellipse.addEllipse(QRectF(0, 0, 20, 15));
+            style.region = ScreenshotRegionGeometry::fromPath(ellipse, ScreenshotRegionType::Curve);
+            const QRect selection(10, 10, 20, 15);
+            const auto direct = fixture.service().preparePinnedSelection(selection, style);
+            require(direct.has_value(), "direct placement must be prepared");
+            const auto snapshot = fixture.service().prepareClipboardPlacement(selection, style);
+            require(snapshot && snapshot->windowRect == direct->geometry.nativeGeometry &&
+                        snapshot->placement.windowSize == direct->initialWindowSize,
+                    "clipboard snapshot differs from direct pin geometry");
+            bool received = false;
+            const auto result = waitForResult(
+                [&](QObject* receiver, auto callback) {
+                    return fixture.service().requestSelectionClipboard(selection, style, receiver,
+                                                                       std::move(callback));
+                },
+                [&](ScreenshotSelectionClipboardResult value) {
+                    const auto metadata =
+                        decodeScreenshotClipboardPlacement(value.payload.placementBytes());
+                    require(metadata && metadata->windowRect == direct->geometry.nativeGeometry &&
+                                metadata->rasterSize == value.image.size(),
+                            "composited clipboard raster loses the direct pin's platform geometry");
+                    const auto appearance =
+                        decodeScreenshotClipboardAppearance(value.payload.appearanceBytes());
+                    require(appearance && appearance->rasterSize == value.image.size() &&
+                                appearance->borderAppearance ==
+                                    screenshotSelectionBorderAppearance(selection.size(), style),
+                            "scaled clipboard raster loses its reference outline");
+                    received = true;
+                    return value.image;
+                });
+            require(received && !result.isNull(), "clipboard placement export must complete");
+        }
+    }
+}
+
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
     if (app.arguments().contains(QStringLiteral("--fractional-dpi"))) {
         fractionalDpiExportsPreserveCapturePixels();
         return EXIT_SUCCESS;
     }
+    screenshotExportsRetainSrgb();
+    clipboardPlacementMatchesDirectPin();
+    selectionClipboardSnapshotsExportSettings();
     fractionalDpiExportsPreserveCapturePixels();
     exportWorkerReleasesSharedDerivedContours();
+    exportWorkerReleasesDocumentSnapshotsBeforeCompletion();
     compoundExportsSnapshotTheirGeometry();
     pointSelectionRetainsBackingPixelsAndScalesEffects();
     styledClipboardResultRetainsPngTransparency();

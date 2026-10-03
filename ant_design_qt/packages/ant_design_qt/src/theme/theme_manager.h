@@ -41,6 +41,7 @@ class ThemeManager final : public QObject {
                         const QWidget* logicalOwner = nullptr) const;
   ThemeMapToken resolveTheme(const QWidget* widget = nullptr,
                              const QWidget* logicalOwner = nullptr) const;
+  qreal backgroundOpacity(const QWidget* widget = nullptr) const;
 
   const QPalette& globalPalette() const;
   const QPalette& palette() const;
@@ -55,6 +56,7 @@ class ThemeManager final : public QObject {
  private:
   struct ScopeState {
     ThemeOverride overrideValue;
+    QMetaObject::Connection destroyedConnection;
     bool hadExplicitPalette = false;
     QPalette originalPalette;
     bool hadExplicitFont = false;

@@ -2,6 +2,7 @@
 #include "detail/pointer_region.h"
 
 #include "detail/popup_geometry.h"
+#include "detail/top_level_popup_window.h"
 
 #include "button_style.h"
 #include "detail/button_grouping.h"
@@ -49,7 +50,7 @@ bool buttonStyleInputsEqual(const detail::ButtonStyleInput& lhs,
   return lhs.buttonStyle == rhs.buttonStyle && lhs.accentRole == rhs.accentRole &&
          lhs.sizeClass == rhs.sizeClass && lhs.flat == rhs.flat &&
          lhs.defaultButton == rhs.defaultButton && lhs.hasMenu == rhs.hasMenu &&
-         lhs.baseFont == rhs.baseFont;
+         lhs.joinsEdges == rhs.joinsEdges && lhs.baseFont == rhs.baseFont;
 }
 
 struct ButtonIconRenderState {
@@ -530,10 +531,7 @@ class BusyIndicatorSurface final : public QWidget {
     if (owner) {
       owner->winId();
       winId();
-      if (windowHandle() && owner->windowHandle() &&
-          windowHandle()->transientParent() != owner->windowHandle()) {
-        windowHandle()->setTransientParent(owner->windowHandle());
-      }
+      setTopLevelToolTransientParent(this, owner);
     }
 
     const auto placement = PopupWidgetRect{button_, indicatorRect}.onScreen();
@@ -559,6 +557,11 @@ class BusyIndicatorSurface final : public QWidget {
   }
 
  protected:
+  bool nativeEvent(const QByteArray& eventType, void* message, qintptr* result) override {
+    constrainTopLevelToolStackingToOwner(this, message);
+    return QWidget::nativeEvent(eventType, message, result);
+  }
+
   void paintEvent(QPaintEvent* event) override {
     Q_UNUSED(event)
     if (!button_) {
@@ -584,6 +587,8 @@ AdButton::AdButton(QWidget* parent) : QPushButton(parent), d_(std::make_unique<P
     updateInteractionFocusOverlay();
     update();
   });
+  connect(&adqt::theme::ThemeManager::instance(), &adqt::theme::ThemeManager::themeChanged, this,
+          qOverload<>(&QWidget::update));
 
   refreshAfterPropertyChange();
 }
@@ -791,13 +796,6 @@ void AdButton::paintEvent(QPaintEvent* event) {
   const Shape visualShape = effectiveShape(textToRender);
   const bool hasMenuIndicator = option.features.testFlag(QStyleOptionButton::HasMenu);
   const bool defaultButton = option.features.testFlag(QStyleOptionButton::DefaultButton);
-
-  if (style.role.buttonStyle == ButtonStyle::Tonal && (joinsLeftEdge() || joinsRightEdge()) &&
-      state.background.isValid() && state.background.alpha() < 255) {
-    const auto map = adqt::theme::ThemeManager::instance().resolveTheme(this);
-    const QColor containerBg = parseThemeColor(map.colorBgContainer, QColor("#ffffff"));
-    state.background = compositeOn(state.background, containerBg);
-  }
 
   QPainter painter(this);
   painter.setRenderHint(QPainter::Antialiasing, true);
@@ -1374,6 +1372,7 @@ detail::ButtonStyleInput AdButton::buildStyleInput() const {
   input.flat = isFlat();
   input.defaultButton = isDefault();
   input.hasMenu = QPushButton::menu() != nullptr;
+  input.joinsEdges = joinsLeftEdge() || joinsRightEdge();
   input.baseFont = font();
   return input;
 }

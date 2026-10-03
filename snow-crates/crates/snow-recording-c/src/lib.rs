@@ -1,4 +1,9 @@
 #![allow(clippy::missing_safety_doc)]
+use snow_audio_recorder::{AudioControlHandle, AudioLevelsSnapshot, AudioMonitor, AudioSourceKind};
+mod clip;
+mod deferred;
+#[cfg(test)]
+static SESSION_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 use snow_capture::{backend::CaptureBackendKind, exclusions::SnowCaptureExclusions};
 #[cfg(not(target_os = "macos"))]
 use snow_screen_recorder::DirectRecordingSession;
@@ -57,9 +62,349 @@ pub struct SnowRecordingSessionImpl {
     state: RecordingState,
 }
 
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct SnowRecordingAudioLevel {
+    pub peak: f32,
+    pub clipped: u32,
+    pub status: u32,
+    pub age_ms: u64,
+}
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct SnowRecordingAudioLevels {
+    pub system_audio: SnowRecordingAudioLevel,
+    pub microphone: SnowRecordingAudioLevel,
+}
+impl From<AudioLevelsSnapshot> for SnowRecordingAudioLevels {
+    fn from(value: AudioLevelsSnapshot) -> Self {
+        let level = |value: snow_audio_recorder::AudioLevelSnapshot| SnowRecordingAudioLevel {
+            peak: value.peak,
+            clipped: u32::from(value.clipped),
+            status: value.status as u32,
+            age_ms: value.age_ms,
+        };
+        Self {
+            system_audio: level(value.system),
+            microphone: level(value.microphone),
+        }
+    }
+}
+pub struct SnowRecordingAudioMonitorImpl {
+    monitor: AudioMonitor,
+    source: AudioSourceKind,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct SnowRecordingExclusionStatus {
+    pub requested_generation: u64,
+    pub applied_generation: u64,
+    pub status: u32,
+}
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_recording_session_request_exclusions(
+    session: *mut SnowRecordingSessionImpl,
+    exclusions: *const SnowCaptureExclusions,
+    required_windows: *const u32,
+    required_count: u32,
+    generation: *mut u64,
+) -> u8 {
+    if exclusions.is_null()
+        || generation.is_null()
+        || required_count > 4096
+        || (required_count != 0 && required_windows.is_null())
+    {
+        set_last_error("invalid capture exclusion request");
+        return 0;
+    }
+    let Some(session) = recording_session_ref(session) else {
+        return 0;
+    };
+    let (windows, processes) = match unsafe { (*exclusions).to_owned() } {
+        Ok(ids) => ids,
+        Err(error) => {
+            set_last_error(error);
+            return 0;
+        }
+    };
+    let required = if required_count == 0 {
+        Vec::new()
+    } else {
+        unsafe { std::slice::from_raw_parts(required_windows, required_count as usize) }.to_vec()
+    };
+    let result = match session.recording.as_ref() {
+        Some(RecordingSessionKind::Direct(recording)) => {
+            recording.request_exclusions(windows.to_vec(), processes.to_vec(), required)
+        }
+        Some(RecordingSessionKind::Deferred(recording)) => {
+            recording.request_exclusions(windows.to_vec(), processes.to_vec(), required)
+        }
+        _ => {
+            set_last_error("capture exclusions require an available recording session");
+            return 0;
+        }
+    };
+    match result {
+        Ok(value) => {
+            unsafe {
+                *generation = value;
+            }
+            clear_last_error();
+            1
+        }
+        Err(error) => {
+            set_last_error(error);
+            0
+        }
+    }
+}
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_recording_session_exclusion_status(
+    session: *const SnowRecordingSessionImpl,
+    status: *mut SnowRecordingExclusionStatus,
+) -> u8 {
+    if status.is_null() {
+        set_last_error("exclusion status output is null");
+        return 0;
+    }
+    let Some(session) = recording_session_ref(session) else {
+        return 0;
+    };
+    let (requested_generation, applied_generation, state) = match session.recording.as_ref() {
+        Some(RecordingSessionKind::Direct(recording)) => recording.exclusion_status(),
+        Some(RecordingSessionKind::Deferred(recording)) => recording.exclusion_status(),
+        _ => {
+            set_last_error("capture exclusions require an available recording session");
+            return 0;
+        }
+    };
+    unsafe {
+        *status = SnowRecordingExclusionStatus {
+            requested_generation,
+            applied_generation,
+            status: state,
+        };
+    }
+    clear_last_error();
+    1
+}
+
+fn audio_source(value: u32) -> Result<AudioSourceKind, String> {
+    match value {
+        0 => Ok(AudioSourceKind::System),
+        1 => Ok(AudioSourceKind::Microphone),
+        _ => Err("invalid recording audio source".into()),
+    }
+}
+fn recording_audio_control(session: *const SnowRecordingSessionImpl) -> Option<AudioControlHandle> {
+    let session = recording_session_ref(session)?;
+    match session.recording.as_ref() {
+        Some(RecordingSessionKind::Direct(recording)) => Some(recording.audio_control()),
+        Some(RecordingSessionKind::Deferred(recording)) => Some(recording.audio_control()),
+        _ => {
+            set_last_error("audio controls require an available recording session");
+            None
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn snow_recording_session_set_audio_gain(
+    session: *mut SnowRecordingSessionImpl,
+    source: u32,
+    gain_db: i32,
+) -> u8 {
+    let source = match audio_source(source) {
+        Ok(source) => source,
+        Err(error) => {
+            set_last_error(error);
+            return 0;
+        }
+    };
+    let Some(control) = recording_audio_control(session) else {
+        return 0;
+    };
+    match control.set_gain_db(source, gain_db) {
+        Ok(()) => {
+            clear_last_error();
+            1
+        }
+        Err(error) => {
+            set_last_error(error);
+            0
+        }
+    }
+}
+#[unsafe(no_mangle)]
+pub extern "C" fn snow_recording_session_set_audio_metering(
+    session: *mut SnowRecordingSessionImpl,
+    source_mask: u32,
+) -> u8 {
+    if source_mask & !3 != 0 {
+        set_last_error("invalid audio metering mask");
+        return 0;
+    }
+    let Some(control) = recording_audio_control(session) else {
+        return 0;
+    };
+    control.set_metering(AudioSourceKind::System, source_mask & 1 != 0);
+    control.set_metering(AudioSourceKind::Microphone, source_mask & 2 != 0);
+    clear_last_error();
+    1
+}
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_recording_session_take_audio_levels(
+    session: *const SnowRecordingSessionImpl,
+    levels: *mut SnowRecordingAudioLevels,
+) -> u8 {
+    if levels.is_null() {
+        set_last_error("audio levels output is null");
+        return 0;
+    }
+    let Some(control) = recording_audio_control(session) else {
+        return 0;
+    };
+    unsafe {
+        *levels = control.take_levels().into();
+    }
+    clear_last_error();
+    1
+}
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_recording_audio_monitor_create(
+    source: u32,
+    gain_db: i32,
+    monitor: *mut *mut SnowRecordingAudioMonitorImpl,
+) -> SnowRecordingResult {
+    if monitor.is_null() {
+        set_last_error("audio monitor output is null");
+        return SnowRecordingResult::InvalidArgument;
+    }
+    unsafe {
+        *monitor = ptr::null_mut();
+    }
+    let source = match audio_source(source) {
+        Ok(source) => source,
+        Err(error) => {
+            set_last_error(error);
+            return SnowRecordingResult::InvalidArgument;
+        }
+    };
+    match AudioMonitor::start(source, gain_db) {
+        Ok(value) => {
+            unsafe {
+                *monitor = Box::into_raw(Box::new(SnowRecordingAudioMonitorImpl {
+                    monitor: value,
+                    source,
+                }));
+            }
+            clear_last_error();
+            SnowRecordingResult::Ok
+        }
+        Err(error) => {
+            let result = match error {
+                snow_audio_recorder::AudioError::InvalidConfig(_) => {
+                    SnowRecordingResult::InvalidArgument
+                }
+                snow_audio_recorder::AudioError::Canceled => SnowRecordingResult::Canceled,
+                snow_audio_recorder::AudioError::AccessDenied => {
+                    SnowRecordingResult::PermissionDenied
+                }
+                snow_audio_recorder::AudioError::BackendUnavailable(_) => {
+                    SnowRecordingResult::Unsupported
+                }
+                _ => SnowRecordingResult::InternalError,
+            };
+            set_last_error(error);
+            result
+        }
+    }
+}
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_recording_audio_monitor_cancel(
+    monitor: *mut SnowRecordingAudioMonitorImpl,
+) {
+    if let Some(monitor) = unsafe { monitor.as_ref() } {
+        monitor.monitor.cancel();
+    }
+}
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_recording_audio_monitor_destroy(
+    monitor: *mut SnowRecordingAudioMonitorImpl,
+) {
+    if !monitor.is_null() {
+        drop(unsafe { Box::from_raw(monitor) });
+    }
+}
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_recording_audio_monitor_set_gain(
+    monitor: *mut SnowRecordingAudioMonitorImpl,
+    gain_db: i32,
+) -> u8 {
+    let Some(monitor) = (unsafe { monitor.as_ref() }) else {
+        set_last_error("audio monitor is null");
+        return 0;
+    };
+    match monitor
+        .monitor
+        .control()
+        .set_gain_db(monitor.source, gain_db)
+    {
+        Ok(()) => {
+            clear_last_error();
+            1
+        }
+        Err(error) => {
+            set_last_error(error);
+            0
+        }
+    }
+}
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_recording_audio_monitor_set_metering(
+    monitor: *mut SnowRecordingAudioMonitorImpl,
+    enabled: u8,
+) -> u8 {
+    let Some(monitor) = (unsafe { monitor.as_ref() }) else {
+        set_last_error("audio monitor is null");
+        return 0;
+    };
+    if enabled > 1 {
+        set_last_error("invalid audio metering flag");
+        return 0;
+    }
+    monitor
+        .monitor
+        .control()
+        .set_metering(monitor.source, enabled != 0);
+    clear_last_error();
+    1
+}
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_recording_audio_monitor_take_levels(
+    monitor: *const SnowRecordingAudioMonitorImpl,
+    levels: *mut SnowRecordingAudioLevels,
+) -> u8 {
+    let Some(monitor) = (unsafe { monitor.as_ref() }) else {
+        set_last_error("audio monitor is null");
+        return 0;
+    };
+    if levels.is_null() {
+        set_last_error("audio levels output is null");
+        return 0;
+    }
+    unsafe {
+        *levels = monitor.monitor.control().take_levels().into();
+    }
+    clear_last_error();
+    1
+}
+
 enum RecordingSessionKind {
     Legacy(Box<RecordingSession>),
     Direct(Box<DirectRecordingSession>),
+    Deferred(Box<snow_screen_recorder::DeferredRecordingSession>),
 }
 
 #[repr(C)]
@@ -167,6 +512,10 @@ pub struct SnowCaptureDirectRecordingConfig {
     keyboard_font_family_utf8: *const c_char,
     keyboard_cjk_font_family_utf8: *const c_char,
     keyboard_font_weight: u32,
+    quality: u32,
+    audio_mode: u32,
+    system_audio_gain_db: i32,
+    microphone_gain_db: i32,
 }
 
 #[repr(C)]
@@ -176,7 +525,9 @@ struct SnowCaptureDirectRecordingConfigHeader {
     struct_size: u32,
 }
 
-pub const DIRECT_RECORDING_CONFIG_VERSION: u32 = 8;
+pub const DIRECT_RECORDING_CONFIG_VERSION: u32 = 11;
+// Version 8 ended with four padding bytes now occupied by quality.
+const DIRECT_RECORDING_CONFIG_V8_SIZE: u32 = 256;
 const DIRECT_RECORDING_CONFIG_V4_FIELDS_SIZE: usize =
     std::mem::offset_of!(SnowCaptureDirectRecordingConfig, loop_animated_images);
 const DIRECT_RECORDING_CONFIG_V4_SIZE: u32 = (DIRECT_RECORDING_CONFIG_V4_FIELDS_SIZE
@@ -207,6 +558,8 @@ fn direct_config_size(version: u32) -> Result<u32, String> {
             std::mem::offset_of!(SnowCaptureDirectRecordingConfig, keyboard_font_family_utf8)
                 as u32,
         ),
+        8 | 9 => Ok(DIRECT_RECORDING_CONFIG_V8_SIZE),
+        10 => Ok(std::mem::offset_of!(SnowCaptureDirectRecordingConfig, microphone_gain_db) as u32),
         DIRECT_RECORDING_CONFIG_VERSION => Ok(DIRECT_RECORDING_CONFIG_SIZE),
         _ => Err(format!(
             "unsupported direct recording config version: {version}"
@@ -382,6 +735,7 @@ pub unsafe extern "C" fn snow_recording_session_destroy(session: *mut SnowRecord
                 let _ = (*recording).stop();
             }
             RecordingSessionKind::Direct(recording) => drop(recording),
+            RecordingSessionKind::Deferred(recording) => drop(recording),
         }
     }
 }
@@ -398,6 +752,7 @@ pub extern "C" fn snow_recording_session_start(session: *mut SnowRecordingSessio
     let result = match recording {
         RecordingSessionKind::Legacy(recording) => recording.start(),
         RecordingSessionKind::Direct(recording) => recording.start(),
+        RecordingSessionKind::Deferred(recording) => recording.start(),
     };
     match result {
         Ok(()) => {
@@ -424,6 +779,7 @@ pub extern "C" fn snow_recording_session_pause(session: *mut SnowRecordingSessio
     let result = match recording {
         RecordingSessionKind::Legacy(recording) => recording.pause(),
         RecordingSessionKind::Direct(recording) => recording.pause(),
+        RecordingSessionKind::Deferred(recording) => recording.pause(),
     };
     match result {
         Ok(()) => {
@@ -450,6 +806,7 @@ pub extern "C" fn snow_recording_session_resume(session: *mut SnowRecordingSessi
     let result = match recording {
         RecordingSessionKind::Legacy(recording) => recording.resume(),
         RecordingSessionKind::Direct(recording) => recording.resume(),
+        RecordingSessionKind::Deferred(recording) => recording.resume(),
     };
     match result {
         Ok(()) => {
@@ -478,6 +835,7 @@ pub unsafe extern "C" fn snow_recording_session_state(
     };
     let state = match session.recording.as_ref() {
         Some(RecordingSessionKind::Direct(recording)) => recording.state(),
+        Some(RecordingSessionKind::Deferred(recording)) => recording.state(),
         Some(RecordingSessionKind::Legacy(_)) | None => session.state,
     };
     unsafe { *out_state = ffi_recording_state(state) };
@@ -641,6 +999,14 @@ fn parse_direct_recording_config(
         4 => VideoEncodingSpeed::Placebo,
         value => return Err(format!("invalid direct recording encoding preset: {value}")),
     };
+    let quality = if config.version >= 9 {
+        u8::try_from(config.quality)
+            .ok()
+            .filter(|quality| *quality <= 100)
+            .ok_or_else(|| "direct recording quality must be in 0..=100".to_string())?
+    } else {
+        80
+    };
     let prefer_hardware_encoder = match config.encoder_preference {
         0 => false,
         1 => true,
@@ -668,7 +1034,27 @@ fn parse_direct_recording_config(
             std::sync::Arc::from(Vec::<i32>::new()),
         )
     };
+    let audio_mode = if config.version < 10 {
+        snow_screen_recorder::RecordingAudioMode::Mixed
+    } else {
+        match config.audio_mode {
+            0 => snow_screen_recorder::RecordingAudioMode::Mixed,
+            1 => snow_screen_recorder::RecordingAudioMode::Separate,
+            value => return Err(format!("invalid recording audio mode: {value}")),
+        }
+    };
     let direct = DirectRecordingConfig {
+        audio_mode,
+        system_audio_gain_db: if config.version >= 11 {
+            config.system_audio_gain_db
+        } else {
+            0
+        },
+        microphone_gain_db: if config.version >= 11 {
+            config.microphone_gain_db
+        } else {
+            0
+        },
         loop_animated_images,
         region: RecordingRegion::new(config.x, config.y, config.width, config.height),
         capture_backend,
@@ -680,6 +1066,7 @@ fn parse_direct_recording_config(
         maximum_height: (config.maximum_height != 0).then_some(config.maximum_height),
         codec,
         preset,
+        quality,
         prefer_hardware_encoder,
         enable_microphone: config.enable_microphone != 0 && !format.is_animated_image(),
         enable_system_audio: config.enable_system_audio != 0 && !format.is_animated_image(),
@@ -868,6 +1255,41 @@ pub unsafe extern "C" fn snow_recording_session_create_direct(
                     state: RecordingState::Created,
                 }));
             }
+            clear_last_error();
+            SnowRecordingResult::Ok
+        }
+        Err(error) => {
+            let result = direct_result_for_error(&error);
+            set_last_error(error);
+            result
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn snow_recording_session_request_stop(
+    session: *mut SnowRecordingSessionImpl,
+) -> SnowRecordingResult {
+    let Some(session) = recording_session_ref(session) else {
+        return SnowRecordingResult::InvalidArgument;
+    };
+    if !matches!(
+        session.state,
+        RecordingState::Running | RecordingState::Paused
+    ) {
+        set_last_error("request_stop requires a running or paused recording");
+        return SnowRecordingResult::InvalidState;
+    }
+    let result = match session.recording.as_ref() {
+        Some(RecordingSessionKind::Direct(recording)) => recording.request_stop(),
+        Some(RecordingSessionKind::Deferred(recording)) => recording.request_stop(),
+        _ => {
+            set_last_error("request_stop is available for direct and deferred sessions");
+            return SnowRecordingResult::Unsupported;
+        }
+    };
+    match result {
+        Ok(()) => {
             clear_last_error();
             SnowRecordingResult::Ok
         }
@@ -1109,10 +1531,6 @@ fn configure_recording_export_request(
     request.codec = options.codec;
     request.video.speed = options.preset;
     request.prefer_hardware_h264 = options.prefer_hardware_h264;
-    request.mouse.visible = true;
-    for track in &mut request.audio_tracks {
-        track.enabled = true;
-    }
     request
 }
 
@@ -1146,22 +1564,27 @@ fn stop_and_export_recording(
     let editing = match EditingSession::open(artifact) {
         Ok(editing) => editing,
         Err(error) => {
-            let _ = std::fs::remove_file(bundle_path);
-            set_last_error(error);
+            set_last_error(format!(
+                "{error}; recoverable media is retained in {}",
+                bundle_path.display()
+            ));
             return 0;
         }
     };
     let request = configure_recording_export_request(editing.export_request(), options);
 
     let result = editing.export(request);
-    let _ = std::fs::remove_file(bundle_path);
     match result {
         Ok(_) => {
+            let _ = std::fs::remove_file(bundle_path);
             clear_last_error();
             1
         }
         Err(error) => {
-            set_last_error(error);
+            set_last_error(format!(
+                "{error}; recoverable media is retained in {}",
+                bundle_path.display()
+            ));
             0
         }
     }
@@ -1230,17 +1653,233 @@ mod tests {
     }
 
     #[test]
+    fn direct_audio_mode_is_versioned_and_validated() {
+        use snow_screen_recorder::RecordingAudioMode;
+        for version in 1..=DIRECT_RECORDING_CONFIG_VERSION {
+            let mut config = direct_config(c"recording.mp4");
+            config.version = version;
+            config.struct_size = direct_config_size(version).unwrap();
+            config.audio_mode = 1;
+            if version == 2 {
+                config.mouse_trail_duration_ms = 0;
+            }
+            // Allocate only the caller's versioned prefix to catch overreads under sanitizers.
+            let bytes = unsafe {
+                std::slice::from_raw_parts(
+                    (&raw const config).cast::<u8>(),
+                    config.struct_size as usize,
+                )
+            }
+            .to_vec();
+            let read = unsafe { read_direct_recording_config(bytes.as_ptr().cast()) }.unwrap();
+            let parsed = parse_direct_recording_config(&read).unwrap();
+            assert_eq!(
+                parsed.audio_mode,
+                if version < 10 {
+                    RecordingAudioMode::Mixed
+                } else {
+                    RecordingAudioMode::Separate
+                }
+            );
+        }
+        let mut config = direct_config(c"recording.mp4");
+        config.audio_mode = 2;
+        assert!(
+            parse_direct_recording_config(&config)
+                .unwrap_err()
+                .contains("audio mode")
+        );
+        config.audio_mode = 0;
+        assert_eq!(
+            parse_direct_recording_config(&config).unwrap().audio_mode,
+            RecordingAudioMode::Mixed
+        );
+    }
+
+    #[test]
+    fn direct_audio_gain_preserves_all_older_config_prefixes() {
+        for version in 1..=DIRECT_RECORDING_CONFIG_VERSION {
+            let mut config = direct_config(c"recording.mp4");
+            config.version = version;
+            config.struct_size = direct_config_size(version).unwrap();
+            config.system_audio_gain_db = 24;
+            config.microphone_gain_db = -24;
+            if version == 2 {
+                config.mouse_trail_duration_ms = 0;
+            }
+            let prefix = unsafe {
+                std::slice::from_raw_parts(
+                    (&raw const config).cast::<u8>(),
+                    config.struct_size as usize,
+                )
+            }
+            .to_vec();
+            let read = unsafe { read_direct_recording_config(prefix.as_ptr().cast()) }.unwrap();
+            let parsed = parse_direct_recording_config(&read).unwrap();
+            assert_eq!(
+                parsed.system_audio_gain_db,
+                if version >= 11 { 24 } else { 0 }
+            );
+            assert_eq!(
+                parsed.microphone_gain_db,
+                if version >= 11 { -24 } else { 0 }
+            );
+        }
+        let mut config = direct_config(c"recording.mp4");
+        for (system, microphone) in [(25, 0), (-25, 0), (0, 25), (0, -25)] {
+            config.system_audio_gain_db = system;
+            config.microphone_gain_db = microphone;
+            assert!(parse_direct_recording_config(&config).is_err());
+        }
+    }
+
+    #[test]
+    fn audio_ffi_controls_validate_and_share_recording_targets() {
+        let _guard = SESSION_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let mut config = direct_config(c"recording.mp4");
+        config.system_audio_gain_db = -9;
+        config.microphone_gain_db = 6;
+        let mut session = ptr::null_mut();
+        assert_eq!(
+            unsafe { snow_recording_session_create_direct(&config, &mut session) },
+            SnowRecordingResult::Ok
+        );
+        let control = recording_audio_control(session).unwrap();
+        assert_eq!(control.gain_db(AudioSourceKind::System), -9);
+        assert_eq!(control.gain_db(AudioSourceKind::Microphone), 6);
+        assert_eq!(snow_recording_session_set_audio_gain(session, 0, 12), 1);
+        assert_eq!(snow_recording_session_set_audio_gain(session, 1, -12), 1);
+        assert_eq!(snow_recording_session_set_audio_gain(session, 2, 0), 0);
+        assert_eq!(snow_recording_session_set_audio_gain(session, 1, 25), 0);
+        assert_eq!(control.gain_db(AudioSourceKind::System), 12);
+        assert_eq!(control.gain_db(AudioSourceKind::Microphone), -12);
+        assert_eq!(snow_recording_session_set_audio_metering(session, 3), 1);
+        assert_eq!(snow_recording_session_set_audio_metering(session, 4), 0);
+        let mut levels = SnowRecordingAudioLevels::default();
+        assert_eq!(
+            unsafe { snow_recording_session_take_audio_levels(session, &mut levels) },
+            1
+        );
+        assert_eq!(levels.system_audio.status, 0);
+        assert_eq!(levels.microphone.peak, 0.0);
+        assert_eq!(
+            unsafe { snow_recording_session_take_audio_levels(session, ptr::null_mut()) },
+            0
+        );
+        unsafe {
+            snow_recording_session_destroy(session);
+        }
+        assert_eq!(
+            snow_recording_session_set_audio_gain(ptr::null_mut(), 0, 0),
+            0
+        );
+        let mut monitor = ptr::null_mut();
+        assert_eq!(
+            unsafe { snow_recording_audio_monitor_create(0, 25, &mut monitor) },
+            SnowRecordingResult::InvalidArgument
+        );
+        assert!(monitor.is_null());
+        assert_eq!(
+            unsafe { snow_recording_audio_monitor_create(2, 0, &mut monitor) },
+            SnowRecordingResult::InvalidArgument
+        );
+        unsafe {
+            snow_recording_audio_monitor_cancel(ptr::null_mut());
+            snow_recording_audio_monitor_destroy(ptr::null_mut());
+        }
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn exclusion_ffi_generations_validate_required_windows() {
+        let _guard = SESSION_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let config = direct_config(c"recording.mp4");
+        let mut session = ptr::null_mut();
+        assert_eq!(
+            unsafe { snow_recording_session_create_direct(&config, &mut session) },
+            SnowRecordingResult::Ok
+        );
+        let windows = [123_u32];
+        let exclusions = SnowCaptureExclusions {
+            windows: windows.as_ptr(),
+            window_count: 1,
+            ..Default::default()
+        };
+        let mut generation = 0;
+        assert_eq!(
+            unsafe {
+                snow_recording_session_request_exclusions(
+                    session,
+                    &exclusions,
+                    windows.as_ptr(),
+                    1,
+                    &mut generation,
+                )
+            },
+            1
+        );
+        assert_eq!(generation, 1);
+        let mut status = SnowRecordingExclusionStatus::default();
+        assert_eq!(
+            unsafe { snow_recording_session_exclusion_status(session, &mut status) },
+            1
+        );
+        assert_eq!(
+            (
+                status.requested_generation,
+                status.applied_generation,
+                status.status
+            ),
+            (1, 1, 0)
+        );
+        let missing = 999;
+        assert_eq!(
+            unsafe {
+                snow_recording_session_request_exclusions(
+                    session,
+                    &exclusions,
+                    &missing,
+                    1,
+                    &mut generation,
+                )
+            },
+            0
+        );
+        assert_eq!(
+            unsafe {
+                snow_recording_session_request_exclusions(
+                    session,
+                    &exclusions,
+                    ptr::null(),
+                    1,
+                    &mut generation,
+                )
+            },
+            0
+        );
+        unsafe {
+            snow_recording_session_destroy(session);
+        }
+    }
+
+    #[test]
     fn direct_recording_exclusion_abi_layout() {
-        assert_eq!(DIRECT_RECORDING_CONFIG_VERSION, 8);
+        assert_eq!(DIRECT_RECORDING_CONFIG_VERSION, 11);
         assert_eq!(
             std::mem::offset_of!(SnowCaptureDirectRecordingConfig, exclusions),
             192
         );
-        assert_eq!(DIRECT_RECORDING_CONFIG_SIZE, 256);
+        assert_eq!(DIRECT_RECORDING_CONFIG_SIZE, 272);
+        assert_eq!(direct_config_size(10).unwrap(), 264);
+        assert_eq!(direct_config_size(9).unwrap(), 256);
+        assert_eq!(
+            std::mem::offset_of!(SnowCaptureDirectRecordingConfig, audio_mode),
+            256
+        );
         assert_eq!(direct_config_size(7).unwrap(), 232);
         assert_eq!(direct_config_size(6).unwrap(), 224);
         assert_eq!(DIRECT_RECORDING_CONFIG_V5_SIZE, 192);
-        for version in [5, 6, 7, 8] {
+        for version in [5, 6, 7, 8, 9, 10] {
             let header = SnowCaptureDirectRecordingConfigHeader {
                 version,
                 struct_size: 8,
@@ -1394,7 +2033,7 @@ mod tests {
         );
     }
     #[test]
-    fn immediate_gif_export_includes_recorded_cursor_motion() {
+    fn compatibility_export_adapter_preserves_cursor_visibility() {
         let output_path = PathBuf::from("recording.gif");
         let request = configure_recording_export_request(
             ExportRequest::default(),
@@ -1412,7 +2051,7 @@ mod tests {
 
         assert_eq!(request.output_path, output_path);
         assert_eq!(request.format, ExportFormat::Gif);
-        assert!(request.mouse.visible);
+        assert!(!request.mouse.visible);
     }
     #[test]
     fn versioned_export_config_maps_all_fields() {
@@ -1576,9 +2215,12 @@ mod tests {
         assert!(!parsed.record_mouse_clicks && parsed.keyboard.is_none());
         assert_eq!(parsed.mouse_highlight_rgba, [0; 4]);
     }
-    fn direct_config(output: &CStr) -> SnowCaptureDirectRecordingConfig {
+    pub(super) fn direct_config(output: &CStr) -> SnowCaptureDirectRecordingConfig {
         SnowCaptureDirectRecordingConfig {
             exclusions: Default::default(),
+            audio_mode: 0,
+            system_audio_gain_db: 0,
+            microphone_gain_db: 0,
             version: DIRECT_RECORDING_CONFIG_VERSION,
             struct_size: std::mem::size_of::<SnowCaptureDirectRecordingConfig>() as u32,
             x: -100,
@@ -1606,6 +2248,7 @@ mod tests {
             keyboard_font_family_utf8: std::ptr::null(),
             keyboard_cjk_font_family_utf8: std::ptr::null(),
             keyboard_font_weight: 0,
+            quality: 80,
             reserved: [0; 64],
             show_keyboard: 0,
             keyboard_background_rgba: 0,
@@ -1668,7 +2311,9 @@ mod tests {
     #[test]
     fn direct_config_maps_all_fields_and_rgba_order() {
         let output = CString::new("recording.mp4").unwrap();
-        let parsed = parse_direct_recording_config(&direct_config(&output)).unwrap();
+        let mut config = direct_config(&output);
+        config.quality = 63;
+        let parsed = parse_direct_recording_config(&config).unwrap();
         assert_eq!(parsed.region, RecordingRegion::new(-100, 50, 1280, 720));
         assert_eq!(
             parsed.capture_backend,
@@ -1682,6 +2327,7 @@ mod tests {
         assert_eq!(parsed.maximum_height, Some(1080));
         assert_eq!(parsed.codec, VideoCodec::H264);
         assert_eq!(parsed.preset, VideoEncodingSpeed::VeryFast);
+        assert_eq!(parsed.quality, 63);
         assert!(parsed.prefer_hardware_encoder);
         assert!(parsed.enable_microphone && parsed.enable_system_audio && parsed.show_cursor);
         assert_eq!(parsed.mouse_trail_rgba, [0x11, 0x22, 0x33, 0x44]);
@@ -1710,8 +2356,24 @@ mod tests {
         config.maximum_height = 0;
         assert!(parse_direct_recording_config(&config).is_err());
         config.maximum_height = 1080;
+        config.quality = 101;
+        assert!(parse_direct_recording_config(&config).is_err());
+        config.quality = 80;
         config.struct_size -= 1;
         assert!(parse_direct_recording_config(&config).is_err());
+    }
+    #[test]
+    fn direct_config_v8_ignores_tail_padding_and_uses_default_quality() {
+        let output = CString::new("recording.mp4").unwrap();
+        let mut config = direct_config(&output);
+        config.version = 8;
+        config.struct_size = direct_config_size(8).unwrap();
+        config.quality = u32::MAX;
+        let parsed = parse_direct_recording_config(
+            &unsafe { read_direct_recording_config(&config) }.unwrap(),
+        )
+        .unwrap();
+        assert_eq!(parsed.quality, 80);
     }
     #[test]
     fn direct_config_reads_only_header_before_size_validation() {
@@ -1793,6 +2455,9 @@ mod tests {
     }
     #[test]
     fn recording_session_live_count_tracks_create_and_destroy_exactly_once() {
+        let _guard = SESSION_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
         let output = CString::new("recording.mp4").unwrap();
         let mut config = direct_config(&output);
         config.capture_backend = 0;

@@ -1,4 +1,5 @@
-﻿#include "snow_shot/presentation/components/titlebarwidget.h"
+#include "snow_shot/app/edition.h"
+#include "snow_shot/presentation/components/titlebarwidget.h"
 
 #include "snow_shot/presentation/components/icons/snowshoticons.h"
 #include "snow_shot/presentation/styles/thememanager.h"
@@ -17,8 +18,6 @@
 #include <QApplication>
 #include <QColor>
 #include <QEnterEvent>
-#include <QFont>
-#include <QFontMetrics>
 #include <QHBoxLayout>
 #include <QMouseEvent>
 #include <QPaintEvent>
@@ -36,45 +35,26 @@ namespace {
 namespace outlined_icons = adqt::icons::antd::outlined;
 namespace custom_icons = snow_shot::presentation::icons::custom;
 
-// The wordmark is painted as text instead of shipping brand artwork: the caption renders it at
-// 10-14 logical pixels, where text stays crisp at every device pixel ratio and follows the theme
-// color, and the brand name itself is fixed so it never needs translation.
-constexpr char kBrandLead[] = "Wing";
-constexpr char kBrandTail[] = "Shot";
+QPixmap renderBrandLogo(int logicalHeight, const QColor& color, qreal devicePixelRatio) {
+    if (logicalHeight <= 0 || !color.isValid()) {
+        return {};
+    }
 
-// The application icon's mark color; the leading word keeps it while the trailing word follows
-// the caption's themed text color, exactly like the artwork it replaces.
-const QColor kBrandMarkColor(0x92, 0x54, 0xDE);
+    constexpr qreal aspectRatio = snow_shot::app::edition::isMini ? 137.0 / 17.0 : 95.0 / 17.0;
+    const int logicalWidth =
+        static_cast<int>(std::llround(static_cast<qreal>(logicalHeight) * aspectRatio));
+    if (logicalWidth <= 0) {
+        return {};
+    }
 
-QFont brandWordmarkFont(const QWidget& widget, int pixelSize) {
-    QFont font = widget.font();
-    font.setPixelSize(pixelSize);
-    font.setWeight(QFont::DemiBold);
-    return font;
-}
-
-qreal brandWordmarkWidth(const QFont& font) {
-    const QFontMetricsF metrics(font);
-    return metrics.horizontalAdvance(QString::fromLatin1(kBrandLead)) +
-           metrics.horizontalAdvance(QString::fromLatin1(kBrandTail));
-}
-
-qreal brandWordmarkBaseline(const QFont& font, int height) {
-    const QFontMetricsF metrics(font);
-    return (static_cast<qreal>(height) - metrics.height()) / 2.0 + metrics.ascent();
-}
-
-void drawBrandWordmark(QPainter& painter, const QPointF& baselineLeft, const QFont& font,
-                       const QColor& tailColor) {
-    painter.setFont(font);
-    const QFontMetricsF metrics(font);
-    const QString lead = QString::fromLatin1(kBrandLead);
-    painter.setPen(kBrandMarkColor);
-    painter.drawText(baselineLeft, lead);
-    painter.setPen(tailColor);
-    painter.drawText(
-        QPointF(baselineLeft.x() + metrics.horizontalAdvance(lead), baselineLeft.y()),
-        QString::fromLatin1(kBrandTail));
+    adqt::icons::IconRenderRequest request;
+    request.logicalSize = QSize(logicalWidth, logicalHeight);
+    request.devicePixelRatio = devicePixelRatio;
+    const auto colors = adqt::icons::IconColors::primary(color);
+    const auto logo = snow_shot::app::edition::isMini
+                          ? custom_icons::brand::SnowShotMiniLogo(colors)
+                          : custom_icons::brand::SnowShotLogo(colors);
+    return adqt::icons::renderIconPixmap(logo, request);
 }
 
 #ifndef Q_OS_MACOS
@@ -341,6 +321,10 @@ void TitleBarWidget::mousePressEvent(QMouseEvent* event) {
 }
 
 void TitleBarWidget::retranslateUi() {
+    if (snow_shot::app::edition::isMini) {
+        setAccessibleName(snow_shot::app::edition::productName());
+        window()->setWindowTitle(snow_shot::app::edition::productName());
+    }
 #ifndef Q_OS_MACOS
     m_closeButton->setToolTip(tr("Close"));
     m_closeButton->setAccessibleName(tr("Close"));
@@ -357,31 +341,42 @@ void TitleBarWidget::paintEvent(QPaintEvent* event) {
 
     QPainter painter(this);
     painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
-
-    const QFont wordmarkFont = brandWordmarkFont(*this, m_logoHeight);
 #ifdef Q_OS_WIN
     const QColor color = window()->isActiveWindow()
                              ? m_logoColor
                              : snow_shot::presentation::styles::ThemeManager::instance()
                                    .themeColorScheme()
                                    .map.colorTextTertiary;
+    const QPixmap wordmark = renderBrandLogo(m_logoHeight, color, devicePixelRatioF());
+    const qreal scale = devicePixelRatioF();
+    const qreal y = qRound((height() * scale - wordmark.height()) / 2.0) / scale;
     painter.setClipRect(QRect(48, 0, std::max(0, m_minimizeButton->x() - 64), height()));
-    drawBrandWordmark(painter, QPointF(48, brandWordmarkBaseline(wordmarkFont, height())),
-                      wordmarkFont, color);
+    painter.setRenderHint(QPainter::SmoothPixmapTransform, false);
+    painter.drawPixmap(QPointF(48, y), wordmark);
 #else
-    QWidget* topLevelWindow = window();
-    const qreal windowCenterX = topLevelWindow != nullptr
-                                    ? static_cast<qreal>(topLevelWindow->width()) / 2.0
-                                    : static_cast<qreal>(width()) / 2.0;
-    const qreal localCenterX =
-        topLevelWindow != nullptr
-            ? windowCenterX - static_cast<qreal>(mapTo(topLevelWindow, QPoint(0, 0)).x())
-            : windowCenterX;
-    drawBrandWordmark(
-        painter,
-        QPointF(localCenterX - brandWordmarkWidth(wordmarkFont) / 2.0,
-                brandWordmarkBaseline(wordmarkFont, height())),
-        wordmarkFont, m_logoColor);
+    const QPixmap logoPixmap = renderBrandLogo(m_logoHeight, m_logoColor, devicePixelRatioF());
+    if (!logoPixmap.isNull()) {
+        const qreal devicePixelRatio =
+            logoPixmap.devicePixelRatio() > 0.0 ? logoPixmap.devicePixelRatio() : 1.0;
+        const int logoWidth = static_cast<int>(
+            std::lround(static_cast<qreal>(logoPixmap.width()) / devicePixelRatio));
+        const int logoHeight = static_cast<int>(
+            std::lround(static_cast<qreal>(logoPixmap.height()) / devicePixelRatio));
+
+        QWidget* topLevelWindow = window();
+        const qreal windowCenterX = topLevelWindow != nullptr
+                                        ? static_cast<qreal>(topLevelWindow->width()) / 2.0
+                                        : static_cast<qreal>(width()) / 2.0;
+        const qreal localCenterX =
+            topLevelWindow != nullptr
+                ? windowCenterX - static_cast<qreal>(mapTo(topLevelWindow, QPoint(0, 0)).x())
+                : windowCenterX;
+
+        painter.drawPixmap(
+            QPointF(localCenterX - static_cast<qreal>(logoWidth) / 2.0,
+                    (static_cast<qreal>(height()) - static_cast<qreal>(logoHeight)) / 2.0),
+            logoPixmap);
+    }
 #endif
 }
 
@@ -395,10 +390,8 @@ bool TitleBarWidget::eventFilter(QObject* watched, QEvent* event) {
 }
 
 void TitleBarWidget::applyTheme(const snow_shot::presentation::styles::ThemeColorScheme& scheme) {
-    QPalette palette = this->palette();
-    palette.setColor(QPalette::Window,
-                     adqt::widgets::AdNavigationMenu::resolveColorTokens(this).itemBackground);
-    setPalette(palette);
+    m_surfaceColor = adqt::widgets::AdNavigationMenu::resolveColorTokens(this).itemBackground;
+    updateSkinMask();
     m_logoColor = scheme.map.colorText;
 #ifdef Q_OS_WIN
     adqt::icons::IconRenderRequest request;
@@ -420,6 +413,26 @@ void TitleBarWidget::applyTheme(const snow_shot::presentation::styles::ThemeColo
     refreshWindowControlButtonTheme(m_closeButton);
 #endif
 
+    update();
+}
+
+void TitleBarWidget::setSkinMaskOpacity(qreal opacity) {
+    const qreal normalized = std::isfinite(opacity) ? std::clamp(opacity, 0.0, 1.0) : 1.0;
+    if (m_skinMaskOpacity == normalized) {
+        return;
+    }
+    m_skinMaskOpacity = normalized;
+    updateSkinMask();
+}
+
+void TitleBarWidget::updateSkinMask() {
+    QPalette palette = this->palette();
+    QColor background = m_surfaceColor;
+    if (m_skinMaskOpacity != 1.0) {
+        background.setAlphaF(background.alphaF() * static_cast<float>(m_skinMaskOpacity));
+    }
+    palette.setColor(QPalette::Window, background);
+    setPalette(palette);
     update();
 }
 

@@ -1,4 +1,5 @@
 #pragma once
+#include "snow_shot/shortcuts/shortcutdisplayservice.h"
 
 #include "snow_shot/presentation/components/icons/snowshoticons.h"
 #include "snow_shot/presentation/screenshotregionpreferences.h"
@@ -60,6 +61,9 @@ class ScreenshotRegionTypeControl final : public QWidget {
             if (QCoreApplication::instance() != nullptr)
                 QCoreApplication::instance()->installEventFilter(this);
         }
+        connect(&snow_shot::shortcuts::ShortcutDisplayService::instance(),
+                &snow_shot::shortcuts::ShortcutDisplayService::displayChanged, this,
+                [this] { retranslate(); });
         retranslate();
         setType(screenshotRegionPreference());
         auto& storage = snow_shot::storage::ApplicationStorage::instance();
@@ -174,8 +178,10 @@ class ScreenshotRegionTypeControl final : public QWidget {
         if (m_hint)
             m_hint->setText(QCoreApplication::translate("ScreenshotRegionTypeControl",
                                                         "%1 to switch region type")
-                                .arg(QKeySequence(screenshotRegionTypeCycleKey())
-                                         .toString(QKeySequence::NativeText)));
+                                .arg(snow_shot::shortcuts::formatShortcutDisplayText(
+                                    snow_shot::shortcuts::bindingFromPortableText(
+                                        QKeySequence(screenshotRegionTypeCycleKey())
+                                            .toString(QKeySequence::PortableText)))));
         adjustSize();
     }
     std::array<adqt::widgets::AdButton*, 4> m_buttons{};

@@ -22,7 +22,7 @@ namespace {
 constexpr int MAX_SHORTCUTS_PER_ACTION = 2;
 constexpr int FIRST_REGISTRATION_ID = 0x2200;
 constexpr int LAST_REGISTRATION_ID = 0xBFFF;
-constexpr std::size_t ACTION_COUNT = 20;
+constexpr std::size_t ACTION_COUNT = 22;
 
 constexpr std::array<GlobalShortcutAction, ACTION_COUNT> ALL_ACTIONS = {
     GlobalShortcutAction::Screenshot,
@@ -38,6 +38,8 @@ constexpr std::array<GlobalShortcutAction, ACTION_COUNT> ALL_ACTIONS = {
     GlobalShortcutAction::OpenScreenRecordingFolder,
     GlobalShortcutAction::OpenCaptureHistory,
     GlobalShortcutAction::OpenPinToScreenManagement,
+    GlobalShortcutAction::GlobalCanvas,
+    GlobalShortcutAction::SwitchWindowGroup,
     GlobalShortcutAction::OpenSettings,
     GlobalShortcutAction::PinClipboardContent,
     GlobalShortcutAction::TranslateSelectedText,
@@ -133,7 +135,11 @@ shortcuts::ShortcutBindingList persistedShortcuts(const storage::ShortcutSetting
     case GlobalShortcutAction::ScreenshotOcr:
         return settings.screenshotOcr();
     case GlobalShortcutAction::ScreenshotTranslation:
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
         return settings.screenshotTranslation();
+#else
+        return {};
+#endif
     case GlobalShortcutAction::ScreenshotCopy:
         return settings.screenshotCopy();
     case GlobalShortcutAction::ScreenshotFullScreen:
@@ -148,6 +154,10 @@ shortcuts::ShortcutBindingList persistedShortcuts(const storage::ShortcutSetting
         return settings.openScreenRecordingFolder();
     case GlobalShortcutAction::OpenCaptureHistory:
         return settings.openCaptureHistory();
+    case GlobalShortcutAction::SwitchWindowGroup:
+        return settings.switchWindowGroup();
+    case GlobalShortcutAction::GlobalCanvas:
+        return settings.globalCanvas();
     case GlobalShortcutAction::OpenPinToScreenManagement:
         return settings.openPinToScreenManagement();
     case GlobalShortcutAction::OpenSettings:
@@ -159,7 +169,11 @@ shortcuts::ShortcutBindingList persistedShortcuts(const storage::ShortcutSetting
     case GlobalShortcutAction::RestoreLastClosedWindows:
         return settings.restoreLastClosedWindows();
     case GlobalShortcutAction::TranslateSelectedText:
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
         return settings.translateSelectedText();
+#else
+        return {};
+#endif
     case GlobalShortcutAction::ToggleGlobalHotkeys:
         return settings.toggleGlobalHotkeys();
     case GlobalShortcutAction::ToggleDisableOnFocusedFullscreenWindow:
@@ -180,7 +194,11 @@ bool persistShortcuts(const storage::ShortcutSettings& settings, GlobalShortcutA
     case GlobalShortcutAction::ScreenshotOcr:
         return settings.setScreenshotOcr(bindings);
     case GlobalShortcutAction::ScreenshotTranslation:
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
         return settings.setScreenshotTranslation(bindings);
+#else
+        return false;
+#endif
     case GlobalShortcutAction::ScreenshotCopy:
         return settings.setScreenshotCopy(bindings);
     case GlobalShortcutAction::ScreenshotFullScreen:
@@ -195,6 +213,10 @@ bool persistShortcuts(const storage::ShortcutSettings& settings, GlobalShortcutA
         return settings.setOpenScreenRecordingFolder(bindings);
     case GlobalShortcutAction::OpenCaptureHistory:
         return settings.setOpenCaptureHistory(bindings);
+    case GlobalShortcutAction::SwitchWindowGroup:
+        return settings.setSwitchWindowGroup(bindings);
+    case GlobalShortcutAction::GlobalCanvas:
+        return settings.setGlobalCanvas(bindings);
     case GlobalShortcutAction::OpenPinToScreenManagement:
         return settings.setOpenPinToScreenManagement(bindings);
     case GlobalShortcutAction::OpenSettings:
@@ -206,7 +228,11 @@ bool persistShortcuts(const storage::ShortcutSettings& settings, GlobalShortcutA
     case GlobalShortcutAction::RestoreLastClosedWindows:
         return settings.setRestoreLastClosedWindows(bindings);
     case GlobalShortcutAction::TranslateSelectedText:
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
         return settings.setTranslateSelectedText(bindings);
+#else
+        return false;
+#endif
     case GlobalShortcutAction::ToggleGlobalHotkeys:
         return settings.setToggleGlobalHotkeys(bindings);
     case GlobalShortcutAction::ToggleDisableOnFocusedFullscreenWindow:
@@ -256,15 +282,21 @@ class GlobalShortcutManager::Impl {
             // disablement and fullscreen suppression so either can be undone
             // from the keyboard.
             const bool gateControl = controlsGlobalHotkeyGates(active->action);
-            if ((!m_globalHotkeysEnabled && !gateControl) ||
-                (active->action == GlobalShortcutAction::TranslateSelectedText &&
-                 !storage::ExtendedFeaturesSettings().translationPageEnabled())) {
+            if ((!m_globalHotkeysEnabled && !gateControl)
+#if SNOW_SHOT_ENABLE_EXTENDED_FEATURES
+                || (active->action == GlobalShortcutAction::TranslateSelectedText &&
+                    !storage::ExtendedFeaturesSettings().translationPageEnabled())
+#endif
+            ) {
                 return;
             }
             if (gateControl ||
+                (active->action == GlobalShortcutAction::GlobalCanvas && m_globalCanvasActive) ||
                 !storage::GlobalShortcutSettings().disableOnFocusedFullscreenWindow() ||
                 !m_focusedFullscreenDetector || !m_focusedFullscreenDetector()) {
-                emit q.activated(active->action);
+                const auto action = active->action;
+                emit q.bindingActivated(action, registrationId);
+                emit q.activated(action);
             }
         });
         m_backend->setAvailabilityChangedHandler([this](const QList<int>& invalidatedIds) {
@@ -367,6 +399,7 @@ class GlobalShortcutManager::Impl {
         const RegistrationSuspensionHandle handle = m_nextSuspensionHandle++;
         if (m_suspensions.isEmpty()) {
             unregisterAll();
+            emit q.registrationsSuspended();
         }
         m_suspensions.insert(handle);
         return handle;
@@ -405,8 +438,12 @@ class GlobalShortcutManager::Impl {
         if (!m_initialized || !m_suspensions.isEmpty()) {
             return;
         }
+#if SNOW_SHOT_ENABLE_EXTENDED_FEATURES
         const bool translationEnabled =
             storage::ExtendedFeaturesSettings().translationPageEnabled();
+#else
+        constexpr bool translationEnabled = false;
+#endif
         QHash<QString, QString> winnerByIdentity;
         QSet<QString> desiredOwnerKeys;
         QSet<QString> duplicateOwnerKeys;
@@ -508,6 +545,7 @@ class GlobalShortcutManager::Impl {
     RegistrationSuspensionHandle m_nextSuspensionHandle = 1;
     bool m_initialized = false;
     bool m_globalHotkeysEnabled = true;
+    bool m_globalCanvasActive = false;
 };
 
 GlobalShortcutManager::GlobalShortcutManager(QObject* parent)
@@ -553,12 +591,25 @@ void GlobalShortcutManager::resumeRegistrations(RegistrationSuspensionHandle han
     m_impl->resumeRegistrations(handle);
 }
 
+void GlobalShortcutManager::setGlobalCanvasActive(bool active) {
+    m_impl->m_globalCanvasActive = active;
+}
+
 void GlobalShortcutManager::setGlobalHotkeysEnabled(bool enabled) {
     if (m_impl->m_globalHotkeysEnabled == enabled) {
         return;
     }
     m_impl->m_globalHotkeysEnabled = enabled;
     emit globalHotkeysEnabledChanged(enabled);
+}
+
+std::optional<GlobalShortcutInputState>
+GlobalShortcutManager::inputState(int registrationId) const {
+    if (registrationId != 0 && (!m_impl->m_globalHotkeysEnabled ||
+                                !m_impl->m_registrationKeysById.contains(registrationId))) {
+        return std::nullopt;
+    }
+    return m_impl->m_backend->inputState(registrationId);
 }
 
 bool GlobalShortcutManager::globalHotkeysEnabled() const {

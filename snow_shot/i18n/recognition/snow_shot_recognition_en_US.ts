@@ -137,6 +137,18 @@
             <translation>Converting to Markdown</translation>
         </message>
         <message>
+            <source>LaTeX recognition failed</source>
+            <translation>LaTeX recognition failed</translation>
+        </message>
+        <message>
+            <source>LaTeX recognition request could not be prepared</source>
+            <translation>LaTeX recognition request could not be prepared</translation>
+        </message>
+        <message>
+            <source>LaTeX recognition service is unavailable</source>
+            <translation>LaTeX recognition service is unavailable</translation>
+        </message>
+        <message>
             <source>No barcode was recognized</source>
             <translation>No barcode was recognized</translation>
         </message>
@@ -151,6 +163,10 @@
         <message>
             <source>Preparing text recognition components (%1%)</source>
             <translation>Preparing text recognition components (%1%)</translation>
+        </message>
+        <message>
+            <source>Recognizing LaTeX formula</source>
+            <translation>Recognizing LaTeX formula</translation>
         </message>
         <message>
             <source>Recognizing barcode</source>
@@ -208,6 +224,10 @@
     <context>
         <name>ScreenshotRecognitionWindow</name>
         <message>
+            <source>Barcode recognition result</source>
+            <translation>Barcode recognition result</translation>
+        </message>
+        <message>
             <source>Copy</source>
             <translation>Copy</translation>
         </message>
@@ -218,6 +238,10 @@
         <message>
             <source>Delete</source>
             <translation>Delete</translation>
+        </message>
+        <message>
+            <source>LaTeX formula source</source>
+            <translation>LaTeX formula source</translation>
         </message>
         <message>
             <source>Paste</source>

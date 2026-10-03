@@ -199,6 +199,13 @@ bool screenshot_pinned_window_native::applyClientGeometry(WId windowId, const QR
                      geometry.height(), flags) == FALSE) {
         return false;
     }
+    if (currentClientGeometry(windowId) == geometry)
+        return true;
+    // Qt can round a fractional-DPI QWidget size back to a logical pixel in
+    // WM_WINDOWPOSCHANGING. The controller already owns this physical target.
+    if (SetWindowPos(hwnd, nullptr, geometry.left(), geometry.top(), geometry.width(),
+                     geometry.height(), flags | SWP_NOSENDCHANGING) == FALSE)
+        return false;
     return currentClientGeometry(windowId) == geometry;
 #else
     Q_UNUSED(windowId);

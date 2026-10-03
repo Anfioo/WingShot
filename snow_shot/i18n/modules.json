@@ -3,9 +3,12 @@
     "AboutPageWidget",
     "ApplicationRestart",
     "DiagnosticsService",
+    "EditionMetadata",
+    "FloatingToolbar",
     "LanguageCatalog",
     "MainContentHeaderWidget",
     "MainWindow",
+    "McpDocumentService",
     "QObject",
     "SectionHeaderWidget",
     "SidebarWidget",
@@ -20,33 +23,45 @@
     "AppPermissions",
     "CustomAiModelsSettingsWidget",
     "DrawingToolbarEditorSettingsWidget",
+    "FloatingToolbarEditorSettingsWidget",
     "GlobalMouseRow",
     "LoginItemService",
+    "MainWindowSkin",
     "PermissionGuide",
     "PinnedToolbarEditorSettingsWidget",
+    "ScreenshotMcpSettings",
     "ScreenshotToolbarEditorSettingsWidget",
     "SettingsBackend",
     "SettingsCatalog",
     "SettingsPageWidget",
     "ShortcutKeyRow",
+    "StorageDirectoryChange",
     "StorageStatusSettingsWidget",
+    "TextTranslationSettingsWidget",
     "snow_shot::presentation::GlobalMouseManager",
+    "snow_shot::storage::ApplicationStorage",
     "snow_shot::storage::ConfigurationArchive",
     "snow_shot::storage::ConfigurationStore"
   ],
   "capture": [
     "DirectCaptureController",
     "ScreenshotAutoFilterController",
+    "ScreenshotQrController",
+    "ScreenshotCaptureCoordinator",
     "ScreenshotController",
+    "ScreenshotMcpServer",
     "ScreenshotOverlayWindow",
     "ScreenshotRegionTypeControl",
     "ScreenshotSelectionResizeModalContent",
     "ScreenshotSelectionResizeWorkflow",
     "ScreenshotSelectionToolbarWidget",
     "ScreenshotShortcutHintsWidget",
+    "snow_shot::app::mcp::ScreenshotMcpServer",
+    "snow_shot::app::mcp::ScreenshotMcpSession",
     "snow_shot::presentation::DirectCaptureController"
   ],
   "annotation": [
+    "snow_shot::presentation::GlobalCanvasController",
     "ScreenshotToolPalette"
   ],
   "export": [
@@ -54,13 +69,20 @@
     "ScreenshotExportArtifact",
     "ScreenshotImageFileService",
     "ScreenshotPdfExport",
+    "ScreenshotRecognitionFileExport",
     "ScreenshotSaveAsFileDialog",
     "ScreenshotSavePreviewCanvas"
   ],
   "recording": [
+    "RecordingAudioGainPopover",
     "RecordingEffectPreview",
     "RecordingKeyboardLabels",
-    "ScreenRecordingController"
+    "RecordingRegionDragHandle",
+    "RecordingRenderDialog",
+    "RecordingTrimSession",
+    "RecordingTrimToolbar",
+    "ScreenRecordingController",
+    "ScreenRecordingSettingsDialog"
   ],
   "recognition": [
     "ScreenshotImageConversionController",
@@ -82,10 +104,12 @@
   ],
   "history": [
     "HistoryEntryWidget",
-    "ScreenshotHistoryPageWidget",
     "PinnedWindowManagementPageWidget",
+    "ScreenshotHistoryPageWidget",
     "ScreenshotPinnedWindow",
-    "snow_shot::presentation::PinnedWindowGroupManager"
+    "WindowGroupSwitcher",
+    "snow_shot::presentation::PinnedWindowGroupManager",
+    "snow_shot::presentation::WindowGroupSwitcherController"
   ],
   "updates": [
     "UpdateErrors",

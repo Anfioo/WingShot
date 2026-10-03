@@ -458,7 +458,7 @@ impl VideoStream {
         });
         let allocated = StreamOutput::alloc().set_ivars(state.clone());
         let output: Retained<StreamOutput> = unsafe { msg_send![super(allocated), init] };
-        let queue = DispatchQueue::new("app.snow.capture.frames", None);
+        let queue = crate::qos::application_queue("app.snow.capture.frames");
         let stream = unsafe {
             SCStream::initWithFilter_configuration_delegate(
                 SCStream::alloc(),
@@ -479,6 +479,7 @@ impl VideoStream {
         let worker = std::thread::Builder::new()
             .name("snow-capture-metal".into())
             .spawn(move || {
+                snow_core::qos::apply_current_thread();
                 copy_frames(source_frames, delivery, discard, state);
                 let _ = done.try_send(());
             })
@@ -566,6 +567,35 @@ impl VideoStream {
         }
         rx.recv_timeout(self.timeout)
             .map_err(|_| MacError::Timeout)?
+    }
+    /// Begin a native filter update without waiting on the encoding worker.
+    pub(crate) fn update_exclusions(
+        &self,
+        options: &CaptureConfig,
+        content: &SCShareableContent,
+    ) -> MacResult<Receiver<MacResult<()>>> {
+        let prepared = prepare_with(options, content)?;
+        let state = self.output.ivars().clone();
+        let delivered = self.frames.clone();
+        let (tx, rx) = crossbeam_channel::bounded(1);
+        let completion = RcBlock::new(move |error: *mut NSError| {
+            let result = unsafe {
+                error
+                    .as_ref()
+                    .map_or(Ok(()), |error| Err(MacError::from_native(error)))
+            };
+            if result.is_ok() {
+                state.observation_generation.fetch_add(1, Ordering::AcqRel);
+                while state.discard.try_recv().is_ok() {}
+                while delivered.try_recv().is_ok() {}
+            }
+            let _ = tx.try_send(result);
+        });
+        unsafe {
+            self.stream
+                .updateContentFilter_completionHandler(&prepared.filter, Some(&completion));
+        }
+        Ok(rx)
     }
     pub fn dropped_frames(&self) -> u64 {
         self.output.ivars().dropped.load(Ordering::Relaxed)

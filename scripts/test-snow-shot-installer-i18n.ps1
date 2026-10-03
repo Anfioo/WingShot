@@ -1,5 +1,6 @@
 [CmdletBinding()]
-param()
+param([ValidateSet('Full', 'Mini')][string]$Edition = 'Full')
+$productName = if ($Edition -eq 'Mini') { 'Snow Shot Mini' } else { 'Snow Shot' }
 
 $ErrorActionPreference = "Stop"
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
@@ -19,14 +20,14 @@ function Read-Catalog {
     foreach ($line in Get-Content -LiteralPath "$packaging\i18n\$Locale.nsh" -Encoding utf8) {
         if ($line -match '^!define (SnowShotUninstallShortcut\d+) "(.+)"$') {
             if ($defines.ContainsKey($Matches[1])) { throw "Duplicate installer define: $line" }
-            $defines[$Matches[1]] = $Matches[2]
+            $defines[$Matches[1]] = $Matches[2].Replace('${SNOW_SHOT_INSTALLER_PRODUCT_NAME}', $productName)
             continue
         }
         if ($line -notmatch '^LangString (\w+) (\d+) "(.+)"$' -or [int]$Matches[2] -ne $Language) {
             throw "Invalid or empty translation in ${Locale}: $line"
         }
         if ($catalog.Contains($Matches[1])) { throw "Duplicate translation in ${Locale}: $line" }
-        $catalog[$Matches[1]] = $Matches[3]
+        $catalog[$Matches[1]] = $Matches[3].Replace('${SNOW_SHOT_INSTALLER_PRODUCT_NAME}', $productName)
     }
     foreach ($key in @($catalog.Keys)) {
         if ($catalog[$key] -match '^\$\{(\w+)\}$') {
@@ -67,7 +68,7 @@ Write-Output "PASS: all three installer catalogs have complete, nonempty transla
 
 $installer = Join-Path $testRoot "language-test.exe"
 & $compiler /V2 "/DOUTPUT=$installer" "/DDESTINATION=$testRoot" "/DPACKAGING=$packaging" `
-    "/DREGISTRY_KEY=$registryKey" "$repoRoot\snow_shot\tests\installer_language_tests.nsi"
+    "/DSNOW_SHOT_INSTALLER_PRODUCT_NAME=$productName" "/DREGISTRY_KEY=$registryKey" "$repoRoot\snow_shot\tests\installer_language_tests.nsi"
 if ($LASTEXITCODE -ne 0) { throw "Language test compilation failed." }
 try {
     foreach ($locale in $locales.Keys) {
@@ -150,7 +151,7 @@ if ($init.Contains('0 noOptionsPage') -or
 }
 Write-Output "PASS: shortcut-only options default on, preserve selection, and gate desktop shortcut creation."
 if ($init.IndexOf('!insertmacro MUI_LANGDLL_DISPLAY') -lt 0 -or
-    $init.IndexOf('!insertmacro MUI_LANGDLL_DISPLAY') -gt $init.IndexOf('Call SnowShotEnsureAppClosed')) {
+    $init.IndexOf('!insertmacro MUI_LANGDLL_DISPLAY') -gt $init.IndexOf('Call SnowShotEnsureMainAppClosed')) {
     throw "Language selection must precede the running-app and upgrade prompts."
 }
 $uninit = [regex]::Match($generated, '(?s)Function un\.onInit\r?\n.*?FunctionEnd').Value
@@ -172,15 +173,20 @@ if (($compileOutput -join "`n") -match 'warning 6040|LangString .*not set') {
     throw "NSIS reported missing translations."
 }
 foreach ($hook in 'MUI_FINISHPAGE_RUN_FUNCTION SnowShotLaunchDesktop',
-    '--launch-desktop --target "$INSTDIR"', '/S /SNOWUPGRADE _?=$3',
+    '/S /SNOWUPGRADE _?=$3',
     '--migrate-startup --previous "$SnowShotPreviousRoot" --target "$INSTDIR"',
     '!insertmacro SnowShotUninstallOwnedCleanup') {
     if (-not $generated.Contains($hook)) { throw "Missing privilege lifecycle hook: $hook" }
 }
+$launch = Get-Content -LiteralPath (Join-Path $packaging 'InstallerLaunch.nsh') -Raw
+if (-not $generated.Contains('!include "' + $packaging + '\InstallerLaunch.nsh"') -or
+    -not $launch.Contains('--launch-desktop --target "$INSTDIR"')) {
+    throw 'The shared installer launch function must use the desktop-shell helper.'
+}
 # The ownership-cleanup sequence is a shared fragment; missing components of
 # a partial installation must be skipped without any dedicated message, so
 # only a helper that ran and fails can stop the uninstallation.
-$ownedCleanup = Get-Content -LiteralPath (Join-Path $repoRoot "snow_shot\packaging\OwnedCleanup.nsh") -Raw
+$ownedCleanup = (Get-Content -LiteralPath (Join-Path $repoRoot "snow_shot\packaging\OwnedCleanup.nsh") -Raw).Replace('${SNOW_SHOT_INSTALLER_UPDATER}', 'snow-shot-updater')
 foreach ($hook in '${GetOptions} $2 "/SNOWUPGRADE" $3', 'StrCpy $1 "--upgrade"',
     '--uninstall --target "$INSTDIR" $1',
     'IfFileExists "$INSTDIR\bin\snow-shot-updater.exe" 0 snowOwnedDone',

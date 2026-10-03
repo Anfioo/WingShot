@@ -30,6 +30,8 @@ enum class GlobalShortcutAction {
     ToggleGlobalHotkeys,
     ToggleDisableOnFocusedFullscreenWindow,
     OpenPinToScreenManagement,
+    GlobalCanvas,
+    SwitchWindowGroup,
 };
 
 [[nodiscard]] constexpr bool controlsGlobalHotkeyGates(GlobalShortcutAction action) {
@@ -65,6 +67,13 @@ struct GlobalShortcutRegistrationState {
     snow_shot::shortcuts::ShortcutBindingList shortcuts;
     GlobalShortcutStatus status = GlobalShortcutStatus::Unset;
     QVector<GlobalShortcutBindingResult> bindings;
+};
+
+// A missing value means the native input state cannot be observed safely.
+struct GlobalShortcutInputState {
+    bool anyShortcutKeyDown = false;
+    bool escapeDown = false;
+    bool escapeIsShortcutKey = false;
 };
 
 struct GlobalShortcutBackendResult {

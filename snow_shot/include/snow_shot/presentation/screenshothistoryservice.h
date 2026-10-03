@@ -5,6 +5,7 @@
 #include "snow_shot/storage/capturehistoryrepository.h"
 
 #include <QObject>
+#include <QSet>
 #include <QString>
 #include <QVector>
 
@@ -52,8 +53,11 @@ class ScreenshotHistoryService final : public QObject {
     void resetCaptureNavigation();
     void drainPendingWrites();
     void refreshMetadata();
+    [[nodiscard]] bool presentTransientEntry(const ScreenshotHistoryEntry& entry);
 
   private:
+    friend class ScreenshotHistoryServiceTestAccess;
+
     struct PendingWrite {
         QString entryId;
         std::shared_future<snow_shot::storage::CaptureHistoryPublishResult> result;
@@ -67,6 +71,7 @@ class ScreenshotHistoryService final : public QObject {
                                     std::optional<ScreenshotHistoryEntry> entry);
     void reapCompletedLoads();
     void drainPendingLoads();
+    void initializeRepository();
     void reapCompletedWrites();
     void scheduleWrite(ScreenshotHistoryEntry entry);
     [[nodiscard]] std::shared_future<snow_shot::storage::CaptureHistoryPublishResult>
@@ -78,6 +83,7 @@ class ScreenshotHistoryService final : public QObject {
     std::unique_ptr<ScreenshotHistoryValidationQueue> m_validationQueue;
     Clock m_clock;
     QVector<snow_shot::storage::CaptureHistoryRecord> m_entries;
+    QSet<QString> m_unreadableEntries;
     std::optional<ScreenshotHistoryEntry> m_liveEndpoint;
     int m_navigationIndex = -1;
     quint64 m_navigationGeneration = 0;

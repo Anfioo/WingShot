@@ -35,7 +35,6 @@ class SnowCanvasTextEditorSession final {
     enum class EventCommand {
         None,
         Commit,
-        Cancel,
         DeleteElement,
     };
 
@@ -50,6 +49,7 @@ class SnowCanvasTextEditorSession final {
                const QString* completeText = nullptr);
     FinishedEdit finish(const QFont& baseFont);
     void cancel();
+    void releaseRetainedState();
 
     SnowElementId arrowId() const {
         return m_arrowId;

@@ -1,3 +1,4 @@
+#include "snow_shot/shortcuts/shortcutbinding.h"
 #include "snow_shot/presentation/screenshottableeditor.h"
 
 #include "antd_icons.h"
@@ -331,10 +332,15 @@ class ScreenshotTableDelegate final : public QStyledItemDelegate {
         auto* editor = qobject_cast<QPlainTextEdit*>(watched);
         if (editor != nullptr && event != nullptr && event->type() == QEvent::KeyPress) {
             auto* keyEvent = static_cast<QKeyEvent*>(event);
-            if (keyEvent->key() == Qt::Key_Tab || keyEvent->key() == Qt::Key_Backtab) {
+            if (snow_shot::shortcuts::commandKey(*keyEvent) == Qt::Key_Tab ||
+                snow_shot::shortcuts::commandKey(*keyEvent) == Qt::Key_Backtab) {
                 const int row = editor->property("snowShotTableRow").toInt();
                 const int column = editor->property("snowShotTableColumn").toInt();
-                const int columnDelta = keyEvent->key() == Qt::Key_Backtab ? -1 : 1;
+                const int columnDelta =
+                    snow_shot::shortcuts::commandKey(*keyEvent) == Qt::Key_Backtab ||
+                            keyEvent->modifiers().testFlag(Qt::ShiftModifier)
+                        ? -1
+                        : 1;
                 if (m_editor != nullptr) {
                     m_editor->continueEditingAfter(editor, row, column, 0, columnDelta);
                 }
@@ -342,7 +348,8 @@ class ScreenshotTableDelegate final : public QStyledItemDelegate {
                 emit closeEditor(editor, QAbstractItemDelegate::NoHint);
                 return true;
             }
-            if ((keyEvent->key() == Qt::Key_Return || keyEvent->key() == Qt::Key_Enter) &&
+            if ((snow_shot::shortcuts::commandKey(*keyEvent) == Qt::Key_Return ||
+                 snow_shot::shortcuts::commandKey(*keyEvent) == Qt::Key_Enter) &&
                 !keyEvent->modifiers().testFlag(Qt::AltModifier)) {
                 const int row = editor->property("snowShotTableRow").toInt();
                 const int column = editor->property("snowShotTableColumn").toInt();
@@ -354,7 +361,7 @@ class ScreenshotTableDelegate final : public QStyledItemDelegate {
                 emit closeEditor(editor, QAbstractItemDelegate::NoHint);
                 return true;
             }
-            if (keyEvent->key() == Qt::Key_Escape) {
+            if (snow_shot::shortcuts::commandKey(*keyEvent) == Qt::Key_Escape) {
                 emit closeEditor(editor, QAbstractItemDelegate::RevertModelCache);
                 return true;
             }
@@ -674,44 +681,74 @@ void ScreenshotTableEditor::keyPressEvent(QKeyEvent* event) {
     if (event == nullptr) {
         return;
     }
-    if (event->matches(QKeySequence::SelectAll)) {
+    if (snow_shot::shortcuts::matchesStandardShortcut(*event, QKeySequence::SelectAll)) {
         selectAll();
         event->accept();
         return;
     }
-    if (event->matches(QKeySequence::Copy)) {
+    if (snow_shot::shortcuts::matchesStandardShortcut(*event, QKeySequence::Copy)) {
         copySelection();
         event->accept();
         return;
     }
-    if (event->matches(QKeySequence::Paste)) {
+    if (snow_shot::shortcuts::matchesStandardShortcut(*event, QKeySequence::Paste)) {
         pasteSelection();
         event->accept();
         return;
     }
-    if (event->matches(QKeySequence::Redo)) {
+    if (snow_shot::shortcuts::matchesStandardShortcut(*event, QKeySequence::Redo)) {
         redoEdit();
         event->accept();
         return;
     }
-    if (event->matches(QKeySequence::Undo)) {
+    if (snow_shot::shortcuts::matchesStandardShortcut(*event, QKeySequence::Undo)) {
         undoEdit();
         event->accept();
         return;
     }
-    if (event->key() == Qt::Key_Delete || event->key() == Qt::Key_Backspace) {
+    if (snow_shot::shortcuts::commandKey(*event) == Qt::Key_Delete ||
+        snow_shot::shortcuts::commandKey(*event) == Qt::Key_Backspace) {
         clearSelectionContents();
         event->accept();
         return;
     }
-    if ((event->key() == Qt::Key_F2 || event->key() == Qt::Key_Return ||
-         event->key() == Qt::Key_Enter) &&
+    if ((snow_shot::shortcuts::commandKey(*event) == Qt::Key_F2 ||
+         snow_shot::shortcuts::commandKey(*event) == Qt::Key_Return ||
+         snow_shot::shortcuts::commandKey(*event) == Qt::Key_Enter) &&
         currentIndex().isValid()) {
         edit(anchorIndex(currentIndex()));
         event->accept();
         return;
     }
+#ifdef Q_OS_MACOS
+    // QAbstractItemView also implements commands (notably Select All). Feed
+    // that fallback the same command identity, while retaining typed text.
+    Qt::Key key = snow_shot::shortcuts::commandKey(*event);
+    if (key == Qt::Key_Tab && event->modifiers().testFlag(Qt::ShiftModifier)) {
+        key = Qt::Key_Backtab;
+    }
+    QKeyEvent command(event->type(), key, event->modifiers(), event->text(), event->isAutoRepeat(),
+                      static_cast<quint16>(event->count()));
+    QTableView::keyPressEvent(&command);
+    event->setAccepted(command.isAccepted());
+#else
     QTableView::keyPressEvent(event);
+#endif
+}
+
+bool ScreenshotTableEditor::focusNextPrevChild(bool next) {
+    if (tabKeyNavigation() && isVisible() && isEnabled() && viewport()->isEnabled()) {
+        // Qt's focus traversal supplies a navigation direction, not hardware
+        // input. Dispatch directly to the view instead of re-entering our
+        // physical-key resolver with QAbstractItemView's synthesized event.
+        QKeyEvent navigation(QEvent::KeyPress, next ? Qt::Key_Tab : Qt::Key_Backtab,
+                             Qt::NoModifier);
+        QTableView::keyPressEvent(&navigation);
+        if (navigation.isAccepted()) {
+            return true;
+        }
+    }
+    return QAbstractScrollArea::focusNextPrevChild(next);
 }
 
 void ScreenshotTableEditor::contextMenuEvent(QContextMenuEvent* event) {
@@ -1188,4 +1225,12 @@ void ScreenshotTableEditor::selectRange(const ScreenshotTableRange& source) {
     }
     m_session->selection = range;
     refreshCommandState();
+}
+
+void ScreenshotTableEditingSession::applyDocument(
+    const std::shared_ptr<ScreenshotTableEditingSession>& session,
+    const ScreenshotTableDocument& replacement, const QString& label) {
+    if (session && session->document != replacement)
+        session->undoStack.push(
+            new ReplaceTableDocumentCommand(session, session->document, replacement, label));
 }

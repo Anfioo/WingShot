@@ -26,9 +26,6 @@ inline void startScreenshotRecording(const QRect& selection, const QPoint& canva
         return;
     }
     const QRect recordingRegion = selection.translated(canvasOrigin);
-    if (recordingRegion.width() < 2 || recordingRegion.height() < 2) {
-        return;
-    }
     context.stopScrolling();
     context.resetEditing();
     context.invalidateRecognition();

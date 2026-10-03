@@ -7,6 +7,7 @@
 #include <QObject>
 #include <QThread>
 #include <QTimer>
+#include <QScopeGuard>
 
 #include <algorithm>
 #include <atomic>
@@ -162,6 +163,77 @@ void queueAndWorkerBoundsAreEnforced() {
             "coordinator exceeded its two-worker concurrency bound");
 }
 
+void queuedCancellationImmediatelyReleasesCapacity() {
+    ScreenshotExportCoordinator coordinator;
+    QObject receiver;
+    const int workerCount = std::clamp(QThread::idealThreadCount(), 1, 2);
+    auto released = std::make_shared<std::atomic_bool>(false);
+    auto entered = std::make_shared<std::atomic_int>(0);
+    const auto unblock = qScopeGuard([released] { released->store(true); });
+    for (int index = 0; index < workerCount; ++index) {
+        require(coordinator
+                    .submit(
+                        &receiver, ScreenshotExportCoordinator::Priority::Foreground,
+                        [released, entered](const ScreenshotExportCancellation&) {
+                            ++*entered;
+                            while (!released->load())
+                                QThread::msleep(1);
+                            return ScreenshotExportTaskResult{};
+                        },
+                        [](ScreenshotExportTaskResult) {})
+                    .isValid(),
+                "queue cancellation workers must be admitted");
+    }
+    require(processUntil([&] { return entered->load() == workerCount; }),
+            "queue cancellation workers must be occupied");
+    int completions = 0;
+    int executions = 0;
+    QThread* const guiThread = QThread::currentThread();
+    for (int index = 0; index < 40; ++index) {
+        auto payload = std::make_shared<int>(index);
+        std::weak_ptr<int> retainedPayload = payload;
+        const auto job = coordinator.submit(
+            &receiver, ScreenshotExportCoordinator::Priority::Foreground,
+            [payload, &executions](const ScreenshotExportCancellation&) {
+                ++executions;
+                return ScreenshotExportTaskResult{};
+            },
+            [&](ScreenshotExportTaskResult result) {
+                require(result.failureStage == ScreenshotExportFailureStage::Cancelled &&
+                            QThread::currentThread() == guiThread,
+                        "queued cancellation must deliver one GUI-thread cancellation");
+                ++completions;
+            });
+        payload.reset();
+        require(job.isValid(), "superseded jobs must not exhaust queue capacity");
+        std::thread cancel([job] {
+            job.cancel();
+            job.cancel();
+        });
+        cancel.join();
+        require(job.isCancellationRequested() && coordinator.pendingJobCount() == workerCount &&
+                    retainedPayload.expired() && completions == index,
+                "cancellation must free the queued slot and work payload before returning");
+        require(processUntil([&] { return completions == index + 1; }),
+                "queued cancellation completion must remain asynchronous");
+    }
+    require(executions == 0, "cancelled queued work must never execute");
+    bool completed = false;
+    require(
+        coordinator
+            .submit(
+                &receiver, ScreenshotExportCoordinator::Priority::Foreground,
+                [](const ScreenshotExportCancellation&) { return ScreenshotExportTaskResult{}; },
+                [&](ScreenshotExportTaskResult result) { completed = result.succeeded(); })
+            .isValid(),
+        "the latest job must remain admissible after repeated cancellations");
+    released->store(true);
+    require(processUntil([&] { return completed && coordinator.pendingJobCount() == 0; }),
+            "latest work must complete after the workers are released");
+    QCoreApplication::processEvents();
+    require(completions == 40, "cancelled jobs must not complete again when workers resume");
+}
+
 void shutdownCancelsAndDrains() {
     ScreenshotExportCoordinator coordinator;
     QObject receiver;
@@ -202,6 +274,34 @@ void shutdownCancelsAndDrains() {
                          [](ScreenshotExportTaskResult) {})
                      .isValid(),
             "coordinator admitted work after shutdown");
+}
+
+void idleWorkersRetireAndLaterWorkRestarts() {
+    ScreenshotExportCoordinator coordinator;
+    QObject receiver;
+    QThread* workerThread = nullptr;
+    int completionCount = 0;
+    const auto submit = [&]() {
+        return coordinator.submit(
+            &receiver, ScreenshotExportCoordinator::Priority::Foreground,
+            [&workerThread](const ScreenshotExportCancellation&) {
+                workerThread = QThread::currentThread();
+                return ScreenshotExportTaskResult{};
+            },
+            [&completionCount](ScreenshotExportTaskResult result) {
+                require(result.succeeded(), "restarted export work must succeed");
+                ++completionCount;
+            });
+    };
+    require(submit().isValid() && processUntil([&]() { return completionCount == 1; }),
+            "initial export work must complete");
+    require(workerThread != nullptr &&
+                processUntil([&]() { return workerThread->isFinished(); }, 10000),
+            "idle export workers must retire without shutting down the coordinator");
+    require(coordinator.pendingJobCount() == 0,
+            "retiring idle workers must leave no pending exports");
+    require(submit().isValid() && processUntil([&]() { return completionCount == 2; }),
+            "export work must restart after idle worker retirement");
 }
 
 void shutdownAbandonsAWorkerThatIgnoresCancellation() {
@@ -271,8 +371,7 @@ void shutdownDropsQueuedWorkWhenAbandoned() {
                         countBlockerCompletion)
                 .isValid(),
             "shutdown straggler blocker was not admitted");
-    require(processUntil(
-                [workerCount, &entered]() { return entered.load(std::memory_order_acquire) >= 1; }),
+    require(processUntil([&entered]() { return entered.load(std::memory_order_acquire) >= 1; }),
             "shutdown straggler first blocker did not start");
     // A second blocker keeps every pool worker wedged so the straggler below is
     // guaranteed to stay queued, never started.
@@ -376,11 +475,17 @@ void clipboardCommitRetriesTransientContention() {
 int main(int argc, char** argv) {
     QCoreApplication application(argc, argv);
     try {
+        if (application.arguments().contains(QStringLiteral("--idle-workers-only"))) {
+            idleWorkersRetireAndLaterWorkRestarts();
+            return EXIT_SUCCESS;
+        }
         completionRunsOnceOnGuiThread();
         cancellationPropagates();
         destroyedReceiverSuppressesCompletion();
         queueAndWorkerBoundsAreEnforced();
+        queuedCancellationImmediatelyReleasesCapacity();
         shutdownCancelsAndDrains();
+        idleWorkersRetireAndLaterWorkRestarts();
         shutdownAbandonsAWorkerThatIgnoresCancellation();
         shutdownDropsQueuedWorkWhenAbandoned();
         clipboardCommitCancellationIsAsynchronous();

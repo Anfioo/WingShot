@@ -16,11 +16,13 @@ makeScreenshotToolbarPresentationState(const ScreenshotInteractionState& interac
         interaction.selectionToolbarMode() && !selection.regionOperationActive();
     state.selectionResizable = selection.rectangular() && interaction.canResizeSelection();
     state.intelligentSelecting = interaction.intelligentSelecting();
+    state.selectionDragging = interaction.dragging();
     state.editing = interaction.editing();
     const QRect selectionPixels = state.selectionPixels;
     state.ocrAvailable = selectionPixels.width() < 1 || selectionPixels.height() < 1 ||
                          screenshotOcrImageWithinPixelLimit(selectionPixels.size());
     state.aspectRatioLocked = selection.aspectRatioLocked();
+    state.aspectRatioPreset = selection.aspectRatioPreset();
     state.cornerRadius = selection.cornerRadius();
     state.cornerRadiusApplicable = selection.cornerRadiusApplicable();
     state.shadowWidth = selection.shadowWidth();

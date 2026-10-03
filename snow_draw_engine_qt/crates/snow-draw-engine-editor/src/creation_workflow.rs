@@ -1,7 +1,7 @@
 use super::*;
 use snow_draw_engine_core::arrow::{ArrowEndpointEdge, ArrowType, StrokeStyle};
 use snow_draw_engine_document::{
-    ArrowSuggestedBinding, ElementMeta, TextLayoutSize, arrow_is_degenerate,
+    ArrowSuggestedBinding, ElementMeta, FilterData, TextLayoutSize, arrow_is_degenerate,
     resolve_serial_number_data_diameter, text_with_measured_ink, text_with_measured_layout,
     text_with_pinned_alignment_layout, validate_text_layout_size,
 };
@@ -281,30 +281,7 @@ impl Editor {
         current: Point<f64>,
         modifiers: Modifiers,
     ) -> (Point<f64>, Vec<SnapGuide>) {
-        let snapping_mode = self.effective_snapping_mode(modifiers);
-        match snapping_mode {
-            SnappingMode::Grid => (
-                GRID_SNAP_SERVICE.snap_point(current, self.config.grid.size),
-                Vec::new(),
-            ),
-            SnappingMode::Object if self.config.snap.enable_point_snaps => {
-                let snap = document.snap_point(&snow_draw_engine_core::SnapQuery {
-                    point: current,
-                    threshold: self.zoom_adjusted_snap_distance(),
-                    include_grid: false,
-                    grid_size: self.config.grid.size,
-                });
-                (
-                    snap.point,
-                    if self.config.snap.show_guides {
-                        snap.guides
-                    } else {
-                        Vec::new()
-                    },
-                )
-            }
-            _ => (current, Vec::new()),
-        }
+        self.snap_creation_point(document, current, modifiers)
     }
 
     pub(crate) fn finalize_arrow_creation_from_points(
@@ -331,30 +308,7 @@ impl Editor {
         current: Point<f64>,
         modifiers: Modifiers,
     ) -> (Point<f64>, Vec<SnapGuide>) {
-        let snapping_mode = self.effective_snapping_mode(modifiers);
-        match snapping_mode {
-            SnappingMode::Grid => (
-                GRID_SNAP_SERVICE.snap_point(current, self.config.grid.size),
-                Vec::new(),
-            ),
-            SnappingMode::Object if self.config.snap.enable_point_snaps => {
-                let snap = document.snap_point(&snow_draw_engine_core::SnapQuery {
-                    point: current,
-                    threshold: self.zoom_adjusted_snap_distance(),
-                    include_grid: false,
-                    grid_size: self.config.grid.size,
-                });
-                (
-                    snap.point,
-                    if self.config.snap.show_guides {
-                        snap.guides
-                    } else {
-                        Vec::new()
-                    },
-                )
-            }
-            _ => (current, Vec::new()),
-        }
+        self.snap_creation_point(document, current, modifiers)
     }
 
     fn arrow_creation_preview(
@@ -498,9 +452,21 @@ impl Editor {
             current_canvas,
             event.modifiers,
         );
-        let preview = if self.active_tool() == ActiveTool::Filter {
+        let preview = if matches!(
+            self.active_tool(),
+            ActiveTool::RectangleFilter | ActiveTool::RectangleEraser
+        ) {
             preview.map(|rect| {
-                let mut filter = self.state.default_filter;
+                let mut filter = if self.active_tool() == ActiveTool::RectangleEraser {
+                    FilterData {
+                        filter_type: snow_draw_engine_document::CanvasFilterType::RestoreBackground,
+                        strength: 1.0,
+                        opacity: 1.0,
+                        ..FilterData::default()
+                    }
+                } else {
+                    self.state.default_filter
+                };
                 filter.center = rect.center;
                 filter.width = rect.width;
                 filter.height = rect.height;
@@ -542,14 +508,31 @@ impl Editor {
         self.cancel_interaction();
 
         if let Some(rect) = preview {
-            if self.active_tool() == ActiveTool::Filter {
-                let mut filter = self.state.default_filter;
+            if matches!(
+                self.active_tool(),
+                ActiveTool::RectangleFilter | ActiveTool::RectangleEraser
+            ) {
+                let mut filter = if self.active_tool() == ActiveTool::RectangleEraser {
+                    FilterData {
+                        filter_type: snow_draw_engine_document::CanvasFilterType::RestoreBackground,
+                        strength: 1.0,
+                        opacity: 1.0,
+                        ..FilterData::default()
+                    }
+                } else {
+                    self.state.default_filter
+                };
                 filter.center = rect.center;
                 filter.width = rect.width;
                 filter.height = rect.height;
                 filter.rotation = rect.rotation;
                 validate_filter(&filter)?;
-                let mut transaction = Transaction::new("create filter");
+                let mut transaction =
+                    Transaction::new(if self.active_tool() == ActiveTool::RectangleEraser {
+                        "create rectangle eraser"
+                    } else {
+                        "create filter"
+                    });
                 transaction.insert_filter(
                     document.peek_next_element_id(),
                     ElementMeta::default(),

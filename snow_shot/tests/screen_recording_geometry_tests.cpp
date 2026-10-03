@@ -2,6 +2,7 @@
 #include "snow_shot/presentation/screenshotgeometry.h"
 
 #include <QGuiApplication>
+#include "../src/presentation/resizegeometry.h"
 #include <QRect>
 #include <QScreen>
 #include <QtMath>
@@ -347,10 +348,70 @@ void clarityBoundsFollowCaptureOrientation() {
                 QSize(1920, 1080),
             "square captures should retain the configured orientation");
 }
+void minimumRegionsAndCrossingEdges() {
+    const QRect bounds(-100, -50, 200, 150);
+    for (const QSize size :
+         {QSize(1, 1), QSize(1, 100), QSize(9, 9), QSize(10, 10), QSize(40, 60)}) {
+        const QRect input(-30, -20, size.width(), size.height());
+        const QRect output = recording::screenRecordingNormalizedRegion(input, bounds);
+        require(output == QRect(input.topLeft(), size.expandedTo(QSize(10, 10))),
+                "small regions expand from the top-left without shrinking either axis");
+    }
+    require(recording::screenRecordingNormalizedRegion(QRect(99, 99, 1, 1), bounds) ==
+                QRect(90, 90, 10, 10),
+            "expansion must shift inward at display boundaries");
+    require(recording::screenRecordingNormalizedRegion(QRect(), bounds).isEmpty(),
+            "empty selections must stay invalid");
+    require(recording::screenRecordingMinimumExtent(2.0) == 5 &&
+                recording::screenRecordingMinimumExtent(1.5) == 7,
+            "physical minimum must round up in logical coordinates");
+    const QRect origin(-50, -20, 100, 80);
+    namespace geometry = snow_shot::presentation::resize_geometry;
+    const Qt::Edges handles[] = {Qt::LeftEdge,
+                                 Qt::RightEdge,
+                                 Qt::TopEdge,
+                                 Qt::BottomEdge,
+                                 Qt::LeftEdge | Qt::TopEdge,
+                                 Qt::RightEdge | Qt::TopEdge,
+                                 Qt::LeftEdge | Qt::BottomEdge,
+                                 Qt::RightEdge | Qt::BottomEdge};
+    for (const auto pressed : handles) {
+        Qt::Edges previous = pressed;
+        for (const int distance : {20, 1, 0, -1, -20, 0, 20}) {
+            const QPoint delta(pressed.testFlag(Qt::LeftEdge)    ? 100 - distance
+                               : pressed.testFlag(Qt::RightEdge) ? distance - 100
+                                                                 : 0,
+                               pressed.testFlag(Qt::TopEdge)      ? 80 - distance
+                               : pressed.testFlag(Qt::BottomEdge) ? distance - 80
+                                                                  : 0);
+            const auto drag = geometry::dragGeometry(origin, pressed, delta, previous);
+            const QRect resized = geometry::anchoredRect(
+                origin, pressed, drag.edges, drag.requestedSize.expandedTo(QSize(10, 10)));
+            require(resized.width() >= 10 && resized.height() >= 10,
+                    "crossing must always retain the recording minimum");
+            if (distance == 0)
+                require(drag.edges == previous, "equality retains the last side");
+            if (pressed.testFlag(Qt::LeftEdge) || pressed.testFlag(Qt::RightEdge)) {
+                const int anchor = pressed.testFlag(Qt::LeftEdge) ? 50 : -50;
+                require((drag.edges.testFlag(Qt::LeftEdge) ? resized.x() + resized.width()
+                                                           : resized.x()) == anchor,
+                        "horizontal crossing retains the opposite outer boundary");
+            }
+            if (pressed.testFlag(Qt::TopEdge) || pressed.testFlag(Qt::BottomEdge)) {
+                const int anchor = pressed.testFlag(Qt::TopEdge) ? 60 : -20;
+                require((drag.edges.testFlag(Qt::TopEdge) ? resized.y() + resized.height()
+                                                          : resized.y()) == anchor,
+                        "vertical crossing retains the opposite outer boundary");
+            }
+            previous = drag.edges;
+        }
+    }
+}
 } // namespace
 
 int main(int argc, char** argv) {
     QGuiApplication application(argc, argv);
+    minimumRegionsAndCrossingEdges();
     observedNativeGeometryFollowsDisplaysWithoutRescalingPhysicalCoordinates();
     physicalSelectionMapsToItsLogicalSubregion();
     recordingFrameStaysOutsideTheSelection(1.0);

@@ -33,7 +33,14 @@ foreach(_framework IN ITEMS AppKit ApplicationServices AVFoundation AudioToolbox
     list(APPEND _snow_native_libraries "${SNOW_MACOS_${_framework}}")
 endforeach()
 if(TARGET snow_shot_rust_ffi_bundle)
-    target_link_libraries(snow_shot_rust_ffi_bundle INTERFACE ${_snow_native_libraries})
+    # Each feature variant is a complete Rust archive. Full hosts omit the
+    # default archive, so both variants need their native dependency closure.
+    foreach(_snow_rust_bundle IN ITEMS
+            snow_shot_rust_ffi_bundle snow_shot_full_rust_ffi_bundle)
+        if(TARGET ${_snow_rust_bundle})
+            target_link_libraries(${_snow_rust_bundle} INTERFACE ${_snow_native_libraries})
+        endif()
+    endforeach()
 else()
     target_link_libraries(snow_recording_c INTERFACE ${_snow_native_libraries})
     target_link_libraries(snow_capture_c INTERFACE ${_snow_native_libraries})
@@ -222,6 +229,8 @@ if(NOT SNOW_MACOS_CODESIGN_IDENTITY STREQUAL "-")
         COMMAND "${CMAKE_COMMAND}" -E rm -f "$<TARGET_FILE:snow_shot>.snow-signing"
         VERBATIM)
 endif()
+# Full includes its default model; Mini supplies its own runtime-only policy.
+set(SNOW_MACOS_OCR_RUNTIME_ONLY OFF)
 configure_file("${CMAKE_CURRENT_LIST_DIR}/DeploySnowShotMacOS.cmake.in"
     "${CMAKE_CURRENT_BINARY_DIR}/DeploySnowShotMacOS.cmake" @ONLY)
 install(SCRIPT "${CMAKE_CURRENT_BINARY_DIR}/DeploySnowShotMacOS.cmake" COMPONENT SnowShot)

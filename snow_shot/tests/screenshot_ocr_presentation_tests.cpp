@@ -215,7 +215,9 @@ void sourceComposerUsesOnlyCapturedDisplayPixels() {
     require(composed.pixelColor(3, 1) == Qt::blue, "display two pixels should be retained");
 
     const QImage inactive = composeScreenshotSourceSelection(displays, QRect(0, 2, 4, 2));
-    require(inactive.pixelColor(0, 0).alpha() == 0,
+    require(inactive.isNull(), "a selection without active display pixels has no image source");
+    const QImage mixed = composeScreenshotSourceSelection(displays, QRect(2, 0, 4, 4));
+    require(mixed.size() == QSize(4, 4) && mixed.pixelColor(0, 2).alpha() == 0,
             "inactive displays must not contribute screenshot pixels");
 }
 

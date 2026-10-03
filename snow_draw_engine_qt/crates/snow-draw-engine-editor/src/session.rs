@@ -11,6 +11,7 @@ use super::{
     SerialNumberToolbarState, ShapeStyle, ShapeStylePatch, StyleToolbarSource, TextDraftCommit,
     TextLayoutOverride, TextResizeMeasurementRequest, TextStyle, state::EditorState,
 };
+use crate::DrawTemplate;
 use crate::defaults::EditorStyleDefaults;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -39,6 +40,8 @@ pub struct PersistedEditorSession {
     #[serde(default = "default_rectangle_filter_stroke_width")]
     rectangle_filter_stroke_width: f64,
     pen_filter: snow_draw_engine_document::PenFilterData,
+    #[serde(default)]
+    brush_eraser: crate::BrushEraserStyle,
     text: snow_draw_engine_document::TextData,
     serial_number: snow_draw_engine_document::SerialNumberData,
 }
@@ -139,6 +142,7 @@ impl EditorSession {
             filter: state.default_filter,
             rectangle_filter_stroke_width: state.default_filter_stroke_width,
             pen_filter: state.default_pen_filter.clone(),
+            brush_eraser: state.default_brush_eraser,
             text: state.default_text.clone(),
             serial_number: state.default_serial_number.clone(),
         }
@@ -168,6 +172,7 @@ impl EditorSession {
         state.default_filter = persisted.filter;
         state.default_filter_stroke_width = persisted.rectangle_filter_stroke_width;
         state.default_pen_filter = persisted.pen_filter;
+        state.default_brush_eraser = persisted.brush_eraser;
         state.default_pen_filter.strength = state.default_filter.strength;
         if state.default_filter.filter_type
             == snow_draw_engine_document::CanvasFilterType::SmartErase
@@ -229,6 +234,15 @@ impl EditorSession {
 
     pub fn reset_editing_state(&mut self) {
         self.editor.reset_editing_state();
+    }
+
+    /// Discards measurements and transient storage belonging to the old document.
+    pub fn reset_document_retained_state(&mut self) {
+        self.editor.reset_editing_state();
+        self.editor.invalidate_arrow_text_measurements();
+        self.editor.state.arrow_text_measurements = Vec::new();
+        self.editor.state.selection = Default::default();
+        self.editor.state.ui = Default::default();
     }
 
     pub fn style_toolbar_source(&self, document: &DocumentModel) -> StyleToolbarSource {
@@ -332,13 +346,33 @@ impl EditorSession {
         self.editor.set_rectangle_shape_style(document, style)
     }
 
+    pub fn set_text_creation_style(
+        &mut self,
+        style: TextStyle,
+        properties: u32,
+    ) -> Result<(), ErrorCode> {
+        self.editor.set_text_creation_style(style, properties)
+    }
+
     pub fn set_text_style(
         &mut self,
         document: &DocumentModel,
         style: TextStyle,
+        properties: u32,
         layouts: &[TextLayoutOverride],
     ) -> Result<Option<EditorCommand>, ErrorCode> {
-        self.editor.set_text_style(document, style, layouts)
+        self.editor
+            .set_text_style(document, style, properties, layouts)
+    }
+
+    pub fn set_serial_number_style_patch(
+        &mut self,
+        document: &DocumentModel,
+        style: SerialNumberStyle,
+        properties: u32,
+    ) -> Result<Option<EditorCommand>, ErrorCode> {
+        self.editor
+            .set_serial_number_style_patch(document, style, properties)
     }
 
     pub fn set_serial_number_style(
@@ -440,6 +474,35 @@ impl EditorSession {
         self.editor.duplicate_selected(document, offset)
     }
 
+    pub fn selected_draw_template(
+        &self,
+        document: &DocumentModel,
+    ) -> Result<DrawTemplate, ErrorCode> {
+        self.editor.selected_draw_template(document)
+    }
+
+    pub fn insert_draw_template(
+        &mut self,
+        document: &DocumentModel,
+        template: &DrawTemplate,
+        center: Point<f64>,
+    ) -> Result<EditorCommand, ErrorCode> {
+        self.editor.insert_draw_template(document, template, center)
+    }
+
+    pub fn brush_eraser_style(&self) -> crate::BrushEraserStyle {
+        self.editor.brush_eraser_style()
+    }
+
+    pub fn set_brush_eraser_creation_style(
+        &mut self,
+        style: crate::BrushEraserStyle,
+        properties: u32,
+    ) -> Result<(), ErrorCode> {
+        self.editor
+            .set_brush_eraser_creation_style(style, properties)
+    }
+
     pub fn filter_style(&self, document: &DocumentModel) -> FilterStyle {
         self.editor.filter_style(document)
     }
@@ -455,6 +518,16 @@ impl EditorSession {
         properties: u32,
     ) -> Result<Option<EditorCommand>, ErrorCode> {
         self.editor.set_filter_style(document, style, properties)
+    }
+
+    pub fn set_filter_creation_style(
+        &mut self,
+        style: FilterStyle,
+        properties: u32,
+        tool: ActiveTool,
+    ) -> Result<(), ErrorCode> {
+        self.editor
+            .set_filter_creation_style(style, properties, tool)
     }
 
     pub fn set_watermark_config(
@@ -609,6 +682,15 @@ pub fn validate_editor_style_defaults(defaults: &EditorStyleDefaults) -> Result<
             return Err(ErrorCode::InvalidArgument);
         }
     }
+    if !defaults.brush_eraser.stroke_width.is_finite()
+        || !(1.0..=72.0).contains(&defaults.brush_eraser.stroke_width)
+        || defaults.rectangle_filter.filter_type
+            == snow_draw_engine_document::CanvasFilterType::RestoreBackground
+        || defaults.pen_filter.filter_type
+            == snow_draw_engine_document::CanvasFilterType::RestoreBackground
+    {
+        return Err(ErrorCode::InvalidArgument);
+    }
     super::style::validate_text_style(&defaults.text)?;
     super::style::validate_serial_number_style(&defaults.serial_number)?;
     Ok(())
@@ -635,7 +717,13 @@ fn validate_persisted_editor_styles(persisted: &PersistedEditorSession) -> Resul
             && valid_corner_radii(style.corner_radii)
     }
 
-    if !finite_non_negative(persisted.rectangle.stroke_width)
+    if !persisted.brush_eraser.stroke_width.is_finite()
+        || !(1.0..=72.0).contains(&persisted.brush_eraser.stroke_width)
+        || persisted.filter.filter_type
+            == snow_draw_engine_document::CanvasFilterType::RestoreBackground
+        || persisted.pen_filter.filter_type
+            == snow_draw_engine_document::CanvasFilterType::RestoreBackground
+        || !finite_non_negative(persisted.rectangle.stroke_width)
         || !valid_corner_radii(persisted.rectangle.corner_radii)
         || !finite_non_negative(persisted.arrow.stroke_width)
         || !valid_shape(persisted.line)
@@ -647,4 +735,53 @@ fn validate_persisted_editor_styles(persisted: &PersistedEditorSession) -> Resul
         return Err(ErrorCode::InvalidArgument);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod document_reset_tests {
+    use super::*;
+
+    #[test]
+    fn document_reset_releases_layouts_and_preserves_creation_styles() {
+        let mut session = EditorSession::new(EngineConfig::default()).unwrap();
+        session
+            .editor
+            .state
+            .default_rectangle_shape_style
+            .stroke_width = 17.0;
+        session.editor.state.arrow_text_measurements.reserve(64);
+        session.editor.state.arrow_text_measurements.push(
+            crate::arrow_text::ArrowTextMeasurement {
+                text_id: ElementId {
+                    index: 5,
+                    generation: 3,
+                },
+                key: 7,
+                size: TextLayoutSize::new(20.0, 10.0),
+                text_key: 11,
+                natural_width: 20.0,
+            },
+        );
+        session.editor.state.ui.snap_guides.reserve(64);
+        session.editor.state.selection.ids.reserve(64);
+        session.set_quick_selection_disabled_tools(3);
+        let config = session.config();
+        let generation = session.editor.state.arrow_text_measurement_generation;
+
+        session.reset_document_retained_state();
+        assert_eq!(session.editor.state.arrow_text_measurements.capacity(), 0);
+        assert_eq!(session.editor.state.ui.snap_guides.capacity(), 0);
+        assert_eq!(session.editor.state.selection.ids.capacity(), 0);
+        assert!(session.editor.state.arrow_text_measurement_generation > generation);
+        assert_eq!(
+            session
+                .editor
+                .state
+                .default_rectangle_shape_style
+                .stroke_width,
+            17.0
+        );
+        assert_eq!(session.config(), config);
+        assert_eq!(session.quick_selection_disabled_tools(), 3);
+    }
 }

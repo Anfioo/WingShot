@@ -51,6 +51,8 @@ pub struct SnowUiSelectorQuery {
     pub y: i32,
     pub mode: SnowUiSelectorHitTestMode,
     pub display_id: u32,
+    pub window_id: usize,
+    pub window_hit_tested: u8,
 }
 #[repr(C)]
 pub struct SnowUiSelectorEvent {
@@ -310,6 +312,7 @@ fn foreground_worker<S: WorkerService>(
     queue: Arc<ForegroundQueue>,
     shared: Arc<Shared>,
 ) {
+    snow_core::qos::apply_current_thread();
     let mut service: Option<S> = None;
     let mut current_epoch = 0;
     loop {
@@ -377,6 +380,8 @@ fn foreground_worker<S: WorkerService>(
                                 x: query.x,
                                 y: query.y,
                                 display_id: query.display_id,
+                                window_id: (query.window_hit_tested != 0)
+                                    .then_some(query.window_id),
                             },
                             mode(query.mode),
                             &QueryControl::foreground_with_cancellation(&cancelled),
@@ -406,6 +411,7 @@ fn refinement_worker<S: WorkerService>(
     queue: Arc<RefinementQueue>,
     shared: Arc<Shared>,
 ) {
+    snow_core::qos::apply_current_thread();
     let mut service: Option<S> = None;
     let mut current_snapshot = None;
     while receiver.recv().is_ok() {
@@ -448,6 +454,7 @@ fn refinement_worker<S: WorkerService>(
                             x: query.x,
                             y: query.y,
                             display_id: query.display_id,
+                            window_id: (query.window_hit_tested != 0).then_some(query.window_id),
                         },
                         mode(query.mode),
                         &QueryControl::refinement(&cancelled),
@@ -570,6 +577,7 @@ pub unsafe extern "C" fn snow_ui_selector_service_destroy(service: *mut SnowUiSe
     let _ = thread::Builder::new()
         .name("selector-cleanup".into())
         .spawn(move || {
+            snow_core::qos::apply_current_thread();
             for worker in service.workers {
                 let _ = worker.join();
             }

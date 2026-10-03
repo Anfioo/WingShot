@@ -40,7 +40,7 @@ impl Mailbox {
 enum Command {
     Pause(Sender<()>),
     Resume(Sender<()>),
-    Finish(u64),
+    Finish(u64, Option<u64>),
     Cancel,
 }
 
@@ -144,16 +144,18 @@ impl OwnedEncoder {
         })
     }
 
-    fn finish(mut self, endpoint: u64) -> Result<StreamingEncoderReport> {
+    fn finish(mut self, endpoint: u64, duration_ms: Option<u64>) -> Result<StreamingEncoderReport> {
         // Device shutdown can take time after the accepted video boundary.
         // RecordingClock::finalize closes pauses; it does not freeze elapsed time.
         // Flush audio to the same integer PTS boundary as video, independently
         // of capture/audio teardown and recovery latency.
         let fps = u64::from(self.encoder.fps());
-        let audio_endpoint = Duration::new(
-            endpoint / fps,
-            ((endpoint % fps) * 1_000_000_000 / fps) as u32,
-        );
+        let audio_endpoint = duration_ms.map(Duration::from_millis).unwrap_or_else(|| {
+            Duration::new(
+                endpoint / fps,
+                ((endpoint % fps) * 1_000_000_000 / fps) as u32,
+            )
+        });
         let mut dropped_audio = 0;
         if let Some(audio) = self.audio.take() {
             let stats = Arc::clone(audio.stats());
@@ -168,7 +170,11 @@ impl OwnedEncoder {
             }
             dropped_audio += mixer.dropped_frames;
         }
-        let mut report = self.encoder.finish_at_pts(endpoint)?;
+        let mut report = if let Some(duration) = duration_ms {
+            self.encoder.finish_at_duration_ms(duration)?
+        } else {
+            self.encoder.finish_at_pts(endpoint)?
+        };
         report.dropped_audio_frames = report.dropped_audio_frames.saturating_add(dropped_audio);
         Ok(report)
     }
@@ -343,6 +349,7 @@ impl RecordingEncoder {
         let worker = std::thread::Builder::new()
             .name("snow-direct-encoder".into())
             .spawn(move || {
+                snow_core::qos::apply_current_thread();
                 // Drop on success, failure or unwind to wake every control waiter.
                 let _lifetime = lifetime;
                 let result = (|| {
@@ -377,8 +384,8 @@ impl RecordingEncoder {
                                             owned.resume();
                                             let _ = ack.send(());
                                         }
-                                        Command::Finish(endpoint) => {
-                                            let mut report = owned.finish(endpoint)?;
+                                        Command::Finish(endpoint, duration_ms) => {
+                                            let mut report = owned.finish(endpoint, duration_ms)?;
                                             report.queued_video_replacements = worker_mailbox
                                                 .lock()
                                                 .unwrap_or_else(|e| e.into_inner())
@@ -520,13 +527,24 @@ impl RecordingEncoder {
         }
     }
 
-    pub(super) fn finish_at_pts(mut self, endpoint: u64) -> Result<StreamingEncoderReport> {
+    #[cfg(test)]
+    pub(super) fn finish_at_pts(self, endpoint: u64) -> Result<StreamingEncoderReport> {
+        self.finish(endpoint, None)
+    }
+    pub(super) fn finish_at_duration_ms(
+        self,
+        endpoint: u64,
+        duration_ms: u64,
+    ) -> Result<StreamingEncoderReport> {
+        self.finish(endpoint, Some(duration_ms))
+    }
+    fn finish(mut self, endpoint: u64, duration_ms: Option<u64>) -> Result<StreamingEncoderReport> {
         match self.driver.take().expect("encoder driver") {
-            Driver::Inline(owned) => owned.finish(endpoint),
+            Driver::Inline(owned) => owned.finish(endpoint, duration_ms),
             #[cfg(any(test, feature = "bench-synthetic-input"))]
             Driver::Threaded(threaded) => {
                 // Join even if the channel closed after a worker failure.
-                let _ = threaded.command(Command::Finish(endpoint));
+                let _ = threaded.command(Command::Finish(endpoint, duration_ms));
                 threaded.worker.join().map_err(|_| {
                     ScreenRecorderError::Encode("recording encoder worker panicked".into())
                 })?
@@ -566,7 +584,7 @@ mod tests {
                 speed: VideoEncodingSpeed::VeryFast,
             },
             encode_threads: 1,
-            audio: None,
+            audio: Vec::new(),
         }
     }
 
@@ -575,78 +593,90 @@ mod tests {
         use ffmpeg_next::Rescale;
 
         let directory = tempfile::tempdir().unwrap();
-        for fps in [10, 30] {
-            for recover in [false, true] {
-                let path = directory
-                    .path()
-                    .join(format!("endpoint-{fps}-{recover}.mp4"));
-                let mut settings = config(path.clone());
-                settings.fps = fps;
-                settings.audio = Some(snow_recording_export::streaming::StreamingAudioConfig {
-                    sample_rate_hz: AUDIO_SAMPLE_RATE,
-                    channels: AUDIO_CHANNELS,
-                    bitrate_kbps: 128,
-                });
-                // A completed one-second active timeline followed by slow device
-                // teardown. No sleeps or hardware are needed to reproduce the
-                // old flush extending audio to the still-advancing wall clock.
-                let started = Instant::now() - Duration::from_secs(5);
-                let clock = RecordingClock::new(started);
-                clock
-                    .controller()
-                    .mark_pause(started + Duration::from_millis(400));
-                clock
-                    .controller()
-                    .mark_resume(started + Duration::from_millis(600));
-                clock
-                    .controller()
-                    .finalize(started + Duration::from_millis(1200));
-                let mut owned = OwnedEncoder::new(
-                    StreamingEncoder::builder(settings).recoverable(),
-                    None,
-                    (true, false),
-                    clock,
-                    (0, false),
-                )
-                .unwrap();
-                for pts in [0, 1] {
-                    owned
-                        .encoder
-                        .push_owned_rgba_frame_at_pts(pts, vec![80; 16 * 16 * 4])
-                        .unwrap();
-                }
-                if recover {
-                    owned
-                        .encoder
-                        .recover_to_software("delayed shutdown fixture")
-                        .unwrap();
-                    owned
-                        .encoder
-                        .push_owned_rgba_frame_at_pts(u64::from(fps / 2), vec![90; 16 * 16 * 4])
-                        .unwrap();
-                }
-                let report = owned.finish(u64::from(fps)).unwrap();
-                assert_eq!(report.encoded_audio_frames, u64::from(AUDIO_SAMPLE_RATE));
-                assert_eq!(report.recovery_count, u32::from(recover));
-                let mut media = ffmpeg_next::format::input(&path).unwrap();
-                let mut audio_pts = Vec::new();
-                let mut audio_end = 0;
-                let mut video_end = 0;
-                for (stream, packet) in media.packets() {
-                    let end = (packet.pts().unwrap() + packet.duration())
-                        .rescale(stream.time_base(), (1, 1000));
-                    if stream.parameters().medium() == ffmpeg_next::media::Type::Audio {
-                        audio_pts.push(packet.pts().unwrap());
-                        audio_end = end;
-                    } else {
-                        video_end = end;
+        for mode in [RecordingAudioMode::Mixed, RecordingAudioMode::Separate] {
+            for fps in [10, 30] {
+                for recover in [false, true] {
+                    let path = directory
+                        .path()
+                        .join(format!("endpoint-{fps}-{recover}-{mode:?}.mp4"));
+                    let mut settings = config(path.clone());
+                    settings.fps = fps;
+                    settings.audio = mode.tracks(true, true, 128);
+                    let track_count = settings.audio.len();
+                    // A completed one-second active timeline followed by slow device
+                    // teardown. No sleeps or hardware are needed to reproduce the
+                    // old flush extending audio to the still-advancing wall clock.
+                    let started = Instant::now() - Duration::from_secs(5);
+                    let clock = RecordingClock::new(started);
+                    clock
+                        .controller()
+                        .mark_pause(started + Duration::from_millis(400));
+                    clock
+                        .controller()
+                        .mark_resume(started + Duration::from_millis(600));
+                    clock
+                        .controller()
+                        .finalize(started + Duration::from_millis(1200));
+                    let mut owned = OwnedEncoder::new(
+                        StreamingEncoder::builder(settings).recoverable(),
+                        None,
+                        (true, true),
+                        clock,
+                        (0, false),
+                    )
+                    .unwrap();
+                    for pts in [0, 1] {
+                        owned
+                            .encoder
+                            .push_owned_rgba_frame_at_pts(pts, vec![80; 16 * 16 * 4])
+                            .unwrap();
                     }
+                    if recover {
+                        owned
+                            .encoder
+                            .recover_to_software("delayed shutdown fixture")
+                            .unwrap();
+                        owned
+                            .encoder
+                            .push_owned_rgba_frame_at_pts(u64::from(fps / 2), vec![90; 16 * 16 * 4])
+                            .unwrap();
+                    }
+                    let report = owned.finish(u64::from(fps) + 1, Some(1001)).unwrap();
+                    assert_eq!(report.encoded_audio_frames, 48_048 * track_count as u64);
+                    assert_eq!(report.recovery_count, u32::from(recover));
+                    let mut media = ffmpeg_next::format::input(&path).unwrap();
+                    let mut audio_pts: BTreeMap<usize, Vec<i64>> = BTreeMap::new();
+                    let mut audio_ends = BTreeMap::new();
+                    let mut video_end = 0;
+                    for (stream, packet) in media.packets() {
+                        let end = (packet.pts().unwrap() + packet.duration())
+                            .rescale(stream.time_base(), (1, 1000));
+                        if stream.parameters().medium() == ffmpeg_next::media::Type::Audio {
+                            audio_pts
+                                .entry(stream.index())
+                                .or_default()
+                                .push(packet.pts().unwrap());
+                            audio_ends.insert(stream.index(), end);
+                        } else {
+                            video_end = end;
+                        }
+                    }
+                    assert_eq!(video_end, 1001);
+                    assert_eq!(audio_pts.len(), track_count);
+                    for points in audio_pts.values() {
+                        assert!(points.len() >= 47);
+                        assert!(points.windows(2).all(|pair| pair[1] - pair[0] == 1024));
+                    }
+                    // Preserve codec padding internally but clip presentation to the exact Stop time.
+                    for end in audio_ends.values() {
+                        assert_eq!(*end, 1001, "audio end {end}");
+                    }
+                    assert!(
+                        audio_ends
+                            .values()
+                            .all(|end| Some(end) == audio_ends.values().next())
+                    );
                 }
-                assert_eq!(video_end, 1000);
-                assert!(audio_pts.len() >= 47);
-                assert!(audio_pts.windows(2).all(|pair| pair[1] - pair[0] == 1024));
-                // AAC may pad the final 1024-sample frame, at most 22 ms.
-                assert!((1000..=1022).contains(&audio_end), "audio end {audio_end}");
             }
         }
     }
@@ -663,7 +693,9 @@ mod tests {
             (0, false),
         )
         .unwrap();
-        for pts in [0, 1] {
+        // Fill the selected software preset's lookahead before failing audio:
+        // this test promises to retain emitted packets, not queued codec input.
+        for pts in 0..96 {
             owned
                 .encoder
                 .push_owned_rgba_frame_at_pts(pts, vec![80; 16 * 16 * 4])
@@ -672,8 +704,11 @@ mod tests {
         // Inject a failed audio sink: the mixer has data but the encoder has no
         // audio track. The stop boundary must retain already emitted video.
         owned.mixer = Some(LiveAudioMixer::new(true, false));
-        let error = owned.finish(10).unwrap_err().to_string();
-        assert!(error.contains("without an audio track"), "{error}");
+        let error = owned.finish(100, None).unwrap_err().to_string();
+        assert!(
+            error.contains("unknown streaming audio track: system"),
+            "{error}"
+        );
         assert!(error.contains("recoverable media is retained"), "{error}");
         assert!(!path.exists());
         let retained = std::fs::read_dir(directory.path())
@@ -683,7 +718,12 @@ mod tests {
             .unwrap()
             .path();
         let manifest = std::fs::read_to_string(retained.join("timeline.txt")).unwrap();
-        assert!(manifest.contains("video\t0\t1\t"), "{manifest}");
+        let video = manifest
+            .lines()
+            .find(|line| line.starts_with("video\t0\t"))
+            .unwrap();
+        let packets = video.split('\t').nth(2).unwrap().parse::<u64>().unwrap();
+        assert!(packets > 0, "{manifest}");
     }
 
     #[test]

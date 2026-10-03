@@ -35,10 +35,14 @@ void ScreenshotPresentationServices::hideMainToolbar() {
 }
 
 void ScreenshotPresentationServices::showToolbar() {
+    if (m_context.captureState.presentationSuppressed)
+        return;
     m_context.toolbarPresenter.showToolbar(toolbarPresentationState());
 }
 
 void ScreenshotPresentationServices::showSelectionToolbar() {
+    if (m_context.captureState.presentationSuppressed)
+        return;
     m_context.toolbarPresenter.showSelectionToolbar(toolbarPresentationState());
 }
 
@@ -55,6 +59,8 @@ void ScreenshotPresentationServices::repositionToolbarForContentChange() {
 }
 
 void ScreenshotPresentationServices::raiseToolbarForCanvasInteraction() {
+    if (m_context.captureState.presentationSuppressed)
+        return;
     m_context.toolbarPresenter.raiseToolbarForCanvasInteraction(toolbarPresentationState());
 }
 
@@ -64,6 +70,7 @@ void ScreenshotPresentationServices::setSelectionToolbarHovered(bool hovered) {
     }
 
     m_selectionToolbarHovered = hovered;
+    m_context.interaction.setEffectEditorsSuppressed(hovered);
     updateOverlayState();
 }
 
@@ -76,6 +83,14 @@ void ScreenshotPresentationServices::setUiPreferences(const ScreenshotUiPreferen
                                                        m_uiPreferences.selectionMaskColor);
     m_context.overlayCoordinator.setColorPickerCenterGuideLineColor(
         m_uiPreferences.colorPickerCenterGuideLineColor);
+    updateOverlayState();
+}
+
+void ScreenshotPresentationServices::setGuideLinesVisible(bool visible) {
+    if (m_guideLinesVisible == visible) {
+        return;
+    }
+    m_guideLinesVisible = visible;
     updateOverlayState();
 }
 
@@ -101,6 +116,7 @@ void ScreenshotPresentationServices::setSelectionMovementActive(bool active) {
 }
 
 void ScreenshotPresentationServices::updateOverlayState() {
+    m_context.stateChanged();
     const bool smartFraming = m_context.interaction.intelligentSelecting();
     const ScreenshotToolbarPresentationState toolbarState = toolbarPresentationState();
     {
@@ -161,6 +177,17 @@ void ScreenshotPresentationServices::presentOverlayState(const QRectF& selection
     visualState.shadowWidth = m_context.selection.shadowWidth();
     visualState.shadowColor = m_context.selection.shadowColor();
     visualState.toolbarHovered = m_selectionToolbarHovered;
+    visualState.effectEditorsVisible =
+        m_context.interaction.movingSelection() && m_context.interaction.moveToolActive() &&
+        m_context.selection.rectangular() && m_context.selection.cornerRadiusApplicable() &&
+        !m_selectionToolbarHovered;
+    visualState.hoveredEffectHandle = m_context.interaction.hoveredEffectHandle();
+    if (m_context.interaction.effectGesture())
+        visualState.activeEffectHandle = m_context.interaction.effectGesture()->handle;
+    visualState.effectPreviewVisible =
+        visualState.effectEditorsVisible &&
+        (visualState.hoveredEffectHandle == ScreenshotSelectionEffectHandle::Shadow ||
+         visualState.activeEffectHandle == ScreenshotSelectionEffectHandle::Shadow);
     visualState.draftPath = m_context.selection.draftPath();
     visualState.draftVertices = m_context.selection.draftVertices();
     if (shaped) {
@@ -216,8 +243,9 @@ void ScreenshotPresentationServices::presentOverlayState(const QRectF& selection
     m_context.overlayCoordinator.updateGuideLines(
         m_context.displaySession, cursorOwner,
         cursorOwner ? QPointF(cursorPosition - cursorOwner->geometry().topLeft()) : QPointF(),
-        m_context.interaction.selecting(), m_uiPreferences.cursorGuideLineColor,
-        m_uiPreferences.monitorCenterGuideLineColor);
+        !m_context.interaction.inactive() && m_guideLinesVisible,
+        m_uiPreferences.cursorGuideLineColor, m_uiPreferences.monitorCenterGuideLineColor,
+        m_uiPreferences.selectionCenterGuideLineColor);
 
     ScreenshotShortcutHintContext hintContext{m_context.interaction.activeTool(),
                                               m_context.interaction.mode(),
@@ -246,6 +274,7 @@ void ScreenshotPresentationServices::updateOverlayCursors() const {
 
 ScreenshotColorPickerContext ScreenshotPresentationServices::colorPickerContext() const {
     ScreenshotColorPickerContext context;
+    context.selectionDisplayUnit = m_uiPreferences.selectionDisplayUnit;
     context.active = !m_context.interaction.inactive() &&
                      !m_context.captureState.captureInProgress &&
                      !m_context.interaction.scrollingCapture();
@@ -262,5 +291,7 @@ ScreenshotColorPickerContext ScreenshotPresentationServices::colorPickerContext(
 
 ScreenshotToolbarPresentationState
 ScreenshotPresentationServices::toolbarPresentationState() const {
-    return makeScreenshotToolbarPresentationState(m_context.interaction, m_context.selection);
+    auto state = makeScreenshotToolbarPresentationState(m_context.interaction, m_context.selection);
+    state.selectionDisplayUnit = m_uiPreferences.selectionDisplayUnit;
+    return state;
 }

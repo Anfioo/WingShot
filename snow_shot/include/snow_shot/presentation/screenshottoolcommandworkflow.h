@@ -36,6 +36,8 @@ class ScreenshotToolCommandWorkflow final {
     void setPenHighlightTool();
     void setSpotlightTool();
     void setEraserTool();
+    void setRectangleEraserTool();
+    void setBrushEraserTool();
     void setFilterTool();
     void setRectangleFilterTool();
     void setPenFilterTool();
@@ -54,8 +56,9 @@ class ScreenshotToolCommandWorkflow final {
     [[nodiscard]] SnowCanvasShapeStyle currentRectangleStyle() const;
     void setShapeStyleFromToolbar(const SnowCanvasShapeStyle& style, quint32 properties,
                                   SnowCanvasShapeKind kind);
-    void setTextStyleFromToolbar(const SnowCanvasTextStyle& style);
-    void setSerialNumberStyleFromToolbar(const SnowCanvasSerialNumberStyle& style);
+    void setTextStyleFromToolbar(const SnowCanvasTextStyle& style, quint32 properties);
+    void setSerialNumberStyleFromToolbar(const SnowCanvasSerialNumberStyle& style,
+                                         std::optional<quint32> properties = std::nullopt);
     [[nodiscard]] bool stepStrokeWidth(int delta);
 
   private:

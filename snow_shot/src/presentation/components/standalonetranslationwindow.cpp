@@ -1,3 +1,4 @@
+#include "snow_shot/presentation/windowcloseshortcut.h"
 #include "snow_shot/presentation/components/standalonetranslationwindow.h"
 #include "snow_shot/presentation/components/translationpagewidget.h"
 #include "snow_shot/presentation/languagemanager.h"
@@ -129,6 +130,7 @@ void StandaloneTranslationWindow::showTranslation(const QString& text, QScreen* 
                 &StandaloneTranslationWindow::close);
     }
     m_modal->present();
+    installWindowCloseShortcut(m_page->window(), [this] { close(); });
     m_page->setSourceText(text);
     if (text.trimmed().isEmpty()) {
         adqt::widgets::AdMessage::Request request;

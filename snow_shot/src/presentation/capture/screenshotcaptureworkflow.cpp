@@ -58,7 +58,8 @@ bool ScreenshotCaptureWorkflow::suppressCaptureToolbar() const {
 }
 
 void ScreenshotCaptureWorkflow::startCapture(StartMode mode, ToolbarPreparation toolbarPreparation,
-                                             ToolbarVisibility toolbarVisibility) {
+                                             ToolbarVisibility toolbarVisibility,
+                                             PresentationMode presentation) {
     const QPoint initialCursorGlobalPosition = m_context.cursorPosition();
     completeRecapture(false);
     if (m_deferredExportCleanup) {
@@ -81,11 +82,11 @@ void ScreenshotCaptureWorkflow::startCapture(StartMode mode, ToolbarPreparation 
     m_startMode = mode;
     m_toolbarPreparation = toolbarPreparation;
     m_toolbarVisibility = toolbarVisibility;
+    m_state.presentationSuppressed = presentation == PresentationMode::Silent;
     m_state.restoreOriginalScreenColors = m_context.restoreOriginalScreenColors();
-    // Smart selection necessarily places the pointer inside the proposed region. Keep its
-    // source frame cursor-free; external drags and explicit recaptures are not selector-driven
-    // and continue to honor the persisted cursor option.
-    m_state.captureCursor = mode == StartMode::ExternalDrag && m_context.captureCursor();
+    m_state.captureCursor = true;
+    m_context.displaySession.cursorVisible = m_context.showCursor();
+    m_context.displaySession.cursorAvailable = false;
     m_state.sessionState = ScreenshotSessionState::Capturing;
     m_state.captureInProgress = true;
     clearCapturePresentationReadiness();
@@ -105,7 +106,8 @@ void ScreenshotCaptureWorkflow::startCapture(StartMode mode, ToolbarPreparation 
     m_startup->logicalPosition = initialCursorGlobalPosition;
     m_startup->anchorCursor = mode != StartMode::ExternalDrag;
     m_startup->phase = ScreenshotStartupContext::Phase::Preparing;
-    m_context.runtime.createColorPicker(initialCursorGlobalPosition);
+    if (!m_state.presentationSuppressed)
+        m_context.runtime.createColorPicker(initialCursorGlobalPosition);
     beginCapturePreparation(sessionId);
 }
 
@@ -120,7 +122,7 @@ bool ScreenshotCaptureWorkflow::startRecapture(const QVector<std::uint32_t>& exc
     }
 
     m_state.restoreOriginalScreenColors = m_context.restoreOriginalScreenColors();
-    m_state.captureCursor = m_context.captureCursor();
+    m_state.captureCursor = true;
     m_recaptureInProgress = true;
     m_recaptureRequestId = ++m_nextRecaptureRequestId;
     m_context.runtime.captureAsync(ScreenshotCaptureRequest{m_recaptureRequestId,
@@ -151,6 +153,9 @@ void ScreenshotCaptureWorkflow::cancelCapture() {
     const bool refreshAfterCancel = m_refreshAfterCapture || m_state.layoutDirty;
     SNOW_SHOT_CAPTURE_PERF_MILESTONE("workflow.cancel_requested");
     SNOW_SHOT_CAPTURE_PERF_FINISH(false);
+    // Termination callbacks can reset visible tools and recognition UI. Conceal the
+    // session before any teardown, not just before the canvas document is cleared.
+    m_context.runtime.hideOverlayWindowsImmediately(m_context.displaySession);
     m_context.runtime.cancelActiveCapture();
     completeRecapture(false);
     if (m_context.captureTerminated) {
@@ -160,9 +165,6 @@ void ScreenshotCaptureWorkflow::cancelCapture() {
     m_state.sessionState = ScreenshotSessionState::Releasing;
     m_state.captureInProgress = false;
     m_refreshAfterCapture = false;
-    // Renderer and canvas resets queue full-surface paints. Conceal the overlay first so the
-    // compositor cannot publish the canvas fallback color between reset and native teardown.
-    m_context.runtime.hideOverlayWindowsImmediately(m_context.displaySession);
     resetCaptureModels();
     resetCanvasRuntimeState();
     finishCaptureSession();
@@ -215,12 +217,15 @@ void ScreenshotCaptureWorkflow::clearDisplays() {
     *m_startup = {};
     clearCapturePresentationReadiness();
     m_context.runtime.clearDisplays(m_context.displaySession);
+    m_context.displaySession.cursorAvailable = false;
+    m_context.displaySession.cursorVisible = false;
     m_context.geometry.clear();
 }
 
 void ScreenshotCaptureWorkflow::finishCaptureSession(bool deferExportCleanup) {
     SNOW_SHOT_PIN_PERF_SCOPE("cleanup.finish_capture_session");
     m_context.runtime.releaseColorPicker();
+    m_context.releaseCaptureHistory();
     if (deferExportCleanup) {
         SNOW_SHOT_PIN_PERF_SCOPE("cleanup.hide_overlays_immediately");
         m_context.runtime.hideOverlayWindowsImmediately(m_context.displaySession);
@@ -376,8 +381,11 @@ void ScreenshotCaptureWorkflow::beginCapturePreparation(quint64 sessionId) {
     if (!m_context.runtime.captureWorkerCreated()) {
         m_context.runtime.ensureCaptureWorker();
     }
+    const bool cursorVisible = m_context.displaySession.cursorVisible;
     const bool preCapturePrepared =
         m_context.runtime.preparePreCaptureOverlayWindows(m_context.displaySession);
+    m_context.displaySession.cursorVisible = cursorVisible;
+    m_context.displaySession.cursorAvailable = false;
     if (m_context.refreshCanvasCreationStyles) {
         m_context.refreshCanvasCreationStyles();
     }
@@ -401,7 +409,8 @@ void ScreenshotCaptureWorkflow::beginCapturePreparation(quint64 sessionId) {
     if (sessionId != m_state.sessionId || !m_state.captureInProgress) {
         return;
     }
-    if (preCapturePrepared && m_toolbarPreparation == ToolbarPreparation::Prewarm) {
+    if (preCapturePrepared && !m_state.presentationSuppressed &&
+        m_toolbarPreparation == ToolbarPreparation::Prewarm) {
         m_context.runtime.prewarmToolbarSurface(m_context.displaySession);
     }
 }
@@ -472,6 +481,8 @@ void ScreenshotCaptureWorkflow::finishCapturePreparation(const ScreenshotCapture
             }
             attached.insert(display.stableId);
             display.image = found->image;
+            display.cursorPatch = found->cursorPatch;
+            display.cursorPixelRect = found->cursorPixelRect;
             display.backend = found->backend;
         });
     if (!layoutMatches || attached.size() != result.displays.size()) {
@@ -484,6 +495,7 @@ void ScreenshotCaptureWorkflow::finishCapturePreparation(const ScreenshotCapture
     m_state.layoutDirty = false;
     m_state.captureInProgress = false;
 
+    m_context.displaySession.cursorAvailable = result.cursorAvailable;
     m_context.runtime.applyDisplayModels(m_context.displaySession);
     m_canvasRuntimeClean = false;
     if (m_context.presentation.updateOverlayState) {
@@ -535,6 +547,7 @@ void ScreenshotCaptureWorkflow::finishRecapturePreparation(const ScreenshotCaptu
         return;
     }
 
+    m_context.displaySession.cursorAvailable = result.cursorAvailable;
     m_context.runtime.applyDisplayModels(m_context.displaySession);
     if (m_context.presentation.updateOverlayState) {
         m_context.presentation.updateOverlayState();
@@ -601,18 +614,20 @@ void ScreenshotCaptureWorkflow::showCapturePresentationWhenReady(quint64 session
     const ScreenshotOverlayShowMode revealMode =
         m_startMode == StartMode::ExternalDrag ? ScreenshotOverlayShowMode::CapturedImageFramePaced
                                                : ScreenshotOverlayShowMode::CapturedImage;
-    m_context.runtime.showOverlayWindows(m_context.displaySession, revealMode);
+    if (!m_state.presentationSuppressed)
+        m_context.runtime.showOverlayWindows(m_context.displaySession, revealMode);
     SNOW_SHOT_CAPTURE_PERF_FLUSH_COMPOSITION();
     SNOW_SHOT_CAPTURE_PERF_MILESTONE("presentation.composited");
     SNOW_SHOT_CAPTURE_PERF_FINISH(true);
     m_startup->phase = ScreenshotStartupContext::Phase::Revealed;
-    if (m_context.presentation.updateColorPicker) {
+    if (!m_state.presentationSuppressed && m_context.presentation.updateColorPicker) {
         m_context.presentation.updateColorPicker();
     }
     if (m_context.presentation.capturePresented) {
         m_context.presentation.capturePresented();
     }
-    if (m_context.selection.regionType() == ScreenshotRegionType::Rectangle &&
+    if (!m_state.presentationSuppressed &&
+        m_context.selection.regionType() == ScreenshotRegionType::Rectangle &&
         m_startMode != StartMode::ExternalDrag && !m_context.runtime.selectorReady() &&
         !m_context.runtime.selectorRefreshInFlight()) {
         m_context.runtime.startWorkflowRefresh();
@@ -620,6 +635,12 @@ void ScreenshotCaptureWorkflow::showCapturePresentationWhenReady(quint64 session
 }
 
 void ScreenshotCaptureWorkflow::enterOverlaySelectionModeAtCursor() {
+    if (m_state.presentationSuppressed) {
+        m_context.interaction.enterOverlayVisible(false);
+        m_context.intelligentSelection.clearTransientState();
+        m_context.runtime.clearSelectorSelection();
+        return;
+    }
     if (m_startMode != StartMode::ExternalDrag &&
         m_context.selection.regionType() != ScreenshotRegionType::Rectangle) {
         m_context.interaction.enterOverlayVisible(false);
@@ -715,8 +736,9 @@ void ScreenshotCaptureWorkflow::handleLayoutReady(const ScreenshotCaptureLayout&
     m_startup->nativeDisplayId = owner->nativeDisplayId;
     m_startup->physicalPosition = m_context.geometry.physicalPositionForLogicalPoint(
         m_context.displaySession, m_startup->logicalPosition);
-    m_context.runtime.prepareColorPickerSurface(m_context.displaySession);
-    if (m_startMode != StartMode::ExternalDrag &&
+    if (!m_state.presentationSuppressed)
+        m_context.runtime.prepareColorPickerSurface(m_context.displaySession);
+    if (!m_state.presentationSuppressed && m_startMode != StartMode::ExternalDrag &&
         m_context.selection.regionType() == ScreenshotRegionType::Rectangle)
         m_context.runtime.startWorkflowRefresh();
     if (beginCapturePresentation(layout.requestId))

@@ -2,9 +2,11 @@
 // The Windows service implementation is retained here for shared protocol tests.
 #![cfg_attr(not(windows), allow(dead_code))]
 
-use crate::contract::{MAX_METADATA_BYTES, compare_versions, verify_release};
+use crate::contract::{MAX_METADATA_BYTES, UpdateRelease, compare_versions, verify_release};
 use crate::error::{Result, UpdateError, io_error, require};
 use crate::fsutil;
+use crate::gitee;
+use crate::github;
 use crate::protocol::{Command, FrameDecoder, MAX_FRAME_BYTES, PROTOCOL_VERSION, Status};
 use crate::transaction;
 use bytes::Bytes;
@@ -165,9 +167,26 @@ impl Default for ServiceDependencies {
 pub struct ServiceOptions {
     pub root: PathBuf,
     pub cache_directory: PathBuf,
-    pub base_url: String,
+    pub github_api_url: String,
+    pub gitee_api_url: String,
     pub allow_local_http: bool,
     pub parent_pid: u32,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+enum ReleaseSource {
+    GitHub,
+    Gitee,
+}
+
+impl ReleaseSource {
+    fn other(self) -> Self {
+        match self {
+            Self::GitHub => Self::Gitee,
+            Self::Gitee => Self::GitHub,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
@@ -183,6 +202,12 @@ struct PersistedState {
     partial_hash: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     validator: String,
+    #[serde(default, skip_serializing)]
+    github_source: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    source: Option<ReleaseSource>,
+    #[serde(default)]
+    partial_url: String,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -265,12 +290,16 @@ impl Trigger {
 
 enum OperationMessage {
     Metadata {
+        release: UpdateRelease,
         bytes: Vec<u8>,
         manual: bool,
+        source: ReleaseSource,
     },
     DownloadValidator {
         package_hash: String,
         validator: String,
+        url: String,
+        source: ReleaseSource,
     },
     Progress {
         received: u64,
@@ -279,6 +308,7 @@ enum OperationMessage {
     Downloaded {
         partial: PathBuf,
         package: AvailableUpdate,
+        source: ReleaseSource,
     },
     Failed {
         operation: ActiveOperation,
@@ -291,7 +321,8 @@ enum OperationMessage {
 struct Service {
     options: ServiceOptions,
     dependencies: ServiceDependencies,
-    base_url: Url,
+    github_api_url: Url,
+    gitee_api_url: Url,
     variant: String,
     installed_version: String,
     persisted: PersistedState,
@@ -331,13 +362,7 @@ fn now_text(clock: &dyn Clock) -> String {
     clock.now_utc().format(&Rfc3339).unwrap_or_default()
 }
 
-fn same_origin(left: &Url, right: &Url) -> bool {
-    left.scheme() == right.scheme()
-        && left.host_str() == right.host_str()
-        && left.port_or_known_default() == right.port_or_known_default()
-}
-
-fn validate_base_url(text: &str, allow_local_http: bool) -> Result<Url> {
+fn validate_api_url(text: &str, allow_local_http: bool) -> Result<Url> {
     let url = Url::parse(text).map_err(|error| {
         UpdateError::new("update_server_invalid", "The update server must use HTTPS").detail(error)
     })?;
@@ -361,7 +386,9 @@ fn client(base_url: &Url, system_proxy: bool) -> Result<Client> {
         if attempt.previous().len() >= 10 {
             return attempt.error("too many redirects");
         }
-        if same_origin(&origin, attempt.url()) {
+        if github::redirect_allowed(&origin, attempt.url())
+            || gitee::redirect_allowed(&origin, attempt.url())
+        {
             attempt.follow()
         } else {
             attempt.stop()
@@ -392,6 +419,13 @@ fn read_persisted(path: &Path) -> PersistedState {
         .filter(|state: &PersistedState| {
             state.observed_version.is_empty()
                 || crate::contract::parse_version(&state.observed_version).is_ok()
+        })
+        .map(|mut state| {
+            if state.source.is_none() && state.github_source {
+                state.source = Some(ReleaseSource::GitHub);
+            }
+            state.github_source = false;
+            state
         })
         .unwrap_or_default()
 }
@@ -442,7 +476,8 @@ fn retain_release_payload(cache: &Path, accepted_hash: &str) {
 
 impl Service {
     fn initialize(options: ServiceOptions, dependencies: ServiceDependencies) -> Result<Self> {
-        let base_url = validate_base_url(&options.base_url, options.allow_local_http)?;
+        let github_api_url = validate_api_url(&options.github_api_url, options.allow_local_http)?;
+        let gitee_api_url = validate_api_url(&options.gitee_api_url, options.allow_local_http)?;
         transaction::validate_root(&options.root)?;
         let record = transaction::installation_record(&options.root)?;
         std::fs::create_dir_all(&options.cache_directory).map_err(|error| {
@@ -456,7 +491,8 @@ impl Service {
             persisted: read_persisted(&cache_path(&options, "state.json")),
             options,
             dependencies,
-            base_url,
+            github_api_url,
+            gitee_api_url,
             variant: record.variant,
             installed_version: record.version,
             available: None,
@@ -478,46 +514,45 @@ impl Service {
     }
 
     fn restore_cached_release(&mut self) {
-        let Ok(bytes) = fsutil::read_limited(
-            &cache_path(&self.options, "release.json"),
-            MAX_METADATA_BYTES as u64,
-        ) else {
+        let Ok(release) =
+            crate::contract::verify_release_file(&cache_path(&self.options, "release.json"))
+        else {
             return;
         };
-        let Ok(release) = verify_release(&bytes, None) else {
-            return;
-        };
+        self.restore_verified_release(release);
+    }
+
+    fn restore_verified_release(&mut self, release: UpdateRelease) {
         let Ok(package) = release.update_package(&self.variant) else {
             return;
         };
-        if !self.persisted.observed_version.is_empty() {
-            let Ok(order) = compare_versions(&release.version, &self.persisted.observed_version)
-            else {
-                return;
-            };
-            if order.is_lt() || (order.is_eq() && package.sha256 != self.persisted.observed_hash) {
-                return;
-            }
-        }
-        if compare_versions(&release.version, &self.installed_version)
-            .is_ok_and(|order| order.is_gt())
+        if release.version != self.persisted.observed_version
+            || package.sha256 != self.persisted.observed_hash
+            || !compare_versions(&release.version, &self.installed_version)
+                .is_ok_and(|order| order.is_gt())
         {
-            let available = AvailableUpdate {
-                version: release.version.clone(),
-                path: package.path.clone(),
-                size: package.size,
-                sha256: package.sha256.clone(),
-            };
-            self.status.version.clone_from(&available.version);
-            self.status.state = "Available".to_owned();
-            let complete = cache_path(&self.options, format!("{}.zip", available.sha256));
-            if !is_failed_version(&self.options.root, &release.version)
-                && fsutil::verify_file(&complete, available.size, &available.sha256).is_ok()
-            {
-                self.status.state = "Ready".to_owned();
-            }
-            self.available = Some(available);
+            return;
         }
+        self.status.version.clone_from(&release.version);
+        self.status.state = if fsutil::verify_file(
+            &cache_path(&self.options, format!("{}.zip", package.sha256)),
+            package.size,
+            &package.sha256,
+        )
+        .is_ok()
+            && !is_failed_version(&self.options.root, &release.version)
+        {
+            "Ready"
+        } else {
+            "Available"
+        }
+        .to_owned();
+        self.available = Some(AvailableUpdate {
+            version: release.version.clone(),
+            path: package.path.clone(),
+            size: package.size,
+            sha256: package.sha256.clone(),
+        });
     }
 
     fn consume_legacy_result(&mut self) {
@@ -674,7 +709,10 @@ fn http_request(client: &Client, url: Url, installed_version: &str) -> reqwest::
         .get(url)
         .header(CACHE_CONTROL, "no-cache")
         .header(ACCEPT_ENCODING, "identity")
-        .header(USER_AGENT, format!("SnowShot/{installed_version}"))
+        .header(
+            USER_AGENT,
+            format!("{}/{installed_version}", crate::edition::REGISTRY_NAME),
+        )
 }
 
 fn transport_error(code: &'static str, message: &'static str, error: UpdateError) -> UpdateError {
@@ -682,90 +720,344 @@ fn transport_error(code: &'static str, message: &'static str, error: UpdateError
         .detail(error.detail.unwrap_or_else(|| error.message.into_owned()))
 }
 
+#[derive(Clone)]
+struct ReleaseEligibility {
+    variant: String,
+    observed_version: String,
+    observed_hash: String,
+}
+
+impl ReleaseEligibility {
+    fn for_service(service: &Service) -> Self {
+        Self {
+            variant: service.variant.clone(),
+            observed_version: service.persisted.observed_version.clone(),
+            observed_hash: service.persisted.observed_hash.clone(),
+        }
+    }
+
+    fn validate(&self, release: &UpdateRelease) -> Result<()> {
+        let package = release.update_package(&self.variant)?;
+        if !self.observed_version.is_empty() {
+            let order = compare_versions(&release.version, &self.observed_version)?;
+            require(
+                !order.is_lt(),
+                "release_replay",
+                "The server offered older release metadata",
+            )?;
+            require(
+                !order.is_eq() || package.sha256 == self.observed_hash,
+                "release_mutated",
+                "The server changed an already published release",
+            )?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone)]
 struct MetadataInputs {
     clock: Arc<dyn Clock>,
     network: Arc<dyn Network>,
-    base_url: Url,
+    github_api_url: Url,
+    gitee_api_url: Url,
     system_proxy: bool,
     installed_version: String,
     manual: bool,
 }
 
+async fn metadata_bytes(
+    inputs: &MetadataInputs,
+    url: Url,
+    cancellation: &CancellationToken,
+) -> Result<Vec<u8>> {
+    let mut deadline = inputs.clock.sleep(METADATA_TIMEOUT);
+    let response = tokio::select! {
+        biased;
+        _ = cancellation.cancelled() => return Err(cancelled()),
+        response = inputs.network.get(HttpRequest {
+            origin: url.clone(), url, installed_version: inputs.installed_version.clone(),
+            system_proxy: inputs.system_proxy, timeout: METADATA_TIMEOUT, range: None,
+        }) => response.map_err(|error| transport_error("metadata_download_failed", "Could not download signed update metadata", error))?,
+        _ = deadline.as_mut() => return Err(github::error()),
+    };
+    require(
+        response.status == 200,
+        "metadata_download_failed",
+        "Could not download signed update metadata",
+    )?;
+    require(
+        response
+            .content_length
+            .is_none_or(|length| length <= MAX_METADATA_BYTES as u64),
+        "metadata_too_large",
+        "Update metadata is too large",
+    )?;
+    let mut stream = response.body;
+    let mut bytes = Vec::new();
+    while let Some(chunk) = tokio::select! {
+        biased;
+        _ = cancellation.cancelled() => return Err(cancelled()),
+        chunk = stream.next() => chunk,
+        _ = deadline.as_mut() => return Err(github::error()),
+    } {
+        let chunk = chunk?;
+        require(
+            bytes.len().saturating_add(chunk.len()) <= MAX_METADATA_BYTES,
+            "metadata_too_large",
+            "Update metadata is too large",
+        )?;
+        bytes.extend_from_slice(&chunk);
+    }
+    Ok(bytes)
+}
+
+fn cancelled() -> UpdateError {
+    UpdateError::new("operation_cancelled", "The update download was interrupted")
+}
+
+async fn github_release(
+    inputs: &MetadataInputs,
+    exact: Option<&str>,
+    cancellation: &CancellationToken,
+) -> Result<Value> {
+    let mut best: Option<(semver::Version, Value)> = None;
+    let base = inputs.github_api_url.as_str().trim_end_matches('/');
+    for page in 1..=10 {
+        let url = match exact {
+            Some(version) => format!("{base}/tags/v{version}_snow-shot"),
+            None => format!("{base}?per_page=100&page={page}"),
+        };
+        let bytes = metadata_bytes(
+            inputs,
+            Url::parse(&url).map_err(|_| github::error())?,
+            cancellation,
+        )
+        .await?;
+        let value: Value = serde_json::from_slice(&bytes).map_err(|_| github::error())?;
+        if let Some(exact) = exact {
+            require(
+                github::version(&value).is_some_and(|version| version.to_string() == exact),
+                "metadata_download_failed",
+                "Could not download signed update metadata",
+            )?;
+            return Ok(value);
+        }
+        let releases = value.as_array().ok_or_else(github::error)?;
+        require(
+            releases.len() <= 100,
+            "metadata_too_large",
+            "Update metadata is too large",
+        )?;
+        for release in releases {
+            if let Some(version) = github::version(release)
+                && best
+                    .as_ref()
+                    .is_none_or(|(current, _)| version.cmp_precedence(current).is_gt())
+            {
+                best = Some((version, release.clone()));
+            }
+        }
+        if releases.len() < 100 {
+            return best.map(|(_, release)| release).ok_or_else(github::error);
+        }
+    }
+    Err(github::error().detail("GitHub release discovery exceeded ten pages"))
+}
+
+async fn gitee_release(
+    inputs: &MetadataInputs,
+    exact: Option<&str>,
+    cancellation: &CancellationToken,
+) -> Result<Value> {
+    let candidates = release_candidates(inputs, ReleaseSource::Gitee, cancellation).await?;
+    candidates
+        .into_iter()
+        .find(|release| {
+            let version = gitee::version(release);
+            exact.map_or(version.is_some(), |exact| {
+                version.is_some_and(|version| version.to_string() == exact)
+            })
+        })
+        .ok_or_else(gitee::error)
+}
+async fn gitee_assets(
+    inputs: &MetadataInputs,
+    release: &Value,
+    cancellation: &CancellationToken,
+) -> Result<Value> {
+    let id = release["id"].as_u64().ok_or_else(gitee::error)?;
+    let url = Url::parse(&format!(
+        "{}/{id}/attach_files?per_page=100",
+        inputs.gitee_api_url.as_str().trim_end_matches('/')
+    ))
+    .map_err(|_| gitee::error())?;
+    let bytes = metadata_bytes(inputs, url, cancellation).await?;
+    let files: Value = serde_json::from_slice(&bytes).map_err(|_| gitee::error())?;
+    require(
+        files.as_array().is_some_and(|files| files.len() < 100),
+        "metadata_download_failed",
+        "Could not download signed update metadata",
+    )?;
+    Ok(files)
+}
+
+async fn release_candidates(
+    inputs: &MetadataInputs,
+    source: ReleaseSource,
+    cancellation: &CancellationToken,
+) -> Result<Vec<Value>> {
+    let base = match source {
+        ReleaseSource::GitHub => inputs.github_api_url.as_str(),
+        ReleaseSource::Gitee => inputs.gitee_api_url.as_str(),
+    }
+    .trim_end_matches('/');
+    let mut candidates = Vec::new();
+    for page in 1..=10 {
+        let url =
+            Url::parse(&format!("{base}?per_page=100&page={page}")).map_err(|_| github::error())?;
+        let bytes = metadata_bytes(inputs, url, cancellation).await?;
+        let response: Value = serde_json::from_slice(&bytes).map_err(|_| github::error())?;
+        let releases = response.as_array().ok_or_else(github::error)?;
+        require(
+            releases.len() <= 100,
+            "metadata_too_large",
+            "Update metadata is too large",
+        )?;
+        for release in releases {
+            let version = match source {
+                ReleaseSource::GitHub => github::version(release),
+                ReleaseSource::Gitee => gitee::version(release),
+            };
+            if let Some(version) = version {
+                candidates.push((version, release.clone()));
+            }
+        }
+        if releases.len() < 100 {
+            candidates.sort_by(|left, right| right.0.cmp_precedence(&left.0));
+            return Ok(candidates.into_iter().map(|(_, release)| release).collect());
+        }
+    }
+    Err(github::error().detail("Release discovery exceeded ten pages"))
+}
+
+async fn source_metadata(
+    inputs: &MetadataInputs,
+    source: ReleaseSource,
+    eligibility: &ReleaseEligibility,
+    cancellation: &CancellationToken,
+    trusted_keys: Option<&[u8]>,
+) -> Result<(UpdateRelease, Vec<u8>, ReleaseSource)> {
+    let candidates = release_candidates(inputs, source, cancellation).await?;
+    for release in candidates {
+        let attempt: Result<(UpdateRelease, Vec<u8>, ReleaseSource)> = async {
+            let (url, files) = match source {
+                ReleaseSource::GitHub => {
+                    (github::asset(&release, crate::edition::FEED_NAME)?, None)
+                }
+                ReleaseSource::Gitee => {
+                    let files = gitee_assets(inputs, &release, cancellation).await?;
+                    let tag = release["tag_name"].as_str().ok_or_else(gitee::error)?;
+                    (
+                        gitee::asset(&files, tag, crate::edition::FEED_NAME)?,
+                        Some(files),
+                    )
+                }
+            };
+            let bytes = metadata_bytes(inputs, url, cancellation).await?;
+            let verified = verify_release(&bytes, trusted_keys)?;
+            eligibility.validate(&verified)?;
+            let version = match source {
+                ReleaseSource::GitHub => github::version(&release),
+                ReleaseSource::Gitee => gitee::version(&release),
+            };
+            require(
+                version.is_some_and(|version| version.to_string() == verified.version),
+                "metadata_download_failed",
+                "Could not download signed update metadata",
+            )?;
+            for package in &verified.packages {
+                let name = github::package_name(&verified.version, &package.path)?;
+                match source {
+                    ReleaseSource::GitHub => {
+                        github::asset(&release, &name)?;
+                    }
+                    ReleaseSource::Gitee => {
+                        let tag = release["tag_name"].as_str().ok_or_else(gitee::error)?;
+                        gitee::asset(files.as_ref().ok_or_else(gitee::error)?, tag, &name)?;
+                    }
+                }
+            }
+            Ok((verified, bytes, source))
+        }
+        .await;
+        match attempt {
+            Ok(release) => return Ok(release),
+            Err(error) if error.code == "operation_cancelled" => return Err(error),
+            Err(_) => continue,
+        }
+    }
+    Err(github::error())
+}
+
 async fn fetch_metadata(
     inputs: MetadataInputs,
+    eligibility: ReleaseEligibility,
     cancellation: CancellationToken,
     sender: mpsc::Sender<OperationMessage>,
 ) {
-    let result = async {
-        let url = inputs.base_url.join("/latest-version.json").map_err(|error| {
-            UpdateError::new("metadata_download_failed", "Could not download signed update metadata")
-                .detail(error)
-        })?;
-        let mut deadline = inputs.clock.sleep(METADATA_TIMEOUT);
-        let response = tokio::select! {
-            biased;
-            _ = cancellation.cancelled() => return Err(UpdateError::new("operation_cancelled", "The update download was interrupted")),
-            response = inputs.network.get(HttpRequest {
-                origin: inputs.base_url,
-                url,
-                installed_version: inputs.installed_version,
-                system_proxy: inputs.system_proxy,
-                timeout: METADATA_TIMEOUT,
-                range: None,
-            }) => response.map_err(|error| transport_error(
-                "metadata_download_failed",
-                "Could not download signed update metadata",
-                error,
-            ))?,
-            _ = deadline.as_mut() => return Err(UpdateError::new(
-                "metadata_download_failed",
-                "Could not download signed update metadata",
-            )),
-        };
-        require(
-            response.status == StatusCode::OK.as_u16(),
-            "metadata_download_failed",
-            "Could not download signed update metadata",
-        )?;
-        if let Some(length) = response.content_length {
-            require(
-                length <= MAX_METADATA_BYTES as u64,
-                "metadata_too_large",
-                "Update metadata is too large",
-            )?;
-        }
-        let mut stream = response.body;
-        let mut bytes = Vec::new();
-        while let Some(chunk) = tokio::select! {
-            biased;
-            _ = cancellation.cancelled() => return Err(UpdateError::new("operation_cancelled", "The update download was interrupted")),
-            chunk = stream.next() => chunk,
-            _ = deadline.as_mut() => return Err(UpdateError::new(
-                "metadata_download_failed",
-                "Could not download signed update metadata",
-            )),
-        } {
-            let chunk = chunk.map_err(|error| {
-                transport_error(
-                    "metadata_download_failed",
-                    "Could not download signed update metadata",
-                    error,
-                )
-            })?;
-            require(
-                bytes.len().saturating_add(chunk.len()) <= MAX_METADATA_BYTES,
-                "metadata_too_large",
-                "Update metadata is too large",
-            )?;
-            bytes.extend_from_slice(&chunk);
-        }
-        Ok(bytes)
+    fetch_metadata_trusted(inputs, eligibility, cancellation, sender, None).await;
+}
+
+async fn fetch_metadata_trusted(
+    inputs: MetadataInputs,
+    eligibility: ReleaseEligibility,
+    cancellation: CancellationToken,
+    sender: mpsc::Sender<OperationMessage>,
+    trusted_keys: Option<&[u8]>,
+) {
+    let mut tasks = tokio::task::JoinSet::new();
+    for source in [ReleaseSource::GitHub, ReleaseSource::Gitee] {
+        let inputs = inputs.clone();
+        let cancellation = cancellation.clone();
+        let keys = trusted_keys.map(ToOwned::to_owned);
+        let eligibility = eligibility.clone();
+        tasks.spawn(async move {
+            source_metadata(
+                &inputs,
+                source,
+                &eligibility,
+                &cancellation,
+                keys.as_deref(),
+            )
+            .await
+        });
     }
-    .await;
+    tokio::task::yield_now().await;
+    let mut result = Err(github::error());
+    for _ in 0..2 {
+        let next = tokio::select! {
+            biased;
+            _ = cancellation.cancelled() => { result = Err(cancelled()); break; }
+            next = tasks.join_next() => next,
+        };
+        match next {
+            Some(Ok(Ok(value))) => {
+                result = Ok(value);
+                break;
+            }
+            Some(Ok(Err(error))) => result = Err(error),
+            Some(Err(error)) => result = Err(github::error().detail(error)),
+            None => break,
+        }
+    }
+    tasks.abort_all();
     let message = match result {
-        Ok(bytes) => OperationMessage::Metadata {
+        Ok((release, bytes, source)) => OperationMessage::Metadata {
+            release,
             bytes,
             manual: inputs.manual,
+            source,
         },
         Err(error) if error.code == "operation_cancelled" => {
             OperationMessage::Cancelled(ActiveOperation::Check)
@@ -789,12 +1081,14 @@ async fn download_once(
     sender: &mpsc::Sender<OperationMessage>,
 ) -> Result<PathBuf> {
     let package = &inputs.package;
+    let url = inputs.package_url.clone().ok_or_else(github::error)?;
     let partial = cache_path(&inputs.options, format!("{}.part", package.sha256));
     let mut offset = tokio::fs::metadata(&partial)
         .await
         .map(|value| value.len())
         .unwrap_or(0);
-    let can_resume = resume.package_hash == package.sha256
+    let can_resume = resume.url == url.as_str()
+        && resume.package_hash == package.sha256
         && strong_etag(&resume.validator)
         && offset > 0
         && offset <= package.size;
@@ -831,23 +1125,13 @@ async fn download_once(
         "Not enough free space to download the update",
     )?;
 
-    let url = inputs
-        .base_url
-        .join(&format!("/{}", package.path))
-        .map_err(|error| {
-            UpdateError::new(
-                "package_download_failed",
-                "The update package could not be downloaded",
-            )
-            .detail(error)
-        })?;
     let mut deadline = inputs.clock.sleep(PACKAGE_TIMEOUT);
     let response = tokio::select! {
         biased;
         _ = cancellation.cancelled() => return Err(UpdateError::new("operation_cancelled", "The update download was interrupted")),
         response = inputs.network.get(HttpRequest {
-            origin: inputs.base_url.clone(),
-            url,
+            origin: url.clone(),
+            url: url.clone(),
             installed_version: inputs.installed_version.clone(),
             system_proxy: inputs.system_proxy,
             timeout: PACKAGE_TIMEOUT,
@@ -900,10 +1184,13 @@ async fn download_once(
         .to_owned();
     resume.package_hash.clone_from(&package.sha256);
     resume.validator.clone_from(&validator);
+    resume.url = url.to_string();
     let _ = sender
         .send(OperationMessage::DownloadValidator {
             package_hash: package.sha256.clone(),
             validator,
+            url: url.to_string(),
+            source: inputs.source,
         })
         .await;
 
@@ -1006,58 +1293,140 @@ struct DownloadInputs {
     options: ServiceOptions,
     clock: Arc<dyn Clock>,
     network: Arc<dyn Network>,
-    base_url: Url,
+    github_api_url: Url,
+    gitee_api_url: Url,
     system_proxy: bool,
     installed_version: String,
     package: AvailableUpdate,
     saved_hash: String,
     saved_validator: String,
+    saved_url: String,
+    source: ReleaseSource,
+    package_url: Option<Url>,
 }
 
 struct DownloadResume {
     package_hash: String,
     validator: String,
+    url: String,
 }
 
 async fn download_package(
-    inputs: DownloadInputs,
+    mut inputs: DownloadInputs,
     cancellation: CancellationToken,
     sender: mpsc::Sender<OperationMessage>,
 ) {
     let mut last_error = None;
+    if cancellation.is_cancelled() {
+        let _ = sender
+            .send(OperationMessage::Cancelled(ActiveOperation::Download))
+            .await;
+        return;
+    }
     let mut resume = DownloadResume {
         package_hash: inputs.saved_hash.clone(),
         validator: inputs.saved_validator.clone(),
+        url: inputs.saved_url.clone(),
     };
-    for attempt in 0..3 {
-        if attempt > 0 {
-            let delay = Duration::from_secs((attempt * 2) as u64);
-            tokio::select! {
-                _ = cancellation.cancelled() => {
-                    let _ = sender.send(OperationMessage::Cancelled(ActiveOperation::Download)).await;
+    for source in [inputs.source, inputs.source.other()] {
+        inputs.source = source;
+        if inputs.package_url.is_none() {
+            let metadata = MetadataInputs {
+                clock: inputs.clock.clone(),
+                network: inputs.network.clone(),
+                github_api_url: inputs.github_api_url.clone(),
+                gitee_api_url: inputs.gitee_api_url.clone(),
+                system_proxy: inputs.system_proxy,
+                installed_version: inputs.installed_version.clone(),
+                manual: false,
+            };
+            let resolved = async {
+                let name = github::package_name(&inputs.package.version, &inputs.package.path)?;
+                match source {
+                    ReleaseSource::GitHub => {
+                        let release =
+                            github_release(&metadata, Some(&inputs.package.version), &cancellation)
+                                .await?;
+                        github::asset(&release, &name)
+                    }
+                    ReleaseSource::Gitee => {
+                        let release =
+                            gitee_release(&metadata, Some(&inputs.package.version), &cancellation)
+                                .await?;
+                        let files = gitee_assets(&metadata, &release, &cancellation).await?;
+                        let tag = release["tag_name"].as_str().ok_or_else(gitee::error)?;
+                        gitee::asset(&files, tag, &name)
+                    }
+                }
+            }
+            .await;
+            match resolved {
+                Ok(url) => inputs.package_url = Some(url),
+                Err(error) if error.code == "operation_cancelled" => {
+                    let _ = sender
+                        .send(OperationMessage::Cancelled(ActiveOperation::Download))
+                        .await;
                     return;
                 }
-                _ = inputs.clock.sleep(delay) => {}
+                Err(error) => {
+                    if last_error.is_none() {
+                        last_error = Some(error);
+                    }
+                    continue;
+                }
             }
         }
-        match download_once(&inputs, &mut resume, &cancellation, &sender).await {
-            Ok(partial) => {
-                let _ = sender
-                    .send(OperationMessage::Downloaded {
-                        partial,
-                        package: inputs.package,
-                    })
-                    .await;
-                return;
+        for attempt in 0..3 {
+            if attempt > 0 {
+                let delay = Duration::from_secs((attempt * 2) as u64);
+                tokio::select! {
+                    _ = cancellation.cancelled() => {
+                        let _ = sender.send(OperationMessage::Cancelled(ActiveOperation::Download)).await;
+                        return;
+                    }
+                    _ = inputs.clock.sleep(delay) => {}
+                }
             }
-            Err(error) if error.code == "operation_cancelled" => {
-                let _ = sender
-                    .send(OperationMessage::Cancelled(ActiveOperation::Download))
-                    .await;
-                return;
+            let result = async {
+                let partial = download_once(&inputs, &mut resume, &cancellation, &sender).await?;
+                let path = partial.clone();
+                let package = inputs.package.clone();
+                tokio::task::spawn_blocking(move || {
+                    fsutil::verify_file(&path, package.size, &package.sha256)
+                })
+                .await
+                .map_err(|error| github::error().detail(error))??;
+                Ok::<_, UpdateError>(partial)
             }
-            Err(error) => last_error = Some(error),
+            .await;
+            match result {
+                Ok(partial) => {
+                    let _ = sender
+                        .send(OperationMessage::Downloaded {
+                            partial,
+                            package: inputs.package,
+                            source,
+                        })
+                        .await;
+                    return;
+                }
+                Err(error) if error.code == "operation_cancelled" => {
+                    let _ = sender
+                        .send(OperationMessage::Cancelled(ActiveOperation::Download))
+                        .await;
+                    return;
+                }
+                Err(error) => {
+                    if error.code == "payload_verify_failed"
+                        || error.code == "update_payload_mismatch"
+                    {
+                        resume.validator.clear();
+                    }
+                    last_error = Some(error);
+                }
+            }
         }
+        inputs.package_url = None;
     }
     let _ = sender
         .send(OperationMessage::Failed {
@@ -1090,11 +1459,13 @@ fn start_check(
         MetadataInputs {
             clock: service.dependencies.clock.clone(),
             network: service.dependencies.network.clone(),
-            base_url: service.base_url.clone(),
+            github_api_url: service.github_api_url.clone(),
+            gitee_api_url: service.gitee_api_url.clone(),
             system_proxy: service.system_proxy,
             installed_version: service.installed_version.clone(),
             manual: user_initiated,
         },
+        ReleaseEligibility::for_service(service),
         cancellation,
         operation_sender.clone(),
     ));
@@ -1121,12 +1492,16 @@ fn start_download(
             options: service.options.clone(),
             clock: service.dependencies.clock.clone(),
             network: service.dependencies.network.clone(),
-            base_url: service.base_url.clone(),
+            github_api_url: service.github_api_url.clone(),
+            gitee_api_url: service.gitee_api_url.clone(),
             system_proxy: service.system_proxy,
             installed_version: service.installed_version.clone(),
             package,
             saved_hash: service.persisted.partial_hash.clone(),
             saved_validator: service.persisted.validator.clone(),
+            saved_url: service.persisted.partial_url.clone(),
+            source: service.persisted.source.unwrap_or(ReleaseSource::GitHub),
+            package_url: None,
         },
         cancellation,
         operation_sender.clone(),
@@ -1136,25 +1511,13 @@ fn start_download(
 
 async fn accept_metadata(
     service: &mut Service,
+    release: UpdateRelease,
     bytes: Vec<u8>,
     manual: bool,
     writer: &mut BufWriter<tokio::io::Stdout>,
 ) -> Result<()> {
-    let release = verify_release(&bytes, None)?;
     let package = release.update_package(&service.variant)?;
-    if !service.persisted.observed_version.is_empty() {
-        let order = compare_versions(&release.version, &service.persisted.observed_version)?;
-        require(
-            !order.is_lt(),
-            "release_replay",
-            "The server offered older release metadata",
-        )?;
-        require(
-            !order.is_eq() || package.sha256 == service.persisted.observed_hash,
-            "release_mutated",
-            "The server changed an already published release",
-        )?;
-    }
+    ReleaseEligibility::for_service(service).validate(&release)?;
     service
         .persisted
         .observed_version
@@ -1312,9 +1675,7 @@ async fn handle_command(
                                     "Invalid updater command argument",
                                 ))
                             } else {
-                                service.active = Some(ActiveOperation::Apply);
-                                service.set_state("Applying", None);
-                                prepare_apply(service, operation_sender)
+                                start_check(service, true, operation_sender)
                             }
                         }
                     };
@@ -1396,18 +1757,35 @@ async fn handle_operation(
     service: &mut Service,
     message: OperationMessage,
     writer: &mut BufWriter<tokio::io::Stdout>,
+    operation_sender: &mpsc::Sender<OperationMessage>,
 ) -> Result<Option<&'static str>> {
     match message {
-        OperationMessage::Metadata { bytes, manual } => {
+        OperationMessage::Metadata {
+            release,
+            bytes,
+            manual,
+            source,
+        } => {
             if service.active != Some(ActiveOperation::Check) {
                 return Ok(None);
             }
             service.active = None;
             service.cancellation = None;
-            if let Err(error) = accept_metadata(service, bytes, manual, writer).await {
+            if let Err(error) = accept_metadata(service, release, bytes, manual, writer).await {
                 service.set_state("Failed", Some(error));
                 write_status(writer, &service.status).await?;
                 return Ok(Some("failed"));
+            }
+            service.persisted.source = Some(source);
+            write_persisted(&service.options, &service.persisted)?;
+            if service.requested == Some(RequestedOperation::Apply)
+                && service.status.state == "Ready"
+            {
+                service.active = Some(ActiveOperation::Apply);
+                service.set_state("Applying", None);
+                write_status(writer, &service.status).await?;
+                prepare_apply(service, operation_sender)?;
+                return Ok(None);
             }
             if service.active.is_none() {
                 return Ok(Some("success"));
@@ -1416,10 +1794,14 @@ async fn handle_operation(
         OperationMessage::DownloadValidator {
             package_hash,
             validator,
+            url,
+            source,
         } => {
             if service.active == Some(ActiveOperation::Download) {
                 service.persisted.partial_hash = package_hash;
                 service.persisted.validator = validator;
+                service.persisted.partial_url = url;
+                service.persisted.source = Some(source);
                 if let Err(error) = write_persisted(&service.options, &service.persisted) {
                     service.active = None;
                     if let Some(cancellation) = service.cancellation.take() {
@@ -1438,7 +1820,11 @@ async fn handle_operation(
                 write_status(writer, &service.status).await?;
             }
         }
-        OperationMessage::Downloaded { partial, package } => {
+        OperationMessage::Downloaded {
+            partial,
+            package,
+            source,
+        } => {
             if service.active != Some(ActiveOperation::Download) {
                 return Ok(None);
             }
@@ -1474,6 +1860,8 @@ async fn handle_operation(
             crate::platform::replace_file(&partial, &complete)?;
             service.persisted.partial_hash.clear();
             service.persisted.validator.clear();
+            service.persisted.partial_url.clear();
+            service.persisted.source = Some(source);
             write_persisted(&service.options, &service.persisted)?;
             service.active = None;
             service.cancellation = None;
@@ -1679,6 +2067,7 @@ pub async fn run_with_dependencies(
                             &mut service,
                             operation,
                             &mut writer,
+                            &operation_sender,
                         ).await {
                             Ok(outcome) => outcome,
                             Err(error) => {
@@ -1713,8 +2102,10 @@ pub async fn run_with_dependencies(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::contract::UpdatePackage;
     use futures_util::{future, stream};
-    use std::collections::VecDeque;
+    use sha2::{Digest, Sha256};
+    use std::collections::{HashMap, VecDeque};
     use std::sync::Mutex;
     use tempfile::TempDir;
 
@@ -1730,9 +2121,12 @@ mod tests {
         Pending,
     }
 
+    type FakeRoutes = Arc<Mutex<HashMap<String, VecDeque<FakeReply>>>>;
+
     #[derive(Clone)]
     struct FakeNetwork {
         replies: Arc<Mutex<VecDeque<FakeReply>>>,
+        routes: Option<FakeRoutes>,
         requests: Arc<Mutex<Vec<HttpRequest>>>,
     }
 
@@ -1740,8 +2134,20 @@ mod tests {
         fn new(replies: impl IntoIterator<Item = FakeReply>) -> Self {
             Self {
                 replies: Arc::new(Mutex::new(replies.into_iter().collect())),
+                routes: None,
                 requests: Arc::new(Mutex::new(Vec::new())),
             }
+        }
+
+        fn routed(routes: impl IntoIterator<Item = (String, Vec<FakeReply>)>) -> Self {
+            let mut network = Self::new([]);
+            network.routes = Some(Arc::new(Mutex::new(
+                routes
+                    .into_iter()
+                    .map(|(url, replies)| (url, replies.into()))
+                    .collect(),
+            )));
+            network
         }
 
         fn requests(&self) -> Vec<HttpRequest> {
@@ -1756,13 +2162,25 @@ mod tests {
         ) -> Pin<Box<dyn Future<Output = Result<HttpResponse>> + Send>> {
             let requests = self.requests.clone();
             let replies = self.replies.clone();
+            let routes = self.routes.clone();
             Box::pin(async move {
+                let url = request.url.to_string();
                 requests.lock().unwrap().push(request);
-                let reply = replies
-                    .lock()
-                    .unwrap()
-                    .pop_front()
-                    .expect("fake network reply");
+                let reply = if let Some(routes) = routes {
+                    routes
+                        .lock()
+                        .unwrap()
+                        .get_mut(&url)
+                        .unwrap_or_else(|| panic!("missing fake route: {url}"))
+                        .pop_front()
+                        .expect("fake route reply")
+                } else {
+                    replies
+                        .lock()
+                        .unwrap()
+                        .pop_front()
+                        .expect("fake network reply")
+                };
                 match reply {
                     FakeReply::Response {
                         status,
@@ -1846,13 +2264,15 @@ mod tests {
             options: ServiceOptions {
                 root: temporary.path().join("root"),
                 cache_directory: temporary.path().join("cache"),
-                base_url: "http://127.0.0.1:8080".to_owned(),
+                github_api_url: "http://127.0.0.1:8080".to_owned(),
+                gitee_api_url: "http://127.0.0.1:8080".to_owned(),
                 allow_local_http: true,
                 parent_pid: 1,
             },
             clock,
             network,
-            base_url: Url::parse("http://127.0.0.1:8080").unwrap(),
+            github_api_url: Url::parse("http://127.0.0.1:8080").unwrap(),
+            gitee_api_url: Url::parse("http://127.0.0.1:8080").unwrap(),
             system_proxy: false,
             installed_version: "1.0.0".to_owned(),
             package: AvailableUpdate {
@@ -1863,11 +2283,199 @@ mod tests {
             },
             saved_hash: "a".repeat(64),
             saved_validator: "\"release-1\"".to_owned(),
+            saved_url: "http://127.0.0.1:8080/snow-shot-portable.zip".to_owned(),
+            source: ReleaseSource::GitHub,
+            package_url: Some(Url::parse("http://127.0.0.1:8080/snow-shot-portable.zip").unwrap()),
         }
     }
 
     fn initialize_cache(inputs: &DownloadInputs) {
         std::fs::create_dir_all(&inputs.options.cache_directory).unwrap();
+    }
+
+    fn ready_service(temporary: &TempDir, network: FakeNetwork) -> Service {
+        let options = ServiceOptions {
+            root: temporary.path().join("root"),
+            cache_directory: temporary.path().join("cache"),
+            github_api_url: "http://127.0.0.1:8080".to_owned(),
+            gitee_api_url: "http://127.0.0.1:8080".to_owned(),
+            allow_local_http: true,
+            parent_pid: 1,
+        };
+        std::fs::create_dir_all(&options.cache_directory).unwrap();
+        let hash = format!("{:x}", Sha256::digest(b"old release"));
+        std::fs::write(cache_path(&options, format!("{hash}.zip")), b"old release").unwrap();
+        Service {
+            options,
+            dependencies: ServiceDependencies {
+                clock: Arc::new(FakeClock::new(fixed_time(), Vec::new())),
+                network: Arc::new(network),
+            },
+            github_api_url: Url::parse("http://127.0.0.1:8080").unwrap(),
+            gitee_api_url: Url::parse("http://127.0.0.1:8080").unwrap(),
+            variant: "portable".to_owned(),
+            installed_version: "1.0.0".to_owned(),
+            persisted: PersistedState {
+                observed_version: "2.0.0".to_owned(),
+                observed_hash: hash.clone(),
+                ..PersistedState::default()
+            },
+            available: Some(AvailableUpdate {
+                version: "2.0.0".to_owned(),
+                path: format!("{}portable.zip", crate::edition::PACKAGE_PREFIX),
+                size: 11,
+                sha256: hash,
+            }),
+            status: Status {
+                state: "Ready".to_owned(),
+                version: "2.0.0".to_owned(),
+                ..Status::default()
+            },
+            mode: Mode::Download,
+            system_proxy: false,
+            active: None,
+            cancellation: None,
+            requested: None,
+            awaiting_handoff: false,
+            handoff: None,
+        }
+    }
+
+    fn apply_command() -> Command {
+        serde_json::from_value(json!({
+            "protocol": PROTOCOL_VERSION,
+            "id": 1,
+            "command": "execute",
+            "operation": "apply",
+            "trigger": "user",
+            "mode": "download",
+            "systemProxy": false
+        }))
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn apply_checks_for_a_new_release_before_using_a_cached_payload() {
+        let temporary = TempDir::new().unwrap();
+        let network = FakeNetwork::new([FakeReply::Pending, FakeReply::Pending]);
+        let mut service = ready_service(&temporary, network.clone());
+        let old_hash = service.available.as_ref().unwrap().sha256.clone();
+        let mut writer = BufWriter::new(tokio::io::stdout());
+        let (sender, _receiver) = mpsc::channel(4);
+
+        assert!(
+            !handle_command(&mut service, apply_command(), &mut writer, &sender)
+                .await
+                .unwrap()
+        );
+        tokio::task::yield_now().await;
+        assert_eq!(service.active, Some(ActiveOperation::Check));
+        assert_eq!(service.status.state, "Checking");
+        assert_eq!(network.requests().len(), 2);
+
+        let release = UpdateRelease {
+            version: "3.0.0".to_owned(),
+            packages: vec![UpdatePackage {
+                variant: "portable".to_owned(),
+                kind: "portable".to_owned(),
+                path: format!("{}portable.zip", crate::edition::PACKAGE_PREFIX),
+                size: 12,
+                sha256: "a".repeat(64),
+                files: Vec::new(),
+            }],
+            envelope: Vec::new(),
+        };
+        let outcome = handle_operation(
+            &mut service,
+            OperationMessage::Metadata {
+                release,
+                bytes: b"verified newer release".to_vec(),
+                manual: true,
+                source: ReleaseSource::GitHub,
+            },
+            &mut writer,
+            &sender,
+        )
+        .await
+        .unwrap();
+        assert_eq!(outcome, Some("success"));
+        assert_eq!(service.status.state, "Available");
+        assert_eq!(service.status.version, "3.0.0");
+        assert_eq!(service.available.as_ref().unwrap().version, "3.0.0");
+        assert!(!cache_path(&service.options, format!("{old_hash}.zip")).exists());
+    }
+
+    #[tokio::test]
+    async fn failed_apply_check_does_not_install_the_cached_release() {
+        let temporary = TempDir::new().unwrap();
+        let network = FakeNetwork::new([
+            FakeReply::Error(UpdateError::new(
+                "network_request_failed",
+                "The update request failed",
+            )),
+            reply(StatusCode::SERVICE_UNAVAILABLE, b""),
+        ]);
+        let mut service = ready_service(&temporary, network);
+        let old_hash = service.available.as_ref().unwrap().sha256.clone();
+        let mut writer = BufWriter::new(tokio::io::stdout());
+        let (sender, mut receiver) = mpsc::channel(4);
+
+        assert!(
+            !handle_command(&mut service, apply_command(), &mut writer, &sender)
+                .await
+                .unwrap()
+        );
+        let outcome = handle_operation(
+            &mut service,
+            receiver.recv().await.unwrap(),
+            &mut writer,
+            &sender,
+        )
+        .await
+        .unwrap();
+        assert_eq!(outcome, Some("failed"));
+        assert_eq!(service.status.state, "Failed");
+        assert!(!service.awaiting_handoff);
+        assert!(cache_path(&service.options, format!("{old_hash}.zip")).exists());
+    }
+
+    #[tokio::test]
+    async fn successful_check_reuses_only_the_current_cached_payload() {
+        let temporary = TempDir::new().unwrap();
+        let mut service = ready_service(&temporary, FakeNetwork::new([]));
+        let package = service.available.take().unwrap();
+        service.status = Status {
+            state: "Idle".to_owned(),
+            ..Status::default()
+        };
+        let release = UpdateRelease {
+            version: package.version.clone(),
+            packages: vec![UpdatePackage {
+                variant: "portable".to_owned(),
+                kind: "portable".to_owned(),
+                path: package.path.clone(),
+                size: package.size,
+                sha256: package.sha256.clone(),
+                files: Vec::new(),
+            }],
+            envelope: Vec::new(),
+        };
+        let mut writer = BufWriter::new(tokio::io::stdout());
+
+        assert!(service.available.is_none());
+        assert_eq!(service.status.state, "Idle");
+        accept_metadata(
+            &mut service,
+            release,
+            b"verified current release".to_vec(),
+            false,
+            &mut writer,
+        )
+        .await
+        .unwrap();
+        assert_eq!(service.status.state, "Ready");
+        assert_eq!(service.status.version, "2.0.0");
+        assert_eq!(service.available.as_ref().unwrap().sha256, package.sha256);
     }
 
     #[test]
@@ -1882,15 +2490,15 @@ mod tests {
         let https = Url::parse("https://example.test/a").unwrap();
         let same = Url::parse("https://example.test/b").unwrap();
         let other_port = Url::parse("https://example.test:444/b").unwrap();
-        assert!(same_origin(&https, &same));
-        assert!(!same_origin(&https, &other_port));
+        assert!(github::redirect_allowed(&https, &same));
+        assert!(!github::redirect_allowed(&https, &other_port));
     }
 
     #[test]
     fn local_http_requires_explicit_loopback_allowance() {
-        assert!(validate_base_url("http://127.0.0.1:8080", true).is_ok());
-        assert!(validate_base_url("http://127.0.0.1:8080", false).is_err());
-        assert!(validate_base_url("http://example.test", true).is_err());
+        assert!(validate_api_url("http://127.0.0.1:8080", true).is_ok());
+        assert!(validate_api_url("http://127.0.0.1:8080", false).is_err());
+        assert!(validate_api_url("http://example.test", true).is_err());
     }
 
     #[test]
@@ -1906,56 +2514,63 @@ mod tests {
 
     #[tokio::test]
     async fn metadata_request_exposes_proxy_timeout_and_cancellation_policy() {
-        let network = FakeNetwork::new([reply(StatusCode::OK, b"signed-envelope")]);
+        let network = FakeNetwork::new([
+            reply(StatusCode::OK, b"signed-envelope"),
+            reply(StatusCode::SERVICE_UNAVAILABLE, b""),
+        ]);
         let clock = FakeClock::new(fixed_time(), Vec::new());
         let (sender, mut receiver) = mpsc::channel(4);
         fetch_metadata(
             MetadataInputs {
                 clock: Arc::new(clock.clone()),
                 network: Arc::new(network.clone()),
-                base_url: Url::parse("http://127.0.0.1:8080/releases/").unwrap(),
+                github_api_url: Url::parse("http://127.0.0.1:8080/releases/").unwrap(),
+                gitee_api_url: Url::parse("http://127.0.0.1:8080/releases/").unwrap(),
                 system_proxy: true,
                 installed_version: "1.2.3".to_owned(),
                 manual: true,
             },
+            fresh_eligibility(),
             CancellationToken::new(),
             sender,
         )
         .await;
         match receiver.recv().await.unwrap() {
-            OperationMessage::Metadata { bytes, manual } => {
-                assert_eq!(bytes, b"signed-envelope");
-                assert!(manual);
+            OperationMessage::Failed { operation, error } => {
+                assert_eq!(operation, ActiveOperation::Check);
+                assert_eq!(error.code, "metadata_download_failed");
             }
-            _ => panic!("expected metadata"),
+            _ => panic!("expected signature failure"),
         }
         let requests = network.requests();
-        assert_eq!(requests.len(), 1);
+        assert_eq!(requests.len(), 2);
         assert_eq!(
             requests[0].url.as_str(),
-            "http://127.0.0.1:8080/latest-version.json"
+            "http://127.0.0.1:8080/releases?per_page=100&page=1"
         );
         assert_eq!(requests[0].installed_version, "1.2.3");
         assert!(requests[0].system_proxy);
         assert_eq!(requests[0].timeout, METADATA_TIMEOUT);
         assert!(requests[0].range.is_none());
-        assert_eq!(clock.sleeps(), vec![METADATA_TIMEOUT]);
+        assert_eq!(clock.sleeps(), vec![METADATA_TIMEOUT, METADATA_TIMEOUT]);
     }
 
     #[tokio::test]
     async fn metadata_timeout_is_driven_by_the_injected_clock() {
-        let network = FakeNetwork::new([FakeReply::Pending]);
+        let network = FakeNetwork::new([FakeReply::Pending, FakeReply::Pending]);
         let clock = FakeClock::new(fixed_time(), vec![METADATA_TIMEOUT]);
         let (sender, mut receiver) = mpsc::channel(4);
         fetch_metadata(
             MetadataInputs {
                 clock: Arc::new(clock),
                 network: Arc::new(network),
-                base_url: Url::parse("http://127.0.0.1:8080").unwrap(),
+                github_api_url: Url::parse("http://127.0.0.1:8080").unwrap(),
+                gitee_api_url: Url::parse("http://127.0.0.1:8080").unwrap(),
                 system_proxy: false,
                 installed_version: "1.0.0".to_owned(),
                 manual: false,
             },
+            fresh_eligibility(),
             CancellationToken::new(),
             sender,
         )
@@ -1993,6 +2608,7 @@ mod tests {
         let mut resume = DownloadResume {
             package_hash: inputs.saved_hash.clone(),
             validator: inputs.saved_validator.clone(),
+            url: inputs.saved_url.clone(),
         };
         let (sender, _receiver) = mpsc::channel(8);
         let path = download_once(&inputs, &mut resume, &CancellationToken::new(), &sender)
@@ -2027,6 +2643,7 @@ mod tests {
         let mut resume = DownloadResume {
             package_hash: inputs.saved_hash.clone(),
             validator: inputs.saved_validator.clone(),
+            url: inputs.saved_url.clone(),
         };
         let (sender, _receiver) = mpsc::channel(8);
         download_once(&inputs, &mut resume, &CancellationToken::new(), &sender)
@@ -2058,6 +2675,7 @@ mod tests {
         let mut resume = DownloadResume {
             package_hash: inputs.saved_hash.clone(),
             validator: inputs.saved_validator.clone(),
+            url: inputs.saved_url.clone(),
         };
         let (sender, _receiver) = mpsc::channel(8);
         let error = download_once(&inputs, &mut resume, &CancellationToken::new(), &sender)
@@ -2079,12 +2697,14 @@ mod tests {
             fixed_time(),
             vec![Duration::from_secs(2), Duration::from_secs(4)],
         );
-        let inputs = download_inputs(
+        let mut inputs = download_inputs(
             &temporary,
             Arc::new(network.clone()),
             Arc::new(clock.clone()),
             3,
         );
+        inputs.package.sha256 =
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad".to_owned();
         initialize_cache(&inputs);
         let (sender, mut receiver) = mpsc::channel(16);
         download_package(inputs, CancellationToken::new(), sender).await;
@@ -2128,5 +2748,593 @@ mod tests {
             Some(OperationMessage::Cancelled(ActiveOperation::Download))
         ));
         assert!(network.requests().is_empty());
+    }
+    fn github_fixture(version: &str, asset_names: &[&str]) -> Value {
+        let mut names: Vec<String> = asset_names.iter().map(|name| (*name).to_owned()).collect();
+        if asset_names.contains(&crate::edition::FEED_NAME) {
+            names.extend(
+                [
+                    "online.exe",
+                    "online-update.zip",
+                    "offline.exe",
+                    "offline-update.zip",
+                    "portable.zip",
+                ]
+                .map(|suffix| {
+                    format!(
+                        "{product}-{version}-windows-x64-{suffix}",
+                        product = crate::edition::PRODUCT
+                    )
+                }),
+            );
+        }
+        json!({"draft":false,"prerelease":false,"tag_name":format!("v{version}_snow-shot"),
+            "assets":names.iter().map(|name| json!({"name":name,"browser_download_url":
+                format!("{}/releases/download/v{version}_snow-shot/{name}",github::REPOSITORY)})).collect::<Vec<_>>()})
+    }
+
+    fn metadata_inputs(network: &FakeNetwork) -> MetadataInputs {
+        MetadataInputs {
+            clock: Arc::new(FakeClock::new(fixed_time(), Vec::new())),
+            network: Arc::new(network.clone()),
+            github_api_url: Url::parse(github::API).unwrap(),
+            gitee_api_url: Url::parse("https://gitee.com/api/v5/repos/mg-chao/snow-apps/releases")
+                .unwrap(),
+            system_proxy: false,
+            installed_version: "1.0.0".to_owned(),
+            manual: true,
+        }
+    }
+
+    fn fresh_eligibility() -> ReleaseEligibility {
+        ReleaseEligibility {
+            variant: "portable".to_owned(),
+            observed_version: String::new(),
+            observed_hash: String::new(),
+        }
+    }
+
+    fn signed_fixture() -> &'static (Vec<u8>, Vec<u8>) {
+        static FIXTURE: std::sync::OnceLock<(Vec<u8>, Vec<u8>)> = std::sync::OnceLock::new();
+        FIXTURE.get_or_init(|| {
+            let private = rsa::RsaPrivateKey::new(&mut rand::rngs::OsRng, 3072).unwrap();
+            (
+                crate::contract::tests::sign_payload(
+                    &crate::contract::tests::valid_payload(),
+                    &private,
+                    32,
+                ),
+                crate::contract::tests::trusted_key(&private, None),
+            )
+        })
+    }
+
+    #[test]
+    fn legacy_github_source_migrates_without_reusing_an_unbound_partial() {
+        let temporary = TempDir::new().unwrap();
+        let path = temporary.path().join("state.json");
+        std::fs::write(&path, r#"{"githubSource":true,"observedVersion":"2.0.0","partialHash":"abc","validator":"\"old\""}"#).unwrap();
+        let state = read_persisted(&path);
+        assert_eq!(state.source, Some(ReleaseSource::GitHub));
+        assert!(state.partial_url.is_empty());
+        assert!(!state.github_source);
+        assert!(
+            !serde_json::to_string(&state)
+                .unwrap()
+                .contains("githubSource")
+        );
+    }
+
+    #[tokio::test]
+    async fn newest_valid_signed_release_skips_an_incomplete_newer_release() {
+        let (signed, keys) = signed_fixture();
+        let github_list = format!("{}?per_page=100&page=1", github::API);
+        let github_manifest = format!(
+            "{}/releases/download/v2.0.0_snow-shot/{feed}",
+            github::REPOSITORY,
+            feed = crate::edition::FEED_NAME
+        );
+        let releases = serde_json::to_vec(&json!([
+            github_fixture("3.0.0", &[]),
+            github_fixture("2.0.0", &[crate::edition::FEED_NAME])
+        ]))
+        .unwrap();
+        let network = FakeNetwork::routed([
+            (github_list, vec![reply(StatusCode::OK, &releases)]),
+            (github_manifest, vec![reply(StatusCode::OK, signed)]),
+            (
+                "https://gitee.com/api/v5/repos/mg-chao/snow-apps/releases?per_page=100&page=1"
+                    .to_owned(),
+                vec![FakeReply::Pending],
+            ),
+        ]);
+        let (sender, mut receiver) = mpsc::channel(4);
+        fetch_metadata_trusted(
+            metadata_inputs(&network),
+            fresh_eligibility(),
+            CancellationToken::new(),
+            sender,
+            Some(keys),
+        )
+        .await;
+        assert!(matches!(
+            receiver.recv().await,
+            Some(OperationMessage::Metadata { release, source: ReleaseSource::GitHub, .. })
+                if release.version == "2.0.0"
+        ));
+    }
+
+    #[tokio::test]
+    async fn signed_release_without_an_exact_package_asset_cannot_win() {
+        let (signed, keys) = signed_fixture();
+        let mut release = github_fixture("2.0.0", &[crate::edition::FEED_NAME]);
+        release["assets"].as_array_mut().unwrap().pop();
+        let listing = serde_json::to_vec(&json!([release])).unwrap();
+        let github_manifest = format!(
+            "{}/releases/download/v2.0.0_snow-shot/{feed}",
+            github::REPOSITORY,
+            feed = crate::edition::FEED_NAME
+        );
+        let network = FakeNetwork::routed([
+            (
+                format!("{}?per_page=100&page=1", github::API),
+                vec![reply(StatusCode::OK, &listing)],
+            ),
+            (github_manifest, vec![reply(StatusCode::OK, signed)]),
+            (
+                "https://gitee.com/api/v5/repos/mg-chao/snow-apps/releases?per_page=100&page=1"
+                    .to_owned(),
+                vec![reply(StatusCode::SERVICE_UNAVAILABLE, b"")],
+            ),
+        ]);
+        let (sender, mut receiver) = mpsc::channel(4);
+        fetch_metadata_trusted(
+            metadata_inputs(&network),
+            fresh_eligibility(),
+            CancellationToken::new(),
+            sender,
+            Some(keys),
+        )
+        .await;
+        assert!(matches!(
+            receiver.recv().await,
+            Some(OperationMessage::Failed { .. })
+        ));
+    }
+
+    #[tokio::test]
+    async fn ineligible_first_channel_does_not_cancel_an_acceptable_release() {
+        // Hold GitHub until Gitee has delivered its signed envelope. No timing sleeps.
+        struct OrderedNetwork {
+            inner: FakeNetwork,
+            gate: CancellationToken,
+            manifest: String,
+        }
+        impl Network for OrderedNetwork {
+            fn get(
+                &self,
+                request: HttpRequest,
+            ) -> Pin<Box<dyn Future<Output = Result<HttpResponse>> + Send>> {
+                let inner = self.inner.clone();
+                let gate = self.gate.clone();
+                let wait = request.url.host_str() == Some("api.github.com");
+                let release = request.url.as_str() == self.manifest;
+                Box::pin(async move {
+                    if wait {
+                        gate.cancelled().await;
+                    }
+                    let response = inner.get(request).await;
+                    if release {
+                        gate.cancel();
+                    }
+                    response
+                })
+            }
+        }
+        let private = rsa::RsaPrivateKey::new(&mut rand::rngs::OsRng, 3072).unwrap();
+        let keys = crate::contract::tests::trusted_key(&private, None);
+        let payload = crate::contract::tests::valid_payload();
+        let signed = crate::contract::tests::sign_payload(&payload, &private, 32);
+        for mutation in [false, true] {
+            let mut rejected = payload.clone();
+            if mutation {
+                rejected["packages"][if crate::edition::MINI { 2 } else { 4 }]["sha256"] =
+                    json!("6".repeat(64));
+            } else {
+                rejected["version"] = json!("1.9.0");
+            }
+            let version = rejected["version"].as_str().unwrap();
+            let tag = format!("v{version}_snow-shot");
+            let manifest = format!(
+                "https://gitee.com/mg-chao/snow-apps/releases/download/{tag}/{feed}",
+                feed = crate::edition::FEED_NAME
+            );
+            let mut files = github_fixture(version, &[crate::edition::FEED_NAME])["assets"].clone();
+            for file in files.as_array_mut().unwrap() {
+                file["browser_download_url"] = json!(
+                    file["browser_download_url"]
+                        .as_str()
+                        .unwrap()
+                        .replace("github.com", "gitee.com")
+                );
+            }
+            let rejected_signed = crate::contract::tests::sign_payload(&rejected, &private, 32);
+            let network = FakeNetwork::routed([
+                (format!("{}?per_page=100&page=1", github::API), vec![reply(StatusCode::OK, &serde_json::to_vec(&json!([github_fixture("2.0.0", &[crate::edition::FEED_NAME])] )).unwrap())]),
+                (format!("{}/releases/download/v2.0.0_snow-shot/{feed}", github::REPOSITORY, feed = crate::edition::FEED_NAME), vec![reply(StatusCode::OK, &signed)]),
+                ("https://gitee.com/api/v5/repos/mg-chao/snow-apps/releases?per_page=100&page=1".to_owned(), vec![reply(StatusCode::OK, &serde_json::to_vec(&json!([{"id":123,"tag_name":tag}])).unwrap())]),
+                ("https://gitee.com/api/v5/repos/mg-chao/snow-apps/releases/123/attach_files?per_page=100".to_owned(), vec![reply(StatusCode::OK, &serde_json::to_vec(&files).unwrap())]),
+                (manifest.clone(), vec![reply(StatusCode::OK, &rejected_signed)]),
+            ]);
+            let mut inputs = metadata_inputs(&network);
+            inputs.network = Arc::new(OrderedNetwork {
+                inner: network,
+                gate: CancellationToken::new(),
+                manifest,
+            });
+            let eligibility = ReleaseEligibility {
+                variant: "portable".to_owned(),
+                observed_version: "2.0.0".to_owned(),
+                observed_hash: "5".repeat(64),
+            };
+            let (sender, mut receiver) = mpsc::channel(4);
+            fetch_metadata_trusted(
+                inputs,
+                eligibility.clone(),
+                CancellationToken::new(),
+                sender,
+                Some(&keys),
+            )
+            .await;
+            match receiver.recv().await.unwrap() {
+                OperationMessage::Metadata {
+                    release, source, ..
+                } => {
+                    assert_eq!(source, ReleaseSource::GitHub);
+                    eligibility.validate(&release).unwrap();
+                }
+                _ => panic!("expected the acceptable GitHub release"),
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn first_valid_signed_release_wins_the_race() {
+        let (signed, keys) = signed_fixture();
+        let github_list = format!("{}?per_page=100&page=1", github::API);
+        let gitee_api = "https://gitee.com/api/v5/repos/mg-chao/snow-apps/releases";
+        let gitee_list = format!("{gitee_api}?per_page=100&page=1");
+        let gitee_assets = format!("{gitee_api}/123/attach_files?per_page=100");
+        let gitee_manifest = format!(
+            "https://gitee.com/mg-chao/snow-apps/releases/download/v2.0.0_snow-shot/{}",
+            crate::edition::FEED_NAME
+        );
+        let release = serde_json::to_vec(
+            &json!([{"id":123,"tag_name":"v2.0.0_snow-shot","prerelease":false}]),
+        )
+        .unwrap();
+        let names = [
+            crate::edition::FEED_NAME,
+            &format!("{}-2.0.0-windows-x64-online.exe", crate::edition::PRODUCT),
+            &format!(
+                "{}-2.0.0-windows-x64-online-update.zip",
+                crate::edition::PRODUCT
+            ),
+            &format!("{}-2.0.0-windows-x64-offline.exe", crate::edition::PRODUCT),
+            &format!(
+                "{}-2.0.0-windows-x64-offline-update.zip",
+                crate::edition::PRODUCT
+            ),
+            &format!("{}-2.0.0-windows-x64-portable.zip", crate::edition::PRODUCT),
+        ];
+        let assets = serde_json::to_vec(&names.iter().map(|name| json!({"name":name,
+            "browser_download_url":format!("https://gitee.com/mg-chao/snow-apps/releases/download/v2.0.0_snow-shot/{name}")})).collect::<Vec<_>>()).unwrap();
+        for gitee_wins in [true, false] {
+            let github_release = serde_json::to_vec(&json!([github_fixture(
+                "2.0.0",
+                &[crate::edition::FEED_NAME]
+            )]))
+            .unwrap();
+            let github_manifest = format!(
+                "{}/releases/download/v2.0.0_snow-shot/{feed}",
+                github::REPOSITORY,
+                feed = crate::edition::FEED_NAME
+            );
+            let network = FakeNetwork::routed([
+                (
+                    github_list.clone(),
+                    vec![if gitee_wins {
+                        FakeReply::Pending
+                    } else {
+                        reply(StatusCode::OK, &github_release)
+                    }],
+                ),
+                (github_manifest, vec![reply(StatusCode::OK, signed)]),
+                (
+                    gitee_list.clone(),
+                    vec![if gitee_wins {
+                        reply(StatusCode::OK, &release)
+                    } else {
+                        FakeReply::Pending
+                    }],
+                ),
+                (gitee_assets.clone(), vec![reply(StatusCode::OK, &assets)]),
+                (
+                    gitee_manifest.to_owned(),
+                    vec![reply(StatusCode::OK, signed)],
+                ),
+            ]);
+            let (sender, mut receiver) = mpsc::channel(4);
+            fetch_metadata_trusted(
+                metadata_inputs(&network),
+                fresh_eligibility(),
+                CancellationToken::new(),
+                sender,
+                Some(keys),
+            )
+            .await;
+            match receiver.recv().await.unwrap() {
+                OperationMessage::Metadata {
+                    release, source, ..
+                } => {
+                    assert_eq!(release.version, "2.0.0");
+                    assert_eq!(
+                        source,
+                        if gitee_wins {
+                            ReleaseSource::Gitee
+                        } else {
+                            ReleaseSource::GitHub
+                        }
+                    );
+                }
+                _ => panic!("expected authenticated metadata"),
+            }
+            assert!(
+                network
+                    .requests()
+                    .iter()
+                    .any(|request| request.url.as_str() == github_list)
+            );
+            assert!(
+                network
+                    .requests()
+                    .iter()
+                    .any(|request| request.url.as_str() == gitee_list)
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn github_rejects_tag_mismatch_and_unsigned_metadata() {
+        let (signed, keys) = signed_fixture();
+        for (version, envelope) in [
+            ("3.0.0", signed.as_slice()),
+            ("2.0.0", b"unsigned".as_slice()),
+        ] {
+            let github = serde_json::to_vec(&json!([github_fixture(
+                version,
+                &[crate::edition::FEED_NAME]
+            )]))
+            .unwrap();
+            let network = FakeNetwork::new([
+                reply(StatusCode::SERVICE_UNAVAILABLE, b""),
+                reply(StatusCode::OK, &github),
+                reply(StatusCode::OK, envelope),
+            ]);
+            let (sender, mut receiver) = mpsc::channel(4);
+            fetch_metadata_trusted(
+                metadata_inputs(&network),
+                fresh_eligibility(),
+                CancellationToken::new(),
+                sender,
+                Some(keys),
+            )
+            .await;
+            assert!(matches!(
+                receiver.recv().await,
+                Some(OperationMessage::Failed { .. })
+            ));
+        }
+    }
+
+    #[tokio::test]
+    async fn discovery_filters_and_bounds_pagination() {
+        let mut prerelease = github_fixture("9.0.0", &[]);
+        prerelease["prerelease"] = json!(true);
+        let mut draft = github_fixture("8.0.0", &[]);
+        draft["draft"] = json!(true);
+        let page = serde_json::to_vec(&json!([
+            prerelease,
+            draft,
+            github_fixture("2.0.0", &[]),
+            github_fixture("3.0.0", &[])
+        ]))
+        .unwrap();
+        let network = FakeNetwork::new([reply(StatusCode::OK, &page)]);
+        let found = github_release(&metadata_inputs(&network), None, &CancellationToken::new())
+            .await
+            .unwrap();
+        assert_eq!(found["tag_name"], "v9.0.0_snow-shot");
+        let page = serde_json::to_vec(&vec![github_fixture("2.0.0", &[]); 100]).unwrap();
+        let network = FakeNetwork::new((0..10).map(|_| reply(StatusCode::OK, &page)));
+        assert!(
+            github_release(&metadata_inputs(&network), None, &CancellationToken::new())
+                .await
+                .is_err()
+        );
+        assert_eq!(network.requests().len(), 10);
+    }
+
+    #[tokio::test]
+    async fn metadata_cancellation_never_falls_back() {
+        let network = FakeNetwork::new([]);
+        let cancellation = CancellationToken::new();
+        cancellation.cancel();
+        let (sender, mut receiver) = mpsc::channel(4);
+        fetch_metadata(
+            metadata_inputs(&network),
+            fresh_eligibility(),
+            cancellation,
+            sender,
+        )
+        .await;
+        assert!(matches!(
+            receiver.recv().await,
+            Some(OperationMessage::Cancelled(ActiveOperation::Check))
+        ));
+        assert!(network.requests().is_empty());
+    }
+
+    #[tokio::test]
+    async fn failed_selected_package_uses_exact_version_on_other_channel() {
+        let temporary = TempDir::new().unwrap();
+        let asset = &format!("{}-2.0.0-windows-x64-portable.zip", crate::edition::PRODUCT);
+        let gitee_url = format!(
+            "https://gitee.com/mg-chao/snow-apps/releases/download/v2.0.0_snow-shot/{asset}"
+        );
+        let gitee_release = serde_json::to_vec(&json!([
+            {"id":456,"tag_name":"v3.0.0_snow-shot"},
+            {"id":123,"tag_name":"v2.0.0_snow-shot"}
+        ]))
+        .unwrap();
+        let attachments =
+            serde_json::to_vec(&json!([{"name":asset,"browser_download_url":gitee_url}])).unwrap();
+        let first_url = "http://127.0.0.1:8080/snow-shot-portable.zip";
+        let network = FakeNetwork::routed([
+            (
+                first_url.to_owned(),
+                vec![
+                    reply(StatusCode::SERVICE_UNAVAILABLE, b""),
+                    reply(StatusCode::SERVICE_UNAVAILABLE, b""),
+                    reply(StatusCode::SERVICE_UNAVAILABLE, b""),
+                ],
+            ),
+            (
+                "http://127.0.0.1:8080/?per_page=100&page=1".to_owned(),
+                vec![reply(StatusCode::OK, &gitee_release)],
+            ),
+            (
+                "http://127.0.0.1:8080/123/attach_files?per_page=100".to_owned(),
+                vec![reply(StatusCode::OK, &attachments)],
+            ),
+            (gitee_url.clone(), vec![reply(StatusCode::OK, b"abc")]),
+        ]);
+        let mut inputs = download_inputs(
+            &temporary,
+            Arc::new(network.clone()),
+            Arc::new(FakeClock::new(
+                fixed_time(),
+                vec![Duration::from_secs(2), Duration::from_secs(4)],
+            )),
+            3,
+        );
+        inputs.package.path = format!("{}portable.zip", crate::edition::PACKAGE_PREFIX);
+        inputs.package.sha256 =
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad".to_owned();
+        inputs.saved_hash = inputs.package.sha256.clone();
+        inputs.saved_url = first_url.to_owned();
+        initialize_cache(&inputs);
+        std::fs::write(
+            cache_path(&inputs.options, format!("{}.part", inputs.package.sha256)),
+            b"a",
+        )
+        .unwrap();
+        let (sender, mut receiver) = mpsc::channel(32);
+        download_package(inputs, CancellationToken::new(), sender).await;
+        let mut resumed_on_gitee = false;
+        let mut downloaded_on_gitee = false;
+        while let Ok(message) = receiver.try_recv() {
+            resumed_on_gitee |= matches!(
+                &message,
+                OperationMessage::DownloadValidator {
+                    source: ReleaseSource::Gitee,
+                    ..
+                }
+            );
+            downloaded_on_gitee |= matches!(
+                &message,
+                OperationMessage::Downloaded {
+                    source: ReleaseSource::Gitee,
+                    ..
+                }
+            );
+        }
+        assert!(resumed_on_gitee && downloaded_on_gitee);
+        let requests = network.requests();
+        assert_eq!(
+            requests[3].url.as_str(),
+            "http://127.0.0.1:8080/?per_page=100&page=1"
+        );
+        assert_eq!(requests[5].url.as_str(), gitee_url);
+        assert!(requests[5].range.is_none());
+    }
+    #[test]
+    fn cached_source_survives_restart_only_for_the_verified_identity() {
+        let temporary = TempDir::new().unwrap();
+        let mut service = ready_service(&temporary, FakeNetwork::new([]));
+        let (signed, keys) = signed_fixture();
+        let release = verify_release(signed, Some(keys)).unwrap();
+        service.persisted.observed_hash =
+            release.update_package("portable").unwrap().sha256.clone();
+        service.persisted.source = Some(ReleaseSource::GitHub);
+        service.persisted.partial_url =
+            "https://github.com/mg-chao/snow-apps/releases/download/v2.0.0_snow-shot/package.zip"
+                .to_owned();
+        write_persisted(&service.options, &service.persisted).unwrap();
+        service.persisted = read_persisted(&cache_path(&service.options, "state.json"));
+        service.available = None;
+        service.restore_verified_release(release.clone());
+        assert_eq!(service.persisted.source, Some(ReleaseSource::GitHub));
+        assert!(!service.persisted.partial_url.is_empty());
+        assert_eq!(service.available.as_ref().unwrap().version, "2.0.0");
+        assert_eq!(service.status.state, "Available");
+        service.available = None;
+        service.persisted.observed_version = "3.0.0".to_owned();
+        service.restore_verified_release(release.clone());
+        assert!(service.available.is_none());
+        service.persisted.observed_version = "2.0.0".to_owned();
+        service.persisted.observed_hash = "0".repeat(64);
+        service.restore_verified_release(release);
+        assert!(service.available.is_none());
+        std::fs::write(cache_path(&service.options, "release.json"), b"unsigned").unwrap();
+        service.restore_cached_release();
+        assert!(service.available.is_none());
+    }
+
+    #[tokio::test]
+    async fn github_package_hash_failure_never_reports_downloaded() {
+        let temporary = TempDir::new().unwrap();
+        let asset = &format!("{}-2.0.0-windows-x64-portable.zip", crate::edition::PRODUCT);
+        let metadata = serde_json::to_vec(&github_fixture("2.0.0", &[asset])).unwrap();
+        let network = FakeNetwork::new([
+            reply(StatusCode::OK, &metadata),
+            reply(StatusCode::OK, b"bad"),
+            reply(StatusCode::OK, b"bad"),
+            reply(StatusCode::OK, b"bad"),
+        ]);
+        let mut inputs = download_inputs(
+            &temporary,
+            Arc::new(network.clone()),
+            Arc::new(FakeClock::new(
+                fixed_time(),
+                vec![Duration::from_secs(2), Duration::from_secs(4)],
+            )),
+            3,
+        );
+        inputs.source = ReleaseSource::GitHub;
+        inputs.package.path = format!("{}portable.zip", crate::edition::PACKAGE_PREFIX);
+        initialize_cache(&inputs);
+        let (sender, mut receiver) = mpsc::channel(32);
+        download_package(inputs, CancellationToken::new(), sender).await;
+        let mut failed = false;
+        while let Ok(message) = receiver.try_recv() {
+            assert!(!matches!(message, OperationMessage::Downloaded { .. }));
+            if let OperationMessage::Failed { error, .. } = message {
+                assert_eq!(error.code, "update_payload_mismatch");
+                failed = true;
+            }
+        }
+        assert!(failed);
+        assert_eq!(network.requests().len(), 4);
     }
 }

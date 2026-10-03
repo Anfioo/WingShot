@@ -1,11 +1,17 @@
 #ifndef SNOW_SHOT_TRANSLATION_TRANSLATIONSERVICE_H
 #define SNOW_SHOT_TRANSLATION_TRANSLATIONSERVICE_H
 
+#include "snow_shot/app/edition.h"
+
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
 #include "snow_shot/network/snowshotapiclient.h"
 #include "snow_shot/translation/translationprovider.h"
 
 #include <QLocale>
 #include <QStringList>
+#endif
+
+#include <QString>
 
 namespace snow_shot::storage {
 class ConfigurationStore;
@@ -21,8 +27,10 @@ struct TranslationPreferences {
     friend bool operator==(const TranslationPreferences&, const TranslationPreferences&) = default;
 };
 
+class TranslationService;
 class TranslationJob;
 
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
 // One catalog and settings binding per client/store pair. The application owns the client;
 // standalone consumers may supply an isolated client and store through the same boundary.
 class TranslationService final : public QObject {
@@ -54,6 +62,8 @@ class TranslationService final : public QObject {
     void refreshModels(bool force = false);
     void setLocale(const QLocale& locale);
     TranslationJob* createJob(const QStringList& texts, QObject* owner);
+    TranslationJob* createJob(const QStringList& texts, const TranslationPreferences& preferences,
+                              QObject* owner);
 
   signals:
     void catalogChanged();
@@ -145,6 +155,8 @@ class TranslationJob final : public QObject {
     State m_state = State::Idle;
     quint64 m_generation = 0;
     bool m_rateLimited = false;
+    bool m_fixedPreferences = false;
 };
+#endif
 } // namespace snow_shot::translation
 #endif

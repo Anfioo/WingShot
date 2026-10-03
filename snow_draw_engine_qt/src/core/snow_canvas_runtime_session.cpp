@@ -1,15 +1,27 @@
 #include "snow_canvas_runtime_session.h"
+#include "snow_canvas_runtime_cleanup.h"
 
 #include "snow_canvas_changed_viewports.h"
 #include "snow_canvas_ffi_handles.h"
+#include "snow_canvas_fill_render.h"
 #include "snow_canvas_type_conversions.h"
+#include "snow_canvas_watermark_renderer.h"
 
-#include <future>
+#include <condition_variable>
+#include <deque>
 #include <limits>
+#include <mutex>
+#include <thread>
 #include <utility>
 
 namespace snow_canvas_runtime {
 namespace {
+
+void clearDrawingCachesForCurrentThread() {
+    // Export sessions have no canvas clients, and their threads outlive the document.
+    snow_canvas_fill_render::resetHatchTextureCacheForCurrentThread();
+    snow_canvas_renderer::resetWatermarkRenderCacheForCurrentThread();
+}
 
 bool toEngineRuntimeConfig(const SnowCanvasRuntimeConfig& config, SnowStyleDefaults& styleDefaults,
                            SnowRuntimeConfig& engineConfig) {
@@ -119,30 +131,96 @@ void destroyNow(SnowRuntime runtime) noexcept {
     }
 }
 
-std::future<void> startAsyncDestroy(SnowRuntime runtime) noexcept {
-    if (runtime == nullptr) {
-        return {};
+class RuntimeCleanupQueue final {
+  public:
+    RuntimeCleanupQueue() : m_worker([this] { run(); }) {}
+
+    ~RuntimeCleanupQueue() {
+        {
+            const std::lock_guard<std::mutex> lock(m_mutex);
+            m_stopping = true;
+        }
+        m_pendingChanged.notify_one();
+        m_worker.join();
     }
 
-    try {
-        return std::async(std::launch::async, [runtime]() noexcept { destroyNow(runtime); });
-    } catch (...) {
-        destroyNow(runtime);
-        return {};
+    void enqueue(std::function<void()> cleanup) {
+        {
+            const std::lock_guard<std::mutex> lock(m_mutex);
+            m_pending.push_back(std::move(cleanup));
+        }
+        m_pendingChanged.notify_one();
     }
+
+    void waitUntilIdle() {
+        std::unique_lock<std::mutex> lock(m_mutex);
+        m_idle.wait(lock, [this] { return m_pending.empty() && !m_running; });
+    }
+
+  private:
+    void run() noexcept {
+        for (;;) {
+            std::function<void()> cleanup;
+            {
+                std::unique_lock<std::mutex> lock(m_mutex);
+                m_pendingChanged.wait(lock, [this] { return m_stopping || !m_pending.empty(); });
+                if (m_pending.empty()) {
+                    return;
+                }
+                cleanup = std::move(m_pending.front());
+                m_pending.pop_front();
+                m_running = true;
+            }
+            cleanup();
+            cleanup = {};
+            {
+                const std::lock_guard<std::mutex> lock(m_mutex);
+                m_running = false;
+                if (m_pending.empty()) {
+                    m_idle.notify_all();
+                }
+            }
+        }
+    }
+
+    std::mutex m_mutex;
+    std::condition_variable m_pendingChanged;
+    std::condition_variable m_idle;
+    std::deque<std::function<void()>> m_pending;
+    bool m_stopping = false;
+    bool m_running = false;
+    std::thread m_worker;
+};
+
+RuntimeCleanupQueue& runtimeCleanupQueue() {
+    static RuntimeCleanupQueue queue;
+    return queue;
 }
 
 } // namespace
+
+void enqueueRuntimeCleanup(std::function<void()> cleanup) {
+    if (cleanup) {
+        runtimeCleanupQueue().enqueue(std::move(cleanup));
+    }
+}
+
+void waitForRuntimeCleanup() {
+    runtimeCleanupQueue().waitUntilIdle();
+}
 
 RuntimeSession::RuntimeSession() : RuntimeSession(SnowCanvasRuntimeConfig{}) {}
 
 RuntimeSession::RuntimeSession(const SnowCanvasRuntimeConfig& config)
     : m_config(config), m_runtime(createRuntime(m_config)),
-      m_smartErase([this] { m_clients.smartEraseChanged(); }) {}
+      m_smartErase([this] { m_clients.smartEraseChanged(); }) {
+    // Register process cleanup before any runtime owner can register its static destructor.
+    // The worker then drains detached handles after every runtime owner has been destroyed.
+    static_cast<void>(runtimeCleanupQueue());
+}
 
 RuntimeSession::~RuntimeSession() {
-    m_runtime.reset();
-    waitForPendingDestroy();
+    destroyRuntimeAsync();
 }
 
 bool RuntimeSession::isValid() const {
@@ -150,7 +228,11 @@ bool RuntimeSession::isValid() const {
 }
 
 bool RuntimeSession::reset() {
-    return replaceRuntime(createRuntime(m_config));
+    if (!replaceRuntime(createRuntime(m_config))) {
+        return false;
+    }
+    clearDrawingCachesForCurrentThread();
+    return true;
 }
 
 bool RuntimeSession::cloneDocumentSessionFrom(const RuntimeSession& source) {
@@ -175,6 +257,27 @@ QByteArray RuntimeSession::serializeDocumentSession() const {
     if (snow_runtime_serialize_document_session(m_runtime.get(),
                                                 reinterpret_cast<std::uint8_t*>(payload.data()),
                                                 size, &written) != SNOW_OK ||
+        written != size) {
+        return {};
+    }
+    return payload;
+}
+
+QByteArray RuntimeSession::serializeSelectedDrawTemplate() const {
+    if (m_runtime.get() == nullptr) {
+        return {};
+    }
+    std::size_t size = 0;
+    if (snow_runtime_serialize_selected_draw_template(m_runtime.get(), nullptr, 0, &size) !=
+            SNOW_OK ||
+        size == 0 || size > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
+        return {};
+    }
+    QByteArray payload(static_cast<int>(size), Qt::Uninitialized);
+    std::size_t written = 0;
+    if (snow_runtime_serialize_selected_draw_template(
+            m_runtime.get(), reinterpret_cast<std::uint8_t*>(payload.data()), size, &written) !=
+            SNOW_OK ||
         written != size) {
         return {};
     }
@@ -236,9 +339,16 @@ bool RuntimeSession::clearDocumentPreservingViewports() {
     }
 
     m_smartErase.reset();
-    m_clients.clearRenderState();
+    m_clients.resetDocumentRetainedState();
     syncChangedViewports(changedViewports.get());
+    clearDrawingCachesForCurrentThread();
     return true;
+}
+
+void RuntimeSession::clearRenderState() {
+    m_smartErase.clearCache();
+    m_clients.clearRenderState();
+    clearDrawingCachesForCurrentThread();
 }
 
 bool RuntimeSession::setQuickSelectionDisabledTools(const QSet<SnowCanvasTool>& tools) {
@@ -260,7 +370,6 @@ bool RuntimeSession::setQuickSelectionDisabledTools(const QSet<SnowCanvasTool>& 
 }
 
 void RuntimeSession::destroyAsync(SnowCanvasRuntime& owner) {
-    waitForPendingDestroy();
     m_clients.detachAndReleaseClients(owner);
     destroyRuntimeAsync();
 }
@@ -304,7 +413,6 @@ void RuntimeSession::syncChangedViewportIds(const std::vector<std::uint64_t>& ch
 }
 
 bool RuntimeSession::replaceRuntime(ScopedRuntimeHandle replacement) {
-    waitForPendingDestroy();
     if (replacement.get() == nullptr) {
         return false;
     }
@@ -319,17 +427,16 @@ bool RuntimeSession::replaceRuntime(ScopedRuntimeHandle replacement) {
 }
 
 void RuntimeSession::destroyRuntimeAsync() {
-    waitForPendingDestroy();
-    m_pendingDestroy = startAsyncDestroy(m_runtime.release());
-}
-
-void RuntimeSession::waitForPendingDestroy() {
-    if (!m_pendingDestroy.valid()) {
-        return;
+    const SnowRuntime runtime = m_runtime.release();
+    if (runtime != nullptr) {
+        try {
+            enqueueRuntimeCleanup([runtime]() noexcept { destroyNow(runtime); });
+        } catch (...) {
+            // Allocation or worker creation failure must still release the detached handle.
+            destroyNow(runtime);
+        }
     }
-
-    m_pendingDestroy.wait();
-    m_pendingDestroy = std::future<void>();
+    clearDrawingCachesForCurrentThread();
 }
 
 } // namespace snow_canvas_runtime

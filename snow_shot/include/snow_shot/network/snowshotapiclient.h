@@ -1,7 +1,13 @@
 #ifndef SNOW_SHOT_NETWORK_SNOWSHOTAPICLIENT_H
 #define SNOW_SHOT_NETWORK_SNOWSHOTAPICLIENT_H
 
+#include "snow_shot/app/edition.h"
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION || SNOW_SHOT_ENABLE_TABLE_RECOGNITION ||                     \
+    SNOW_SHOT_ENABLE_LATEX_RECOGNITION || SNOW_SHOT_ENABLE_IMAGE_CONVERSION ||                     \
+    SNOW_SHOT_ENABLE_API_CONFIGURATION
 #include "snow_shot/customaimodelconfiguration.h"
+#include "snow_shot/texttranslationconfiguration.h"
+#endif
 
 #include <QHash>
 #include <QImage>
@@ -13,6 +19,7 @@
 #include <functional>
 
 class QNetworkAccessManager;
+class SnowShotApiClient;
 
 struct SnowShotTableResult {
     QString html;
@@ -25,7 +32,16 @@ struct SnowShotTableResult {
     }
 };
 
-enum class SnowShotModelOrigin { BuiltIn, Custom };
+struct SnowShotLatexResult {
+    QString latex;
+    QString error;
+    QString code;
+    int httpStatus = 0;
+
+    [[nodiscard]] bool succeeded() const {
+        return !latex.trimmed().isEmpty() && error.isEmpty();
+    }
+};
 
 struct SnowShotChatModel {
     QString id;
@@ -33,10 +49,6 @@ struct SnowShotChatModel {
     bool supportsReasoning = false;
     QString translationMode = QStringLiteral("default");
     bool supportsVision = false;
-    SnowShotModelOrigin origin = SnowShotModelOrigin::BuiltIn;
-    [[nodiscard]] bool supportsTranslation() const {
-        return origin == SnowShotModelOrigin::Custom || !supportsVision;
-    }
 };
 
 struct SnowShotChatModelsResult {
@@ -79,12 +91,16 @@ struct SnowShotImageConversionRequest {
 
 using SnowShotImageConversionResult = SnowShotTranslationResult;
 
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION || SNOW_SHOT_ENABLE_TABLE_RECOGNITION ||                     \
+    SNOW_SHOT_ENABLE_LATEX_RECOGNITION || SNOW_SHOT_ENABLE_IMAGE_CONVERSION ||                     \
+    SNOW_SHOT_ENABLE_API_CONFIGURATION
 class SnowShotApiClient final : public QObject {
     Q_OBJECT
 
   public:
     using RequestToken = quint64;
     using Completion = std::function<void(SnowShotTableResult)>;
+    using LatexCompletion = std::function<void(SnowShotLatexResult)>;
     using ChatModelsCompletion = std::function<void(SnowShotChatModelsResult)>;
     using TranslationDelta = std::function<void(const QString&)>;
     using TranslationCompletion = std::function<void(SnowShotTranslationResult)>;
@@ -92,7 +108,11 @@ class SnowShotApiClient final : public QObject {
     explicit SnowShotApiClient(QString baseUrl, QObject* parent = nullptr);
     ~SnowShotApiClient() override;
 
-    [[nodiscard]] static QString configuredBaseUrl();
+    [[nodiscard]] static QString configuredBaseUrl(const QString& savedUrl = {});
+    [[nodiscard]] QString baseUrl() const {
+        return m_baseUrl;
+    }
+    [[nodiscard]] bool setBaseUrl(const QString& baseUrl);
 
     [[nodiscard]] bool usesSystemProxy() const;
     void setUseSystemProxy(bool enabled);
@@ -102,6 +122,8 @@ class SnowShotApiClient final : public QObject {
     }
     [[nodiscard]] RequestToken extractTable(const QImage& image, QObject* receiver,
                                             Completion completion);
+    [[nodiscard]] RequestToken extractLatex(const QImage& image, QObject* receiver,
+                                            LatexCompletion completion);
     [[nodiscard]] RequestToken fetchChatModels(const QString& locale, QObject* receiver,
                                                ChatModelsCompletion completion);
     [[nodiscard]] RequestToken streamTranslation(const SnowShotTranslationRequest& request,
@@ -112,6 +134,9 @@ class SnowShotApiClient final : public QObject {
                           TranslationDelta delta,
                           std::function<void(SnowShotImageConversionResult)> completion);
     void cancel(RequestToken token);
+    void setTextTranslationConfigurations(const snow_shot::TextTranslationConfigurations& values);
+    [[nodiscard]] bool isTextTranslation(const QString& id) const;
+    [[nodiscard]] int translationConcurrency(const QString& id) const;
     void setCustomModels(const snow_shot::CustomAiModels& models);
     [[nodiscard]] bool isCustomModel(const QString& id) const;
     [[nodiscard]] QString fallbackModel(bool vision) const;
@@ -119,6 +144,7 @@ class SnowShotApiClient final : public QObject {
     [[nodiscard]] QString modelFingerprint(const QString& id) const;
 
   signals:
+    void baseUrlChanged();
     void chatModelsChanged();
     void customModelInvalidated(const QString& id, bool translation, bool vision);
 
@@ -131,19 +157,33 @@ class SnowShotApiClient final : public QObject {
   private:
     friend class SnowShotApiClientTestAccess;
     std::function<QByteArray(const QImage&)> m_tableImagePreparation;
+    int m_latexTimeoutMs = 65000;
     int m_tableTimeoutMs = 35000;
     struct Request;
+    void startLatexUpload(RequestToken token, const QByteArray& webp);
+    void finishLatex(RequestToken token, SnowShotLatexResult result);
     void startTableUpload(RequestToken token, const QByteArray& webp);
     void cleanupRequest(Request* request);
     [[nodiscard]] QNetworkAccessManager* networkAccessManager();
     void finish(RequestToken token, SnowShotTableResult result);
     void finishChatModels(RequestToken token, SnowShotChatModelsResult result);
     void finishTranslation(RequestToken token, SnowShotTranslationResult result);
+    void submitChatStream(RequestToken token, QByteArray body);
+    void pumpCustomChatStreams();
     void startChatStream(RequestToken token, const QByteArray& body);
 
+    const snow_shot::TextTranslationConfiguration* textTranslation(const QString& id) const;
+    RequestToken enqueueTextTranslation(const SnowShotTranslationRequest& input, QObject* receiver,
+                                        TranslationDelta delta, TranslationCompletion completion);
+    void pumpTextTranslations();
+    void startTextTranslation(RequestToken token);
+    snow_shot::TextTranslationConfigurations m_textTranslations;
+    QList<RequestToken> m_translationQueue;
+    QList<RequestToken> m_customChatQueue;
     void rebuildAvailableModels();
     const snow_shot::CustomAiModelConfiguration* customModel(const QString& id) const;
     QString m_baseUrl;
+    quint64 m_serverGeneration = 0;
     snow_shot::CustomAiModels m_customModels;
     QVector<SnowShotChatModel> m_availableModels;
 
@@ -153,5 +193,6 @@ class SnowShotApiClient final : public QObject {
     QVector<SnowShotChatModel> m_cachedChatModels;
     QString m_cachedChatModelsLocale;
 };
+#endif
 
 #endif // SNOW_SHOT_NETWORK_SNOWSHOTAPICLIENT_H

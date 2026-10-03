@@ -1,0 +1,87 @@
+name: Check Snow Shot Homebrew support
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/snow-shot-homebrew*.yml
+      - scripts/snow-shot-homebrew.py
+      - scripts/test-snow-shot-homebrew.py
+      - scripts/test-snow-shot-homebrew-preflight.rb
+      - scripts/install-snow-shot-macos.sh
+      - scripts/prepare-snow-shot-homebrew.sh
+      - scripts/test-macos-installer.py
+      - homebrew/**
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: macos-15
+    env:
+      HOMEBREW_NO_ANALYTICS: 1
+      HOMEBREW_NO_AUTO_UPDATE: 1
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Check focused installer and release behavior
+        run: |
+          bash -n scripts/install-snow-shot-macos.sh scripts/prepare-snow-shot-homebrew.sh
+          python3 scripts/test-macos-installer.py
+          python3 scripts/test-snow-shot-homebrew.py
+      - name: Use current Homebrew audit rules
+        run: |
+          brew update
+          brew --version
+      - name: Generate an unpublished cask fixture
+        run: |
+          export CASK_FIXTURE="$(brew --repository)/Library/Taps/mg-chao/homebrew-preflight/Casks/snow-shot.rb"
+          python3 - <<'PY'
+          import importlib.util
+          import os
+          from pathlib import Path
+          spec = importlib.util.spec_from_file_location('homebrew', 'scripts/snow-shot-homebrew.py')
+          helper = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(helper)
+          path = Path(os.environ['CASK_FIXTURE'])
+          path.parent.mkdir(parents=True)
+          # Syntax/metadata fixture only: never uploaded, installed, or audited online.
+          path.write_text(helper.cask('1.2.3', '0' * 64), encoding='utf-8')
+          path.with_name('snow-shot@beta.rb').write_text(
+              helper.cask('1.2.4-beta.2', '0' * 64, 'v1.2.4-beta.2'), encoding='utf-8')
+          path.with_name('snow-shot-mini.rb').write_text(
+              helper.cask('1.2.3', '0' * 64, edition='mini'), encoding='utf-8')
+          path.with_name('snow-shot-mini@beta.rb').write_text(
+              helper.cask('1.2.4-beta.2', '0' * 64, 'v1.2.4-beta.2_snow-shot', edition='mini'), encoding='utf-8')
+          PY
+      - name: Check Homebrew style and offline metadata
+        run: |
+          brew trust --cask mg-chao/preflight/snow-shot
+          # The official-tap declarative-only rule excludes supported third-party Ruby hooks.
+          brew style --cask --except Cask/InstallSteps mg-chao/preflight/snow-shot
+          brew audit --cask mg-chao/preflight/snow-shot
+          brew trust --cask mg-chao/preflight/snow-shot@beta
+          brew style --cask --except Cask/InstallSteps mg-chao/preflight/snow-shot@beta
+          brew audit --cask mg-chao/preflight/snow-shot@beta
+          for cask in snow-shot-mini snow-shot-mini@beta; do
+            brew trust --cask "mg-chao/preflight/$cask"
+            brew style --cask --except Cask/InstallSteps "mg-chao/preflight/$cask"
+            brew audit --cask "mg-chao/preflight/$cask"
+          done
+      - name: Verify native preflight preserves the installing account
+        run: brew ruby scripts/test-snow-shot-homebrew-preflight.rb "$GITHUB_WORKSPACE/scripts/prepare-snow-shot-homebrew.sh"
+
+  verify-tap-access:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify configured tap credential
+        uses: actions/checkout@v4
+        with:
+          repository: mg-chao/homebrew-tap
+          ref: main
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+      - name: Verify tap push authentication without changing the repository
+        run: git push --dry-run origin HEAD:main

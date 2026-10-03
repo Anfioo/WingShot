@@ -195,6 +195,10 @@
             <translation>尚無固定到螢幕視窗</translation>
         </message>
         <message>
+            <source>Not Closed</source>
+            <translation>未關閉</translation>
+        </message>
+        <message>
             <source>Other / legacy</source>
             <translation>其他 / 舊記錄</translation>
         </message>
@@ -217,10 +221,6 @@
         <message>
             <source>Restore</source>
             <translation>還原</translation>
-        </message>
-        <message>
-            <source>Retained</source>
-            <translation>已保留</translation>
         </message>
         <message>
             <source>Saved records and their open windows will be removed</source>
@@ -465,6 +465,10 @@
             <translation>目前：%1%</translation>
         </message>
         <message>
+            <source>Decrease 10%</source>
+            <translation>減少 10%</translation>
+        </message>
+        <message>
             <source>Default</source>
             <translation>預設</translation>
         </message>
@@ -533,12 +537,12 @@
             <translation>影像檔案</translation>
         </message>
         <message>
-            <source>Image files (%1)</source>
-            <translation>影像檔案 (%1)</translation>
-        </message>
-        <message>
             <source>Image size is too large.</source>
             <translation>影像尺寸過大。</translation>
+        </message>
+        <message>
+            <source>Increase 10%</source>
+            <translation>增加 10%</translation>
         </message>
         <message>
             <source>Load new content</source>
@@ -554,11 +558,11 @@
         </message>
         <message>
             <source>Opacity</source>
-            <translation>透明度</translation>
+            <translation>不透明度</translation>
         </message>
         <message>
             <source>Opacity: %1%</source>
-            <translation>透明度：%1%</translation>
+            <translation>不透明度：%1%</translation>
         </message>
         <message>
             <source>Process image</source>
@@ -605,6 +609,14 @@
             <translation>顯示主介面</translation>
         </message>
         <message>
+            <source>Supported files (%1)</source>
+            <translation>支援的檔案 (%1)</translation>
+        </message>
+        <message>
+            <source>The image could not be saved automatically: %1</source>
+            <translation>無法自動儲存影像：%1</translation>
+        </message>
+        <message>
             <source>The new content could not be loaded</source>
             <translation>無法載入新內容</translation>
         </message>
@@ -631,6 +643,33 @@
         <message>
             <source>Window Management</source>
             <translation>視窗管理</translation>
+        </message>
+    </context>
+    <context>
+        <name>WindowGroupSwitcher</name>
+        <message>
+            <source>%1, %2 not closed windows, %3 total</source>
+            <translation>%1，%2 個未關閉視窗，共 %3 個</translation>
+        </message>
+        <message>
+            <source>Click a group to switch. Esc to cancel.</source>
+            <translation>點擊群組以切換，按 Esc 取消。</translation>
+        </message>
+        <message>
+            <source>Current</source>
+            <translation>目前</translation>
+        </message>
+        <message>
+            <source>Release shortcut keys or click a group to switch. Esc to cancel.</source>
+            <translation>放開所有快捷鍵或點擊群組以切換，按 Esc 取消。</translation>
+        </message>
+        <message>
+            <source>Switch Window Group</source>
+            <translation>切換視窗群組</translation>
+        </message>
+        <message>
+            <source>Windows · not closed / total</source>
+            <translation>視窗 · 未關閉 / 總數</translation>
         </message>
     </context>
     <context>
@@ -698,6 +737,13 @@
         <message>
             <source>This group name is already in use</source>
             <translation>此群組名稱已被使用</translation>
+        </message>
+    </context>
+    <context>
+        <name>snow_shot::presentation::WindowGroupSwitcherController</name>
+        <message>
+            <source>Could not switch window group. Please try again.</source>
+            <translation>無法切換視窗群組，請重試。</translation>
         </message>
     </context>
 </TS>

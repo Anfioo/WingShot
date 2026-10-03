@@ -75,6 +75,7 @@ class SnowCanvasWidgetTextInteraction final {
 
     SnowCanvasWidgetTextInteraction(QWidget& widget, SnowCanvasCursorController& cursorController);
     void invalidateArrowTextMetrics();
+    void resetDocumentRetainedState();
 
     SnowCanvasTextEditorSession& session();
     const SnowCanvasTextEditorSession& session() const;
@@ -92,10 +93,7 @@ class SnowCanvasWidgetTextInteraction final {
                              const SnowCanvasDisplayCache& displayCache);
     StyleChangeResult applyTextStyle(SnowRuntime runtime, SnowViewport viewport,
                                      SnowCanvasDisplayCache& displayCache,
-                                     const SnowTextStyle& style);
-    StyleChangeResult stepFontSize(SnowRuntime runtime, SnowViewport viewport,
-                                   SnowCanvasDisplayCache& displayCache,
-                                   const SnowTextStyle& fallbackStyle, bool increase);
+                                     const SnowTextStyle& style, std::uint32_t properties);
 
     BeginResult beginArrow(SnowRuntime runtime, SnowViewport viewport,
                            SnowCanvasDisplayCache& displayCache, const QPointF& viewPosition,

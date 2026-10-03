@@ -1,6 +1,7 @@
 #include "tabs_style.h"
 
 #include "theme/theme.h"
+#include "theme/theme_color_utils.h"
 
 #include <algorithm>
 namespace adqt::widgets::detail {
@@ -32,6 +33,18 @@ TabsAppearance resolveTabsAppearance(const AdTabs* tabs, const AdTabs::Component
   result.border = colorOr(tokens.colors.borderColor, theme.colorBorderSecondary);
   result.focusOutline = colorOr(tokens.colors.focusOutline, theme.colorPrimaryBorder);
   result.surface = theme.colorBgContainer;
+  result.popupText = theme.colorText;
+  result.popupDisabledText = theme.colorTextDisabled;
+  result.popupHoverBackground = theme.colorFillTertiary;
+  result.popupClose = theme.colorTextTertiary;
+  result.popupFont = tabs->font();
+  result.popupFont.setPixelSize(std::max(10, qRound(theme.fontSize)));
+  result.popupFont.setWeight(QFont::Normal);
+  result.popupPadding = std::max(0, qRound(theme.sizeXXS));
+  result.popupHorizontalPadding = std::max(0, qRound(theme.sizeSM));
+  result.popupRowHeight = qRound(theme.fontHeight) + result.popupPadding * 2;
+  result.popupRadius = std::max(0, qRound(theme.borderRadiusLG));
+  result.popupCloseSize = std::max(8, qRound(theme.fontSizeSM));
 
   const bool compact = theme.controlHeight <= 28.0;
   int itemHeight = qRound(theme.controlHeightLG);
@@ -74,6 +87,13 @@ TabsAppearance resolveTabsAppearance(const AdTabs* tabs, const AdTabs::Component
   result.metrics.font = tabs->font();
   result.metrics.font.setPixelSize(std::max(10, fontPixels));
   result.motionDuration = std::max(0, theme.motionDurationMid);
+  if (theme.backgroundOpacity != 1.0) {
+    result.cardBackground =
+        adqt::theme::applyBackgroundOpacity(result.cardBackground, theme.backgroundOpacity);
+    result.cardActiveBackground =
+        adqt::theme::applyBackgroundOpacity(result.cardActiveBackground, theme.backgroundOpacity);
+    result.surface = adqt::theme::applyBackgroundOpacity(result.surface, theme.backgroundOpacity);
+  }
   return result;
 }
 

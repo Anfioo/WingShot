@@ -64,27 +64,23 @@ QRectF aspectRatioLockedSelectionRect(ScreenshotSelectionDragMode dragMode, cons
         horizontalSpan < 0.0 ? -horizontalDirection : horizontalDirection;
     const int resizedVerticalDirection =
         verticalSpan < 0.0 ? -verticalDirection : verticalDirection;
-    const qreal horizontalScale = std::abs(horizontalSpan) / originWidth;
-    const qreal verticalScale = std::abs(verticalSpan) / originHeight;
-    qreal scale = 1.0;
-    if (horizontalDirection != 0 && verticalDirection != 0) {
-        scale = std::abs(horizontalSpan / originWidth - 1.0) >=
-                        std::abs(verticalSpan / originHeight - 1.0)
-                    ? horizontalScale
-                    : verticalScale;
-    } else {
-        scale = horizontalDirection != 0 ? horizontalScale : verticalScale;
-    }
+    // Keep the driven pointer span exact and derive only the other dimension.
+    // Snapping may request a ratio different from the drag origin's ratio.
+    const bool resizeFromWidth =
+        horizontalDirection != 0 &&
+        (verticalDirection == 0 || std::abs(horizontalSpan / originWidth - 1.0) >=
+                                       std::abs(verticalSpan / originHeight - 1.0));
+    const qreal minimumSpan =
+        resizeFromWidth ? std::max(minimumSelectionSize, minimumSelectionSize / lockedAspectRatio)
+                        : std::max(minimumSelectionSize, minimumSelectionSize * lockedAspectRatio);
+    const qreal span =
+        std::max(resizeFromWidth ? std::abs(horizontalSpan) : std::abs(verticalSpan), minimumSpan);
 
-    const qreal minimumScale =
-        std::max(minimumSelectionSize / originWidth, minimumSelectionSize / originHeight);
-    scale = std::max(scale, minimumScale);
-
-    const auto rectForScale = [origin, horizontalDirection, verticalDirection,
-                               resizedHorizontalDirection, resizedVerticalDirection, originWidth,
-                               lockedAspectRatio](qreal nextScale) {
-        const qreal width = originWidth * nextScale;
-        const qreal height = width * lockedAspectRatio;
+    const auto rectForSpan = [origin, horizontalDirection, verticalDirection,
+                              resizedHorizontalDirection, resizedVerticalDirection, resizeFromWidth,
+                              lockedAspectRatio](qreal nextSpan) {
+        const qreal width = resizeFromWidth ? nextSpan : nextSpan / lockedAspectRatio;
+        const qreal height = resizeFromWidth ? nextSpan * lockedAspectRatio : nextSpan;
         qreal left = origin.center().x() - width / 2.0;
         qreal right = left + width;
         qreal top = origin.center().y() - height / 2.0;
@@ -116,7 +112,7 @@ QRectF aspectRatioLockedSelectionRect(ScreenshotSelectionDragMode dragMode, cons
     };
 
     if (bounds.isNull()) {
-        return rectForScale(scale);
+        return rectForSpan(span);
     }
 
     const QRectF normalizedBounds = bounds.normalized();
@@ -125,21 +121,21 @@ QRectF aspectRatioLockedSelectionRect(ScreenshotSelectionDragMode dragMode, cons
                rect.right() <= normalizedBounds.right() &&
                rect.bottom() <= normalizedBounds.bottom();
     };
-    if (fitsBounds(rectForScale(scale))) {
-        return rectForScale(scale);
+    if (fitsBounds(rectForSpan(span))) {
+        return rectForSpan(span);
     }
 
-    qreal lowerScale = minimumScale;
-    qreal upperScale = scale;
+    qreal lowerSpan = minimumSpan;
+    qreal upperSpan = span;
     for (int iteration = 0; iteration < 40; ++iteration) {
-        const qreal middleScale = (lowerScale + upperScale) / 2.0;
-        if (fitsBounds(rectForScale(middleScale))) {
-            lowerScale = middleScale;
+        const qreal middleSpan = (lowerSpan + upperSpan) / 2.0;
+        if (fitsBounds(rectForSpan(middleSpan))) {
+            lowerSpan = middleSpan;
         } else {
-            upperScale = middleScale;
+            upperSpan = middleSpan;
         }
     }
-    return rectForScale(lowerScale);
+    return rectForSpan(lowerSpan);
 }
 
 QRectF aspectRatioLockedMarqueeRect(const QPointF& originPosition, const QPointF& position,
@@ -316,6 +312,49 @@ QRectF boundedScreenshotSelectionRect(const QRectF& selection, const QRectF& bou
         constrained.setHeight(minimumSelectionSize);
     }
     return constrained;
+}
+
+QRectF aspectRatioScreenshotSelectionRect(const QRectF& selection, const QRectF& bounds,
+                                          qreal aspectRatio, qreal minimumSelectionSize) {
+    const QRectF normalized = selection.normalized();
+    if (!normalized.isValid() || !std::isfinite(normalized.left()) ||
+        !std::isfinite(normalized.top()) || !std::isfinite(normalized.width()) ||
+        !std::isfinite(normalized.height()) || !std::isfinite(aspectRatio) || aspectRatio <= 0.0 ||
+        !std::isfinite(minimumSelectionSize) || minimumSelectionSize < 0.0) {
+        return {};
+    }
+
+    const qreal minimumWidth = std::max(minimumSelectionSize, minimumSelectionSize / aspectRatio);
+    qreal width = std::max(normalized.width(), minimumWidth);
+    if (!std::isfinite(width) || !std::isfinite(width * aspectRatio)) {
+        return {};
+    }
+    qreal left = normalized.left();
+    qreal top = normalized.top();
+    if (!bounds.isNull()) {
+        const QRectF normalizedBounds = bounds.normalized();
+        if (!normalizedBounds.isValid() || !std::isfinite(normalizedBounds.left()) ||
+            !std::isfinite(normalizedBounds.top()) || !std::isfinite(normalizedBounds.width()) ||
+            !std::isfinite(normalizedBounds.height())) {
+            return {};
+        }
+        const qreal maximumWidth =
+            std::min(normalizedBounds.width(), normalizedBounds.height() / aspectRatio);
+        if (maximumWidth < minimumWidth) {
+            return {};
+        }
+        width = std::min(width, maximumWidth);
+        // Division followed by multiplication may exceed an exact canvas edge
+        // by one floating-point step. Keep the geometric ratio without clipping
+        // the dependent dimension independently.
+        if (width * aspectRatio > normalizedBounds.height()) {
+            width = std::nextafter(width, 0.0);
+        }
+        left = std::clamp(left, normalizedBounds.left(), normalizedBounds.right() - width);
+        top = std::clamp(top, normalizedBounds.top(),
+                         normalizedBounds.bottom() - width * aspectRatio);
+    }
+    return QRectF(left, top, width, width * aspectRatio);
 }
 
 QRectF draggedScreenshotSelectionRect(ScreenshotSelectionDragMode dragMode, const QRectF& origin,

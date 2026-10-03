@@ -1,5 +1,14 @@
 #include "snow_shot/presentation/components/settingscustomwidget.h"
+#include "snow_shot/presentation/components/formfields.h"
+#include "snow_shot/app/edition.h"
+#if SNOW_SHOT_ENABLE_API_CONFIGURATION
 #include "snow_shot/presentation/components/customaimodelssettingswidget.h"
+#endif
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION && SNOW_SHOT_ENABLE_API_CONFIGURATION
+#include "snow_shot/presentation/components/texttranslationsettingswidget.h"
+#endif
+
+#include "snow_shot/presentation/editionfeatures.h"
 
 #include "snow_shot/presentation/components/toolbareditorsettingswidget.h"
 #include "snow_shot/presentation/components/storagestatussettingswidget.h"
@@ -7,12 +16,26 @@
 #include "snow_shot/presentation/settings/settingsregistry.h"
 #include "snow_shot/presentation/settings/settingsruntimesession.h"
 #include "snow_shot/presentation/styles/thememanager.h"
+#include "snow_shot/presentation/styles/mainwindowcomponenttoken.h"
 
+#include "theme/theme_manager.h"
 #include "widgets/button.h"
 #include "widgets/checkbox.h"
 #include "widgets/divider.h"
+#include "widgets/input_text_edit.h"
+#include "widgets/tag.h"
+#include "antd_icons.h"
 
 #include <QApplication>
+#include <QDir>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonArray>
+#include <QClipboard>
+#include <QFontDatabase>
+#include <QShowEvent>
+#include <QStandardPaths>
+#include <QTimer>
 #include <QDrag>
 #include <QDragEnterEvent>
 #include <QDragLeaveEvent>
@@ -28,6 +51,7 @@
 #include <QMimeData>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QPainterPath>
 #include <QPalette>
 #include <QSet>
 #include <QSignalBlocker>
@@ -40,6 +64,18 @@
 namespace {
 namespace toolbar_layout = snow_shot::presentation::toolbar_layout;
 namespace storage = snow_shot::storage;
+
+[[maybe_unused]] const char* const kFloatingToolbarEditorTexts[] = {
+    QT_TRANSLATE_NOOP("FloatingToolbarEditorSettingsWidget",
+                      "Drop beside a tool to create a position. Drop above a tool to stack it. The "
+                      "bottom tool stays on the main toolbar row."),
+    QT_TRANSLATE_NOOP("FloatingToolbarEditorSettingsWidget", "Floating toolbar preview"),
+    QT_TRANSLATE_NOOP("FloatingToolbarEditorSettingsWidget", "Hidden tools"),
+    QT_TRANSLATE_NOOP("FloatingToolbarEditorSettingsWidget",
+                      "Drag tools here to hide them from the floating toolbar."),
+    QT_TRANSLATE_NOOP("FloatingToolbarEditorSettingsWidget", "No hidden tools"),
+    QT_TRANSLATE_NOOP("FloatingToolbarEditorSettingsWidget", "Hidden floating toolbar tools"),
+};
 
 constexpr char kToolbarItemMimeType[] = "application/x-snow-shot-toolbar-item";
 constexpr char kToolbarItemProperty[] = "screenshotToolbarItemId";
@@ -56,7 +92,7 @@ constexpr int kHiddenZoneHeight = 56;
     QT_TRANSLATE_NOOP(
         "DrawingToolbarEditorSettingsWidget",
         "Drop beside a tool to create a position. Drop above a tool to stack it. The bottom "
-        "tool stays on the main toolbar row."),
+        "tool stays on the main toolbar row. Separator Component occupies its own position."),
     QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Drawing toolbar preview"),
     QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Hidden tools"),
     QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget",
@@ -118,6 +154,9 @@ class ToolbarDragButton final : public adqt::widgets::AdButton {
         setCursor(Qt::OpenHandCursor);
         setFixedSize(kToolbarButtonSize, kToolbarButtonSize);
         setIconSize(QSize(kToolbarIconSize, kToolbarIconSize));
+        if (itemId == QStringLiteral("separator")) {
+            setText(QStringLiteral("│"));
+        }
     }
 
   protected:
@@ -239,6 +278,8 @@ class ToolbarDropSurface final : public QFrame {
         shadow->setOffset(0.0, 3.0);
         shadow->setColor(QColor(0, 0, 0, 90));
         setGraphicsEffect(shadow);
+        connect(&adqt::theme::ThemeManager::instance(), &adqt::theme::ThemeManager::themeChanged,
+                this, [this] { update(); });
     }
 
     [[nodiscard]] QHBoxLayout* contentLayout() const {
@@ -273,7 +314,8 @@ class ToolbarDropSurface final : public QFrame {
     void dragEnterEvent(QDragEnterEvent* event) override {
         if (hasToolbarItem(event != nullptr ? event->mimeData() : nullptr)) {
             m_dragActive = true;
-            updateIndicator(event->position().toPoint());
+            updateIndicator(event->position().toPoint(),
+                            QString::fromUtf8(event->mimeData()->data(kToolbarItemMimeType)));
             update();
             event->acceptProposedAction();
             return;
@@ -283,7 +325,8 @@ class ToolbarDropSurface final : public QFrame {
 
     void dragMoveEvent(QDragMoveEvent* event) override {
         if (hasToolbarItem(event != nullptr ? event->mimeData() : nullptr)) {
-            updateIndicator(event->position().toPoint());
+            updateIndicator(event->position().toPoint(),
+                            QString::fromUtf8(event->mimeData()->data(kToolbarItemMimeType)));
             event->acceptProposedAction();
             return;
         }
@@ -311,7 +354,7 @@ class ToolbarDropSurface final : public QFrame {
             return;
         }
         if (m_dropHandler) {
-            m_dropHandler(itemId, dropLocation(event->position().toPoint()));
+            m_dropHandler(itemId, dropLocation(event->position().toPoint(), itemId));
         }
         event->setDropAction(Qt::MoveAction);
         event->accept();
@@ -322,7 +365,9 @@ class ToolbarDropSurface final : public QFrame {
 
         QPainter painter(this);
         painter.setRenderHint(QPainter::Antialiasing, true);
-        painter.setBrush(m_surfaceColor.isValid() ? m_surfaceColor : QColor(Qt::white));
+        const QColor background = snow_shot::presentation::styles::mainWindowBackgroundColor(
+            this, m_surfaceColor.isValid() ? m_surfaceColor : QColor(Qt::white));
+        painter.setBrush(background);
         if (m_dragActive && m_accentColor.isValid()) {
             QColor outline = m_accentColor;
             outline.setAlpha(110);
@@ -331,21 +376,37 @@ class ToolbarDropSurface final : public QFrame {
             painter.setPen(Qt::NoPen);
         }
         const int bottomBarHeight = kToolbarButtonSize + kToolbarVerticalMargin * 2;
-        painter.drawRoundedRect(
+        const bool translucent = background.alpha() < 255;
+        QPainterPath surfacePath;
+        const QRectF bottomBarRect =
             QRectF(0, qMax(0, height() - bottomBarHeight), width(), bottomBarHeight)
-                .adjusted(0.5, 0.5, -0.5, -0.5),
-            kToolbarRadius, kToolbarRadius);
+                .adjusted(0.5, 0.5, -0.5, -0.5);
+        if (translucent) {
+            surfacePath.addRoundedRect(bottomBarRect, kToolbarRadius, kToolbarRadius);
+        } else {
+            painter.drawRoundedRect(bottomBarRect, kToolbarRadius, kToolbarRadius);
+        }
         for (ToolbarPositionWidget* position : std::as_const(m_positions)) {
             if (position == nullptr || position->height() <= kToolbarButtonSize) {
                 continue;
             }
             const QRect geometry = position->geometry();
             const int extensionTop = qMax(0, geometry.top() - kToolbarVerticalMargin);
-            painter.drawRoundedRect(QRectF(geometry.left() - kToolbarVerticalMargin, extensionTop,
-                                           geometry.width() + kToolbarVerticalMargin * 2,
-                                           height() - extensionTop)
-                                        .adjusted(0.5, 0.5, -0.5, -0.5),
-                                    kToolbarRadius, kToolbarRadius);
+            const QRectF extensionRect =
+                QRectF(geometry.left() - kToolbarVerticalMargin, extensionTop,
+                       geometry.width() + kToolbarVerticalMargin * 2, height() - extensionTop)
+                    .adjusted(0.5, 0.5, -0.5, -0.5);
+            if (translucent) {
+                QPainterPath extension;
+                extension.addRoundedRect(extensionRect, kToolbarRadius, kToolbarRadius);
+                surfacePath = surfacePath.united(extension);
+            } else {
+                painter.drawRoundedRect(extensionRect, kToolbarRadius, kToolbarRadius);
+            }
+        }
+        // Paint the joined surface once so stacked tool positions share one mask.
+        if (translucent) {
+            painter.drawPath(surfacePath);
         }
     }
 
@@ -354,7 +415,7 @@ class ToolbarDropSurface final : public QFrame {
         return mimeData != nullptr && mimeData->hasFormat(kToolbarItemMimeType);
     }
 
-    [[nodiscard]] DropLocation dropLocation(const QPoint& position) const {
+    [[nodiscard]] DropLocation dropLocation(const QPoint& position, const QString& itemId) const {
         for (int index = 0; index < m_positions.size(); ++index) {
             ToolbarPositionWidget* toolbarPosition = m_positions.at(index);
             if (toolbarPosition == nullptr) {
@@ -362,6 +423,11 @@ class ToolbarDropSurface final : public QFrame {
             }
             const QRect geometry = toolbarPosition->geometry();
             if (position.x() >= geometry.left() && position.x() <= geometry.right()) {
+                if (itemId == QStringLiteral("separator") ||
+                    toolbarPosition->property("screenshotToolbarContainsSeparator").toBool()) {
+                    return {DropKind::NewPosition,
+                            index + (position.x() > geometry.center().x() ? 1 : 0), 0};
+                }
                 return {DropKind::Stack, index, toolbarPosition->insertionIndex(position, this)};
             }
             if (position.x() < geometry.left()) {
@@ -371,8 +437,8 @@ class ToolbarDropSurface final : public QFrame {
         return {DropKind::NewPosition, static_cast<int>(m_positions.size()), 0};
     }
 
-    void updateIndicator(const QPoint& position) {
-        const DropLocation location = dropLocation(position);
+    void updateIndicator(const QPoint& position, const QString& itemId) {
+        const DropLocation location = dropLocation(position, itemId);
         if (location.kind == DropKind::NewPosition) {
             int indicatorX = kToolbarHorizontalMargin;
             if (!m_positions.isEmpty()) {
@@ -466,6 +532,8 @@ class ToolbarHiddenDropZone final : public QFrame {
         m_emptyLabel->setObjectName(QStringLiteral("%1-hidden-empty").arg(objectNamePrefix));
         m_emptyLabel->setAlignment(Qt::AlignCenter);
         m_layout->addWidget(m_emptyLabel, 1);
+        connect(&adqt::theme::ThemeManager::instance(), &adqt::theme::ThemeManager::themeChanged,
+                this, [this] { update(); });
     }
 
     void setButtons(const QVector<ToolbarDragButton*>& buttons) {
@@ -571,7 +639,8 @@ class ToolbarHiddenDropZone final : public QFrame {
         Q_UNUSED(event);
         QPainter painter(this);
         painter.setRenderHint(QPainter::Antialiasing, true);
-        painter.setBrush(m_backgroundColor.isValid() ? m_backgroundColor : QColor(Qt::transparent));
+        painter.setBrush(snow_shot::presentation::styles::mainWindowBackgroundColor(
+            this, m_backgroundColor.isValid() ? m_backgroundColor : QColor(Qt::transparent)));
         QColor outline = m_dragActive && m_accentColor.isValid() ? m_accentColor : m_borderColor;
         painter.setPen(outline.isValid() ? QPen(outline, m_dragActive ? 1.5 : 1.0) : Qt::NoPen);
         painter.drawRoundedRect(QRectF(rect()).adjusted(0.75, 0.75, -0.75, -0.75), kToolbarRadius,
@@ -709,6 +778,7 @@ class TrayMenuOptionsSettingsWidget final : public SettingsCustomWidget {
         auto* options = new QWidget(this);
         options->setObjectName(QStringLiteral("settings-tray-menu-options-grid"));
         auto* grid = new QGridLayout(options);
+        m_optionsGrid = grid;
         grid->setContentsMargins(0, 6, 0, 0);
         grid->setHorizontalSpacing(snow_shot::presentation::styles::ThemeManager::instance()
                                        .themeColorScheme()
@@ -717,23 +787,17 @@ class TrayMenuOptionsSettingsWidget final : public SettingsCustomWidget {
         grid->setColumnStretch(0, 1);
         grid->setColumnStretch(1, 1);
 
-        int row = 0;
-        bool firstGroup = true;
         for (const auto& group : m_registry.catalog().trayMenuGroups()) {
             if (group.options.isEmpty()) {
                 continue;
             }
-            if (!firstGroup) {
-                auto* separator = new adqt::widgets::AdDivider(options);
-                separator->setObjectName(
-                    QStringLiteral("settings-tray-menu-options-separator-%1").arg(group.id));
-                separator->setDividerSize(adqt::widgets::AdDivider::Size::Small);
-                grid->addWidget(separator, row++, 0, 1, 2);
-            }
+            auto* separator = new adqt::widgets::AdDivider(options);
+            separator->setObjectName(
+                QStringLiteral("settings-tray-menu-options-separator-%1").arg(group.id));
+            separator->setDividerSize(adqt::widgets::AdDivider::Size::Small);
+            m_separators.insert(group.id, separator);
 
-            const int optionCount = static_cast<int>(group.options.size());
-            for (int index = 0; index < optionCount; ++index) {
-                const auto& option = group.options.at(index);
+            for (const auto& option : group.options) {
                 auto* checkbox = new adqt::widgets::AdCheckbox(options);
                 checkbox->setObjectName(
                     QStringLiteral("settings-tray-menu-option-%1").arg(option.id));
@@ -742,10 +806,7 @@ class TrayMenuOptionsSettingsWidget final : public SettingsCustomWidget {
                 m_checkboxes.insert(option.id, checkbox);
                 connect(checkbox, &QAbstractButton::toggled, this,
                         [this](bool) { applySelection(); });
-                grid->addWidget(checkbox, row + index / 2, index % 2);
             }
-            row += (optionCount + 1) / 2;
-            firstGroup = false;
         }
         rootLayout->addWidget(options);
 
@@ -789,6 +850,41 @@ class TrayMenuOptionsSettingsWidget final : public SettingsCustomWidget {
                                                  SettingsSwitchBinding::TranslationPageEnabled));
         }
         m_syncing = false;
+        layoutVisibleOptions();
+    }
+
+    void layoutVisibleOptions() {
+        // Hidden widgets must not reserve cells in the ordered, two-column option list.
+        // Keep the widgets themselves so their selection and signal connections survive.
+        while (auto* item = m_optionsGrid->takeAt(0)) {
+            delete item;
+        }
+        int row = 0;
+        bool firstGroup = true;
+        for (const auto& group : m_registry.catalog().trayMenuGroups()) {
+            auto* separator = m_separators.value(group.id);
+            if (separator == nullptr) {
+                continue;
+            }
+            separator->hide();
+            int visibleCount = 0;
+            for (const auto& option : group.options) {
+                auto* checkbox = m_checkboxes.value(option.id);
+                if (checkbox->isHidden()) {
+                    continue;
+                }
+                if (visibleCount == 0 && !firstGroup) {
+                    m_optionsGrid->addWidget(separator, row++, 0, 1, 2);
+                    separator->show();
+                }
+                m_optionsGrid->addWidget(checkbox, row + visibleCount / 2, visibleCount % 2);
+                ++visibleCount;
+            }
+            if (visibleCount > 0) {
+                row += (visibleCount + 1) / 2;
+                firstGroup = false;
+            }
+        }
     }
 
     void applySelection() {
@@ -816,6 +912,8 @@ class TrayMenuOptionsSettingsWidget final : public SettingsCustomWidget {
     snow_shot::presentation::settings::SettingsRuntimeSession& m_runtimeSession;
     QLabel* m_title = nullptr;
     QLabel* m_description = nullptr;
+    QGridLayout* m_optionsGrid = nullptr;
+    QHash<QString, adqt::widgets::AdDivider*> m_separators;
     QHash<QString, adqt::widgets::AdCheckbox*> m_checkboxes;
     bool m_syncing = false;
 };
@@ -834,6 +932,10 @@ struct ToolbarEditorSettingsWidget::Private {
                                    : QStringLiteral("settings-screenshot-toolbar");
         translationContext = drawing ? "DrawingToolbarEditorSettingsWidget"
                                      : "ScreenshotToolbarEditorSettingsWidget";
+        if (layoutKind == storage::ScreenshotToolbarLayoutKind::FloatingTools) {
+            objectNamePrefix = QStringLiteral("settings-floating-toolbar");
+            translationContext = "FloatingToolbarEditorSettingsWidget";
+        }
         if (layoutKind == storage::ScreenshotToolbarLayoutKind::PinnedActionTools) {
             objectNamePrefix = QStringLiteral("settings-pinned-toolbar");
             translationContext = "PinnedToolbarEditorSettingsWidget";
@@ -891,7 +993,9 @@ struct ToolbarEditorSettingsWidget::Private {
         for (const toolbar_layout::EditorDescriptor& descriptor : descriptors) {
             const QString itemId = QString::fromLatin1(descriptor.id);
             auto* button = new ToolbarDragButton(itemId, objectNamePrefix, &owner);
-            button->setIconRef(toolbar_layout::icon(descriptor.icon));
+            if (itemId != QStringLiteral("separator")) {
+                button->setIconRef(toolbar_layout::icon(descriptor.icon));
+            }
             buttons.insert(itemId, button);
         }
 
@@ -931,6 +1035,8 @@ struct ToolbarEditorSettingsWidget::Private {
             const QStringList& itemIds = layout.positions.at(positionIndex);
             auto* position =
                 new ToolbarPositionWidget(positionIndex, objectNamePrefix, toolbarSurface);
+            position->setProperty("screenshotToolbarContainsSeparator",
+                                  itemIds.contains(QStringLiteral("separator")));
             for (const QString& itemId : itemIds) {
                 ToolbarDragButton* button = buttons.value(itemId);
                 if (button == nullptr) {
@@ -1045,20 +1151,28 @@ struct ToolbarEditorSettingsWidget::Private {
     void retranslateUi() {
         instructionLabel->setText(translatedToolbarText(
             translationContext,
-            "Drop beside a tool to create a position. Drop above a tool to stack it. The bottom "
-            "tool stays on the main toolbar row."));
+            layoutKind == storage::ScreenshotToolbarLayoutKind::DrawingTools
+                ? "Drop beside a tool to create a position. Drop above a tool to stack it. The "
+                  "bottom tool stays on the main toolbar row. Separator Component occupies its "
+                  "own position."
+                : "Drop beside a tool to create a position. Drop above a tool to stack it. The "
+                  "bottom tool stays on the main toolbar row."));
         toolbarSurface->setAccessibleName(translatedToolbarText(
             translationContext,
             layoutKind == storage::ScreenshotToolbarLayoutKind::DrawingTools
                 ? "Drawing toolbar preview"
             : layoutKind == storage::ScreenshotToolbarLayoutKind::PinnedActionTools
                 ? "Pin to Screen toolbar preview"
+            : layoutKind == storage::ScreenshotToolbarLayoutKind::FloatingTools
+                ? "Floating toolbar preview"
                 : "Screenshot toolbar preview"));
         hiddenTitleLabel->setText(translatedToolbarText(translationContext, "Hidden tools"));
         hiddenDescriptionLabel->setText(translatedToolbarText(
             translationContext,
             layoutKind == storage::ScreenshotToolbarLayoutKind::PinnedActionTools
                 ? "Drag tools here to hide them from the pinned toolbar."
+            : layoutKind == storage::ScreenshotToolbarLayoutKind::FloatingTools
+                ? "Drag tools here to hide them from the floating toolbar."
                 : "Drag tools here to hide them from the screenshot toolbar."));
         hiddenZone->setEmptyText(translatedToolbarText(translationContext, "No hidden tools"));
         hiddenZone->setAccessibleName(translatedToolbarText(
@@ -1067,12 +1181,16 @@ struct ToolbarEditorSettingsWidget::Private {
                 ? "Hidden drawing toolbar tools"
             : layoutKind == storage::ScreenshotToolbarLayoutKind::PinnedActionTools
                 ? "Hidden pinned toolbar tools"
+            : layoutKind == storage::ScreenshotToolbarLayoutKind::FloatingTools
+                ? "Hidden floating toolbar tools"
                 : "Hidden screenshot toolbar tools"));
         for (const toolbar_layout::EditorDescriptor& descriptor : descriptors) {
             ToolbarDragButton* button = buttons.value(QString::fromLatin1(descriptor.id));
             if (button != nullptr) {
                 const QString label =
-                    translatedToolbarText(descriptor.translationContext, descriptor.label);
+                    translatedToolbarText(descriptor.translationContext, descriptor.label)
+                        .replace(QStringLiteral("%1"),
+                                 QString::number(storage::ScreenshotSettings().delaySeconds()));
                 button->setToolTip(label);
                 button->setAccessibleName(label);
             }
@@ -1126,6 +1244,171 @@ void ToolbarEditorSettingsWidget::changeEvent(QEvent* event) {
     }
 }
 
+namespace {
+class McpStatusSettingsWidget final : public SettingsCustomWidget {
+  public:
+    explicit McpStatusSettingsWidget(QWidget* parent) : SettingsCustomWidget(parent) {
+        auto* layout = new QVBoxLayout(this);
+        layout->setContentsMargins(0, 0, 0, 0);
+        auto* statusRow = new QHBoxLayout();
+        m_status = new adqt::widgets::AdTag(this);
+        m_status->setObjectName(QStringLiteral("settings-mcp-status"));
+        m_status->setFocusPolicy(Qt::NoFocus);
+        m_clients = new QLabel(this);
+        m_clients->setObjectName(QStringLiteral("settings-mcp-clients"));
+        m_clients->setWordWrap(true);
+        statusRow->addWidget(m_status);
+        statusRow->addWidget(m_clients, 1);
+        layout->addLayout(statusRow);
+        auto* divider = new adqt::widgets::AdDivider(this);
+        divider->setDividerSize(adqt::widgets::AdDivider::Size::Small);
+        layout->addWidget(divider);
+
+        auto* heading = new QHBoxLayout();
+        m_title = new QLabel(this);
+        m_title->setWordWrap(true);
+        m_copy = new adqt::widgets::AdButton(this);
+        m_copy->setObjectName(QStringLiteral("settings-mcp-copy"));
+        m_copy->setIconRef(adqt::icons::antd::outlined::Copy());
+        heading->addWidget(m_title, 1);
+        heading->addWidget(m_copy);
+        layout->addLayout(heading);
+        m_help = new QLabel(this);
+        m_help->setObjectName(QStringLiteral("settings-mcp-help"));
+        m_help->setWordWrap(true);
+        layout->addWidget(m_help);
+        namespace fields = snow_shot::presentation::components::form_fields;
+        fields::Options configOptions;
+        configOptions.parent = this;
+        configOptions.readOnly = true;
+        fields::Metadata configMetadata;
+        configMetadata.id = QStringLiteral("settings-mcp-config");
+        const auto configurationField = fields::textArea(configMetadata, configOptions);
+        m_config = configurationField.editor;
+        m_config->setObjectName(QStringLiteral("settings-mcp-config"));
+        // Keep this as a real Ant Design textarea in its native read-only mode. The
+        // contents remain selectable for copying while editing is disabled by the
+        // control itself.
+        m_config->setReadOnly(true);
+        m_config->setAcceptRichText(false);
+        // Wrap at the widget width: AdTextEdit hides the native scroll bars and only
+        // provides a vertical overlay bar, so unwrapped long command paths would be
+        // clipped without any way to reach them.
+        m_config->setLineWrapMode(QTextEdit::WidgetWidth);
+        m_config->setHeightMode(adqt::widgets::AdTextEdit::HeightMode::FixedRows);
+        m_config->setMinimumVisibleRows(9);
+        m_config->setMaximumVisibleRows(9);
+        m_config->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
+        layout->addWidget(configurationField.viewWidget());
+        m_endpoint = new QLabel(this);
+        m_endpoint->setObjectName(QStringLiteral("settings-mcp-endpoint"));
+        m_endpoint->setTextFormat(Qt::PlainText);
+        m_endpoint->setWordWrap(true);
+        m_endpoint->setTextInteractionFlags(Qt::TextSelectableByMouse |
+                                            Qt::TextSelectableByKeyboard);
+        layout->addWidget(m_endpoint);
+        connect(m_copy, &QAbstractButton::clicked, this, [this] {
+            QApplication::clipboard()->setText(m_config->toPlainText());
+            m_copy->setText(QCoreApplication::translate("ScreenshotMcpSettings", "Copied"));
+            QTimer::singleShot(2000, this, [this] { updateCopyText(); });
+        });
+        auto* timer = new QTimer(this);
+        connect(timer, &QTimer::timeout, this, [this] {
+            if (isVisible())
+                refresh();
+        });
+        timer->start(1000);
+        retranslateUi();
+        applyTheme(snow_shot::presentation::styles::ThemeManager::instance().themeColorScheme());
+    }
+    void applyTheme(const snow_shot::presentation::styles::ThemeColorScheme& scheme) override {
+        layout()->setSpacing(scheme.metricAlias.marginSM);
+        for (auto* label : {m_title, m_clients, m_help, m_endpoint}) {
+            QFont font = label->font();
+            font.setPixelSize(scheme.metricAlias.fontSize);
+            font.setWeight(label == m_title ? QFont::DemiBold : QFont::Normal);
+            label->setFont(font);
+            auto colors = label->palette();
+            colors.setColor(QPalette::WindowText, label == m_title ? scheme.map.colorText
+                                                                   : scheme.map.colorTextSecondary);
+            label->setPalette(colors);
+        }
+    }
+    void retranslateUi() override {
+        m_title->setText(
+            QCoreApplication::translate("ScreenshotMcpSettings", "MCP client configuration"));
+#if SNOW_SHOT_EDITION_MINI
+        m_help->setText(
+            QCoreApplication::translate(
+                "ScreenshotMcpSettings",
+                "Add this configuration to your MCP client, then restart the client to connect. "
+                "Keep %1 running while using MCP.")
+                .arg(snow_shot::app::edition::productName()));
+#else
+        m_help->setText(QCoreApplication::translate(
+            "ScreenshotMcpSettings",
+            "Add this configuration to your MCP client, then restart the client to connect. "
+            "Keep Snow Shot running while using MCP."));
+#endif
+        updateCopyText();
+        const QString executable = QDir(QCoreApplication::applicationDirPath())
+                                       .filePath(snow_shot::app::edition::mcpName());
+        QJsonObject server;
+        server.insert(QStringLiteral("command"), executable);
+        server.insert(QStringLiteral("args"), QJsonArray{});
+        QJsonObject servers;
+        servers.insert(snow_shot::app::edition::productId(), server);
+        QJsonObject config;
+        config.insert(QStringLiteral("mcpServers"), servers);
+        m_config->setPlainText(QString::fromUtf8(QJsonDocument(config).toJson()));
+        const QString endpoint =
+            QDir(QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation))
+                .filePath(snow_shot::app::edition::registryName() + QStringLiteral("/mcp/") +
+                          snow_shot::app::edition::productId() + QStringLiteral("-mcp.json"));
+        m_endpoint->setText(
+            QCoreApplication::translate("ScreenshotMcpSettings", "Local endpoint descriptor: %1")
+                .arg(QDir::toNativeSeparators(endpoint)));
+        refresh();
+    }
+    void changeEvent(QEvent* event) override {
+        SettingsCustomWidget::changeEvent(event);
+        if (event != nullptr && event->type() == QEvent::LanguageChange) {
+            retranslateUi();
+        }
+    }
+    void showEvent(QShowEvent* event) override {
+        SettingsCustomWidget::showEvent(event);
+        refresh();
+    }
+
+  private:
+    void updateCopyText() {
+        m_copy->setText(QCoreApplication::translate("ScreenshotMcpSettings", "Copy configuration"));
+    }
+    void refresh() {
+        const bool running = qApp->property("snowShotMcpRunning").toBool();
+        const int count = qApp->property("snowShotMcpConnections").toInt();
+        m_status->setText(
+            running ? QCoreApplication::translate("ScreenshotMcpSettings", "Running")
+                    : QCoreApplication::translate("ScreenshotMcpSettings", "Unavailable"));
+        m_status->setColorScheme(running ? adqt::widgets::AdTag::ColorScheme::Success
+                                         : adqt::widgets::AdTag::ColorScheme::Default);
+        m_clients->setText(
+            running ? QCoreApplication::translate("ScreenshotMcpSettings", "Connected clients: %1")
+                          .arg(count)
+                    : QCoreApplication::translate("ScreenshotMcpSettings",
+                                                  "MCP is disabled or unavailable."));
+    }
+    adqt::widgets::AdTag* m_status = nullptr;
+    QLabel* m_clients = nullptr;
+    QLabel* m_title = nullptr;
+    QLabel* m_help = nullptr;
+    QLabel* m_endpoint = nullptr;
+    adqt::widgets::AdButton* m_copy = nullptr;
+    adqt::widgets::AdTextEdit* m_config = nullptr;
+};
+} // namespace
+
 SettingsCustomWidget* createSettingsCustomWidget(
     snow_shot::presentation::settings::SettingsCustomRenderer renderer,
     const snow_shot::presentation::settings::SettingsRegistry& registry,
@@ -1133,18 +1416,33 @@ SettingsCustomWidget* createSettingsCustomWidget(
     snow_shot::presentation::settings::SettingsRuntimeSession& runtimeSession, QWidget* parent) {
     using snow_shot::presentation::settings::SettingsCustomRenderer;
     switch (renderer) {
+    case SettingsCustomRenderer::McpStatus:
+        return new McpStatusSettingsWidget(parent);
     case SettingsCustomRenderer::PermissionScreenRecording:
     case SettingsCustomRenderer::PermissionAccessibility:
     case SettingsCustomRenderer::PermissionInputMonitoring:
     case SettingsCustomRenderer::PermissionMicrophone:
         return nullptr;
+    case SettingsCustomRenderer::TextTranslationConfigurations:
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION && SNOW_SHOT_ENABLE_API_CONFIGURATION
+        return new TextTranslationSettingsWidget(runtimeSession, parent);
+#else
+        return nullptr;
+#endif
     case SettingsCustomRenderer::CustomAiModels:
+#if SNOW_SHOT_ENABLE_API_CONFIGURATION
         return new CustomAiModelsSettingsWidget(runtimeSession, parent);
+#else
+        return nullptr;
+#endif
     case SettingsCustomRenderer::StorageStatus:
         return new StorageStatusSettingsWidget(runtimeSession, parent);
     case SettingsCustomRenderer::DrawingToolbarEditor:
         return new ToolbarEditorSettingsWidget(
             renderer, storage::ScreenshotToolbarLayoutKind::DrawingTools, runtimeSession, parent);
+    case SettingsCustomRenderer::FloatingToolbarEditor:
+        return new ToolbarEditorSettingsWidget(
+            renderer, storage::ScreenshotToolbarLayoutKind::FloatingTools, runtimeSession, parent);
     case SettingsCustomRenderer::PinnedToolbarEditor:
         return new ToolbarEditorSettingsWidget(
             renderer, storage::ScreenshotToolbarLayoutKind::PinnedActionTools, runtimeSession,

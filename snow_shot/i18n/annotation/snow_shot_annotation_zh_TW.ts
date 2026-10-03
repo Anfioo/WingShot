@@ -12,6 +12,10 @@
             <translation>新增</translation>
         </message>
         <message>
+            <source>Add Template</source>
+            <translation>新增範本</translation>
+        </message>
+        <message>
             <source>Add screenshot region</source>
             <translation>新增截圖區域</translation>
         </message>
@@ -25,7 +29,7 @@
         </message>
         <message>
             <source>Adjust opacity</source>
-            <translation>調整透明度</translation>
+            <translation>調整不透明度</translation>
         </message>
         <message>
             <source>Align bottom</source>
@@ -60,6 +64,10 @@
             <translation>動畫錄製格式不包含音訊</translation>
         </message>
         <message>
+            <source>Arabic numerals</source>
+            <translation>阿拉伯數字</translation>
+        </message>
+        <message>
             <source>Arrow</source>
             <translation>箭頭</translation>
         </message>
@@ -92,6 +100,10 @@
             <translation>自動捲動</translation>
         </message>
         <message>
+            <source>Auto-scroll interval (scroll to adjust; click to reset to 200 ms)</source>
+            <translation>自動捲動間隔（滾輪調整；按一下重設為 200 ms）</translation>
+        </message>
+        <message>
             <source>Avatar</source>
             <translation>頭像</translation>
         </message>
@@ -104,12 +116,24 @@
             <translation>藍色</translation>
         </message>
         <message>
+            <source>Brightness</source>
+            <translation>亮度</translation>
+        </message>
+        <message>
             <source>Bring forward</source>
             <translation>上移一層</translation>
         </message>
         <message>
             <source>Bring to front</source>
             <translation>移至最上層</translation>
+        </message>
+        <message>
+            <source>Brush Eraser</source>
+            <translation>畫筆橡皮擦</translation>
+        </message>
+        <message>
+            <source>Brush eraser stroke width %1 (%2px)</source>
+            <translation>畫筆橡皮擦筆畫寬度 %1（%2px）</translation>
         </message>
         <message>
             <source>Cancel</source>
@@ -120,10 +144,6 @@
             <translation>取消截圖</translation>
         </message>
         <message>
-            <source>Capture cursor</source>
-            <translation>擷取游標</translation>
-        </message>
-        <message>
             <source>Center horizontally</source>
             <translation>水平置中</translation>
         </message>
@@ -132,8 +152,16 @@
             <translation>垂直置中</translation>
         </message>
         <message>
+            <source>Chinese numerals</source>
+            <translation>中文數字</translation>
+        </message>
+        <message>
             <source>Circle</source>
             <translation>圓形</translation>
+        </message>
+        <message>
+            <source>Click-through</source>
+            <translation>滑鼠穿透</translation>
         </message>
         <message>
             <source>Close recording</source>
@@ -168,6 +196,18 @@
             <translation>圓角半徑（捲動調整）</translation>
         </message>
         <message>
+            <source>Could not capture selected elements</source>
+            <translation>無法擷取所選元素</translation>
+        </message>
+        <message>
+            <source>Could not delete the draw template</source>
+            <translation>無法刪除繪圖範本</translation>
+        </message>
+        <message>
+            <source>Could not save the draw template</source>
+            <translation>無法儲存繪圖範本</translation>
+        </message>
+        <message>
             <source>Cross-line fill</source>
             <translation>交叉線填充</translation>
         </message>
@@ -182,6 +222,10 @@
         <message>
             <source>Current arrow stroke width</source>
             <translation>目前箭頭描邊寬度</translation>
+        </message>
+        <message>
+            <source>Current brush eraser stroke width</source>
+            <translation>目前畫筆橡皮擦筆畫寬度</translation>
         </message>
         <message>
             <source>Current pen filter stroke width</source>
@@ -206,6 +250,10 @@
         <message>
             <source>Current watermark font size</source>
             <translation>目前浮水印字型大小</translation>
+        </message>
+        <message>
+            <source>Cursor data is unavailable for this screenshot.</source>
+            <translation>此螢幕擷取沒有可用的游標資料。</translation>
         </message>
         <message>
             <source>Curve region</source>
@@ -238,6 +286,14 @@
         <message>
             <source>Delete</source>
             <translation>刪除</translation>
+        </message>
+        <message>
+            <source>Delete Draw Template</source>
+            <translation>刪除繪圖範本</translation>
+        </message>
+        <message>
+            <source>Delete draw template "%1"? This action cannot be undone.</source>
+            <translation>刪除繪圖範本「%1」？此操作無法復原。</translation>
         </message>
         <message>
             <source>Delete selected elements</source>
@@ -276,6 +332,10 @@
             <translation>拖曳工具列</translation>
         </message>
         <message>
+            <source>Draw Template</source>
+            <translation>繪圖範本</translation>
+        </message>
+        <message>
             <source>Edit</source>
             <translation>編輯</translation>
         </message>
@@ -284,8 +344,16 @@
             <translation>編輯選取範圍</translation>
         </message>
         <message>
+            <source>Effect Settings</source>
+            <translation>效果設定</translation>
+        </message>
+        <message>
             <source>Elbow arrow</source>
             <translation>折線箭頭</translation>
+        </message>
+        <message>
+            <source>Element Eraser</source>
+            <translation>元素橡皮擦</translation>
         </message>
         <message>
             <source>Ellipse</source>
@@ -358,6 +426,10 @@
         <message>
             <source>Eraser</source>
             <translation>橡皮擦</translation>
+        </message>
+        <message>
+            <source>Exit</source>
+            <translation>結束</translation>
         </message>
         <message>
             <source>Export Settings</source>
@@ -488,6 +560,10 @@
             <translation>鍵盤大小</translation>
         </message>
         <message>
+            <source>LaTeX Formula Recognition</source>
+            <translation>LaTeX 公式辨識</translation>
+        </message>
+        <message>
             <source>Line</source>
             <translation>直線</translation>
         </message>
@@ -502,6 +578,14 @@
         <message>
             <source>Line text fill</source>
             <translation>線條文字填充</translation>
+        </message>
+        <message>
+            <source>Logical Pixel Selection</source>
+            <translation>邏輯像素選取範圍</translation>
+        </message>
+        <message>
+            <source>Lowercase letters</source>
+            <translation>小寫字母</translation>
         </message>
         <message>
             <source>Mask color</source>
@@ -576,12 +660,16 @@
             <translation>垂直移動選取範圍（按住並拖曳）</translation>
         </message>
         <message>
+            <source>No matching templates</source>
+            <translation>沒有符合的範本</translation>
+        </message>
+        <message>
             <source>No templates yet</source>
             <translation>尚無範本</translation>
         </message>
         <message>
             <source>Opacity</source>
-            <translation>透明度</translation>
+            <translation>不透明度</translation>
         </message>
         <message>
             <source>Open recording folder</source>
@@ -628,6 +716,10 @@
             <translation>畫筆醒目提示描邊寬度 %1 (%2px)</translation>
         </message>
         <message>
+            <source>Physical Pixel Selection</source>
+            <translation>實體像素選取範圍</translation>
+        </message>
+        <message>
             <source>Pick color from canvas</source>
             <translation>從畫布擷取色彩</translation>
         </message>
@@ -650,6 +742,14 @@
         <message>
             <source>Polyline region</source>
             <translation>折線區域</translation>
+        </message>
+        <message>
+            <source>Post-processing effects</source>
+            <translation>後製效果</translation>
+        </message>
+        <message>
+            <source>Progress Bar Color</source>
+            <translation>進度條顏色</translation>
         </message>
         <message>
             <source>Punctuation</source>
@@ -688,8 +788,16 @@
             <translation>錄製格式</translation>
         </message>
         <message>
+            <source>Recording settings</source>
+            <translation>錄影設定</translation>
+        </message>
+        <message>
             <source>Rectangle</source>
             <translation>矩形</translation>
+        </message>
+        <message>
+            <source>Rectangle Eraser</source>
+            <translation>矩形橡皮擦</translation>
         </message>
         <message>
             <source>Rectangle filter</source>
@@ -728,8 +836,16 @@
             <translation>繼續錄製</translation>
         </message>
         <message>
+            <source>Roman numerals</source>
+            <translation>羅馬數字</translation>
+        </message>
+        <message>
             <source>Save as file</source>
             <translation>另存為檔案</translation>
+        </message>
+        <message>
+            <source>Save to File</source>
+            <translation>儲存至檔案</translation>
         </message>
         <message>
             <source>Scrolling screenshot</source>
@@ -780,6 +896,10 @@
             <translation>序號文字大小 %1 像素</translation>
         </message>
         <message>
+            <source>Sequence number numeric type</source>
+            <translation>序號數字類型</translation>
+        </message>
+        <message>
             <source>Sequence number type</source>
             <translation>序號類型</translation>
         </message>
@@ -796,6 +916,22 @@
             <translation>圖形</translation>
         </message>
         <message>
+            <source>Show Cursor</source>
+            <translation>顯示游標</translation>
+        </message>
+        <message>
+            <source>Show Playback Time</source>
+            <translation>顯示播放時間</translation>
+        </message>
+        <message>
+            <source>Show Progress Bar</source>
+            <translation>顯示進度條</translation>
+        </message>
+        <message>
+            <source>Show QR Code</source>
+            <translation>顯示二維碼</translation>
+        </message>
+        <message>
             <source>Show cursor in recording</source>
             <translation>在錄製中顯示游標</translation>
         </message>
@@ -810,6 +946,10 @@
         <message>
             <source>Smart Erase</source>
             <translation>智慧擦除</translation>
+        </message>
+        <message>
+            <source>Smart Typesetting</source>
+            <translation>智慧排版</translation>
         </message>
         <message>
             <source>Solid arrow stroke</source>
@@ -1048,12 +1188,16 @@
             <translation>透明</translation>
         </message>
         <message>
-            <source>Unavailable while recording</source>
-            <translation>錄製期間無法使用</translation>
+            <source>Trim Video</source>
+            <translation>裁剪影片</translation>
         </message>
         <message>
             <source>Undo</source>
             <translation>復原</translation>
+        </message>
+        <message>
+            <source>Uppercase letters</source>
+            <translation>大寫字母</translation>
         </message>
         <message>
             <source>Vertical scrolling</source>
@@ -1100,12 +1244,24 @@
             <translation>毫秒</translation>
         </message>
         <message>
+            <source>ms</source>
+            <comment>Auto-scroll interval unit</comment>
+            <translation>ms</translation>
+        </message>
+        <message>
             <source>px</source>
             <translation>px</translation>
         </message>
         <message>
             <source>{text} represents the current watermark text; timestamp formats such as {YYYY-MM-DD_HH-mm-ss} are supported</source>
             <translation>{text} 代表目前的浮水印文字；支援 {YYYY-MM-DD_HH-mm-ss} 等時間戳記格式</translation>
+        </message>
+    </context>
+    <context>
+        <name>snow_shot::presentation::GlobalCanvasController</name>
+        <message>
+            <source>Could not change canvas click-through.</source>
+            <translation>無法切換畫布的滑鼠穿透狀態。</translation>
         </message>
     </context>
 </TS>

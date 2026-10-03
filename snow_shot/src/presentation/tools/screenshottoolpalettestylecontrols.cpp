@@ -72,8 +72,8 @@ constexpr int kWatermarkTemplateActionIconSize = 16;
 constexpr int kOpacitySliderWidth = 96;
 constexpr int kCompactSliderIconSize = 16;
 constexpr int kCompactSliderWidth = 96;
-constexpr double kMinWatermarkFontSize = 6.0;
-constexpr double kMaxWatermarkFontSize = 512.0;
+constexpr double kMinWatermarkFontSize = snow_canvas_style_limits::minimumFontSize;
+constexpr double kMaxWatermarkFontSize = snow_canvas_style_limits::maximumWatermarkFontSize;
 
 constexpr char kRoleOutlineStroke[] = "outline-stroke";
 constexpr char kRoleOutlineWidth[] = "outline-width";
@@ -101,7 +101,13 @@ constexpr char kRoleTextAlignment[] = "text-alignment";
 constexpr char kRoleTextStroke[] = "text-stroke";
 constexpr char kRoleSerialValue[] = "serial-value";
 constexpr char kRoleSerialType[] = "serial-type";
+constexpr char kRoleSerialNumericType[] = "serial-numeric-type";
 constexpr char kRoleFilterMode[] = "filter-mode";
+constexpr char kRoleEraserMode[] = "eraser-mode";
+[[maybe_unused]] constexpr const char* kEraserTranslations[] = {
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Current brush eraser stroke width"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Brush eraser stroke width %1 (%2px)"),
+};
 constexpr char kRoleFilterType[] = "filter-type";
 constexpr char kRoleFilterIntensity[] = "filter-intensity";
 constexpr char kRoleWatermarkText[] = "watermark-text";
@@ -131,7 +137,9 @@ constexpr char kSignatureTextAlignment[] = "icon-options:text-align";
 constexpr char kSignatureTextStroke[] = "width-color:text-stroke";
 constexpr char kSignatureSerialValue[] = "serial-value";
 constexpr char kSignatureSerialType[] = "radio:serial-type";
+constexpr char kSignatureSerialNumericType[] = "radio:serial-numeric-type";
 constexpr char kSignatureFilterMode[] = "radio:filter-mode";
+constexpr char kSignatureEraserMode[] = "radio:eraser-mode";
 constexpr char kSignatureFilterType[] = "select:filter-types";
 constexpr char kSignatureAutoFilterType[] = "select:auto-filter-types";
 constexpr char kSignatureFilterIntensity[] = "slider:filter-intensity";
@@ -164,13 +172,18 @@ QVector<QByteArray> styleEditorRoles(ScreenshotToolPalette::Tool tool) {
         return {kRoleForegroundColor, kRoleTextFont, "text-alignment",
                 "text-stroke",        kRoleTextFill, kRoleCornerRadius};
     case Tool::SerialNumber:
-        return {kRoleForegroundColor, kRoleSerialType, "serial-value", kRoleTextFont,
-                kRoleTextFill};
+        return {kRoleForegroundColor, kRoleSerialType, kRoleSerialNumericType,
+                "serial-value",       kRoleTextFont,   kRoleTextFill};
     case Tool::AutoFilter:
     case Tool::RectangleFilter:
         return {"filter-mode", "filter-type", "filter-intensity"};
     case Tool::PenFilter:
         return {"filter-mode", "filter-type", kRoleBrushWidth, "filter-intensity"};
+    case Tool::Eraser:
+    case Tool::RectangleEraser:
+        return {kRoleEraserMode};
+    case Tool::BrushEraser:
+        return {kRoleEraserMode, kRoleBrushWidth};
     case Tool::Watermark:
         return {kRoleForegroundColor,
                 "watermark-text",
@@ -478,6 +491,7 @@ void finalizeRawEditorRoot(QWidget* root) {
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Grayscale"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Inversion"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Emboss"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Brightness"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Smart Erase"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Filter intensity"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Adjust filter intensity"),
@@ -759,6 +773,7 @@ void ScreenshotToolPaletteStyleControls::rebuildRegisteredComponents() {
     append(m_penHighlightColorEditor);
     append(m_penHighlightStrokeWidthEditor);
     append(m_penFilterStrokeWidthEditor);
+    append(m_brushEraserStrokeWidthEditor);
     append(m_arrowStrokeWidthEditor);
     append(m_arrowStrokeEditor);
     append(m_startArrowheadEditor);
@@ -835,6 +850,9 @@ void ScreenshotToolPaletteStyleControls::parkStyleEditors(int tool, QWidget* con
     case Tool::PenFilter:
         park(kRoleBrushWidth, kSignatureBrushWidth, m_penFilterStrokeWidthEditor);
         break;
+    case Tool::BrushEraser:
+        park(kRoleBrushWidth, kSignatureBrushWidth, m_brushEraserStrokeWidthEditor);
+        break;
     case Tool::Watermark:
         park(kRoleForegroundColor, kSignatureForegroundColor, m_watermarkColorEditor);
         park(kRoleWatermarkFont, kSignatureWatermarkFont, m_watermarkFontEditor);
@@ -904,6 +922,9 @@ void ScreenshotToolPaletteStyleControls::restoreStyleEditors(int tool, QWidget* 
         break;
     case Tool::PenFilter:
         restore(kRoleBrushWidth, m_penFilterStrokeWidthEditor);
+        break;
+    case Tool::BrushEraser:
+        restore(kRoleBrushWidth, m_brushEraserStrokeWidthEditor);
         break;
     case Tool::Watermark:
         restore(kRoleForegroundColor, m_watermarkColorEditor);
@@ -1027,7 +1048,9 @@ void ScreenshotToolPaletteStyleControls::prepareStyleReconcile(int sourceTool, i
         }
     }
     if (shared(kRoleBrushWidth)) {
-        if (source == ScreenshotToolPalette::Tool::PenFilter) {
+        if (source == ScreenshotToolPalette::Tool::BrushEraser) {
+            stageComponent(kRoleBrushWidth, kSignatureBrushWidth, m_brushEraserStrokeWidthEditor);
+        } else if (source == ScreenshotToolPalette::Tool::PenFilter) {
             stageComponent(kRoleBrushWidth, kSignatureBrushWidth, m_penFilterStrokeWidthEditor);
         } else {
             stageComponent(kRoleBrushWidth, kSignatureBrushWidth, m_penHighlightStrokeWidthEditor);
@@ -1183,6 +1206,7 @@ void ScreenshotToolPaletteStyleControls::stageDestinationStyleEditors(
     case Tool::SerialNumber:
         stageComponent(kRoleForegroundColor, kSignatureForegroundColor, m_serialNumberColorEditor);
         stageWidget(kRoleSerialType);
+        stageWidget(kRoleSerialNumericType);
         stageWidget(kRoleSerialValue);
         stageComponent(kRoleTextFont, kSignatureTextFont, m_serialNumberFontEditor);
         stageComponent(kRoleTextFill, kSignatureTextFill, m_serialNumberFillEditor);
@@ -1202,6 +1226,14 @@ void ScreenshotToolPaletteStyleControls::stageDestinationStyleEditors(
         stageWidget(kRoleFilterType);
         stageComponent(kRoleBrushWidth, kSignatureBrushWidth, m_penFilterStrokeWidthEditor);
         stageWidget(kRoleFilterIntensity);
+        break;
+    case Tool::Eraser:
+    case Tool::RectangleEraser:
+        stageWidget(kRoleEraserMode);
+        break;
+    case Tool::BrushEraser:
+        stageWidget(kRoleEraserMode);
+        stageComponent(kRoleBrushWidth, kSignatureBrushWidth, m_brushEraserStrokeWidthEditor);
         break;
     case Tool::Watermark:
         stageComponent(kRoleForegroundColor, kSignatureForegroundColor, m_watermarkColorEditor);
@@ -2279,6 +2311,70 @@ QWidget* ScreenshotToolPaletteStyleControls::buildSerialNumberFamily(
         host.addGroupSeparator(layout);
     }
 
+    ScreenshotToolPaletteRadioEditorConfig serialNumberNumericTypeConfig;
+    serialNumberNumericTypeConfig.objectName =
+        QStringLiteral("screenshotSerialNumberNumericTypeButtonGroup");
+    serialNumberNumericTypeConfig.options = {
+        {static_cast<int>(SnowCanvasSerialNumberNumericType::Arabic),
+         ScreenshotToolPaletteTranslationText(
+             QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Arabic numerals")),
+         custom_outlined_icons::SequenceNumberNumericArabic()},
+        {static_cast<int>(SnowCanvasSerialNumberNumericType::Roman),
+         ScreenshotToolPaletteTranslationText(
+             QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Roman numerals")),
+         custom_outlined_icons::SequenceNumberNumericRoman()},
+        {static_cast<int>(SnowCanvasSerialNumberNumericType::LowercaseLetters),
+         ScreenshotToolPaletteTranslationText(
+             QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Lowercase letters")),
+         custom_outlined_icons::SequenceNumberNumericLowercaseLetters()},
+        {static_cast<int>(SnowCanvasSerialNumberNumericType::UppercaseLetters),
+         ScreenshotToolPaletteTranslationText(
+             QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Uppercase letters")),
+         custom_outlined_icons::SequenceNumberNumericUppercaseLetters()},
+        {static_cast<int>(SnowCanvasSerialNumberNumericType::Chinese),
+         ScreenshotToolPaletteTranslationText(
+             QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Chinese numerals")),
+         custom_outlined_icons::SequenceNumberNumericChinese()},
+    };
+    serialNumberNumericTypeConfig.initialId =
+        static_cast<int>(m_state.m_serialNumberStyle.numericType);
+    m_serialNumberNumericTypeControlsContainer =
+        takeReusableWidget(kRoleSerialNumericType, kSignatureSerialNumericType, layout, controls);
+    if (m_serialNumberNumericTypeControlsContainer == nullptr) {
+        const ScreenshotToolPaletteRadioEditor typeEditor = createScreenshotToolPaletteRadioEditor(
+            controls, serialNumberNumericTypeConfig, metrics);
+        m_serialNumberNumericTypeControlsContainer = typeEditor.container;
+        m_serialNumberNumericTypeButtonGroup = typeEditor.group;
+        layout->addWidget(m_serialNumberNumericTypeControlsContainer);
+    } else {
+        m_serialNumberNumericTypeButtonGroup =
+            m_serialNumberNumericTypeControlsContainer
+                ->findChild<adqt::widgets::AdRadioButtonGroup*>();
+    }
+    m_serialNumberNumericTypeControlsContainer->setObjectName(
+        serialNumberNumericTypeConfig.objectName);
+    m_serialNumberNumericTypeControlsContainer->setProperty("screenshotStyleEditorRoot", true);
+    m_serialNumberNumericTypeControlsContainer->setProperty("screenshotStyleEditorRole",
+                                                            kRoleSerialNumericType);
+    m_serialNumberNumericTypeControlsContainer->setProperty("screenshotStyleEditorSignature",
+                                                            kSignatureSerialNumericType);
+    configureScreenshotToolPaletteTooltip(
+        m_serialNumberNumericTypeControlsContainer,
+        ScreenshotToolPaletteTranslationText(
+            QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Sequence number numeric type")));
+    QObject::connect(
+        m_serialNumberNumericTypeButtonGroup, &adqt::widgets::AdRadioButtonGroup::checkedIdChanged,
+        controls, [this](int id) {
+            if (id >= static_cast<int>(SnowCanvasSerialNumberNumericType::Arabic) &&
+                id <= static_cast<int>(SnowCanvasSerialNumberNumericType::Chinese)) {
+                setSerialNumberNumericType(static_cast<SnowCanvasSerialNumberNumericType>(id));
+            }
+        });
+
+    if (host.addGroupSeparator) {
+        host.addGroupSeparator(layout);
+    }
+
     m_serialNumberEditor = qobject_cast<adqt::widgets::AdLineEdit*>(
         takeReusableWidget(kRoleSerialValue, kSignatureSerialValue, layout, controls));
     if (m_serialNumberEditor == nullptr) {
@@ -2483,7 +2579,7 @@ QWidget* ScreenshotToolPaletteStyleControls::buildWatermarkFamily(
                              return;
                          }
                          m_state.m_watermarkConfig.text = normalized;
-                         notifyWatermarkConfigChanged();
+                         notifyWatermarkConfigChanged(SnowCanvasWatermarkText);
                      });
     QObject::connect(m_watermarkTextEdit, &QLineEdit::editingFinished, controls, [this]() {
         const QString normalized = m_watermarkTextEdit->text().trimmed();
@@ -2585,10 +2681,11 @@ QWidget* ScreenshotToolPaletteStyleControls::buildWatermarkFamily(
     m_watermarkTemplateSelect->setFocusPolicy(Qt::ClickFocus);
     m_watermarkTemplateSelect->setControlSize(adqt::widgets::AdSelect::ControlSize::Small);
     m_watermarkTemplateSelect->setVariant(adqt::widgets::AdSelect::Variant::Borderless);
-    m_watermarkTemplateSelect->setFixedSize(
-        qMax(1,
-             qRound(static_cast<qreal>(kScreenshotToolPaletteSelectWidth) * metrics.physicalScale)),
-        qMax(1, qRound(metrics.buttonSize * metrics.physicalScale)));
+    m_watermarkTemplateSelect->setFixedWidth(qMax(
+        1, qRound(static_cast<qreal>(kScreenshotToolPaletteSelectWidth) * metrics.physicalScale)));
+    auto selectTokens = m_watermarkTemplateSelect->componentTokens();
+    selectTokens.metrics.controlHeight = metrics.buttonSize;
+    m_watermarkTemplateSelect->setComponentTokens(selectTokens);
     stampScreenshotToolbarReferenceWidth(m_watermarkTemplateSelect,
                                          kScreenshotToolPaletteSelectWidth);
     setScreenshotToolPalettePlaceholderSource(m_watermarkTemplateSelect, "Template");
@@ -2721,6 +2818,72 @@ QWidget* ScreenshotToolPaletteStyleControls::buildWatermarkFamily(
     return controls;
 }
 
+QWidget* ScreenshotToolPaletteStyleControls::buildEraserFamily(
+    int tool, QWidget* panel, const ScreenshotToolPaletteStyleFamilyHost& host,
+    const std::function<void(double)>& setWidth, const std::function<void()>& cycleWidth,
+    const ScreenshotToolPaletteButtonMetrics& metrics) {
+    using Tool = ScreenshotToolPalette::Tool;
+    if (panel == nullptr)
+        return nullptr;
+    const bool brush = static_cast<Tool>(tool) == Tool::BrushEraser;
+    QWidget* controls = createRowWidget(panel,
+                                        brush ? QStringLiteral("screenshotBrushEraserStyleControls")
+                                              : QStringLiteral("screenshotEraserStyleControls"),
+                                        host);
+    auto* layout = static_cast<QHBoxLayout*>(controls->layout());
+    const QVector<ScreenshotToolPaletteStyleModeSelectorOption> modes{
+        {static_cast<int>(Tool::Eraser), QStringLiteral("Element Eraser"),
+         custom_outlined_icons::ToolEraser()},
+        {static_cast<int>(Tool::RectangleEraser), QStringLiteral("Rectangle Eraser"),
+         custom_outlined_icons::EraserTypeRectangle()},
+        {static_cast<int>(Tool::BrushEraser), QStringLiteral("Brush Eraser"),
+         custom_outlined_icons::EraserTypeBrush()},
+    };
+    QWidget* selector = takeReusableWidget(kRoleEraserMode, kSignatureEraserMode, layout, controls);
+    if (selector == nullptr && host.createModeSelector)
+        selector = host.createModeSelector(controls, QStringLiteral("screenshotEraserModeSelector"),
+                                           tool, modes);
+    if (selector != nullptr) {
+        selector->setObjectName(QStringLiteral("screenshotEraserModeSelector"));
+        selector->setProperty("screenshotStyleEditorRoot", true);
+        selector->setProperty("screenshotStyleEditorRole", kRoleEraserMode);
+        selector->setProperty("screenshotStyleEditorSignature", kSignatureEraserMode);
+        layout->addWidget(selector);
+    }
+    if (brush) {
+        if (host.addGroupSeparator)
+            host.addGroupSeparator(layout);
+        auto config = snow_shot::presentation::screenshotToolPaletteSizePresetEditorConfig(
+            QStringLiteral("Current brush eraser stroke width"),
+            QStringLiteral("screenshotBrushEraserStrokeWidthSummary"),
+            "Brush eraser stroke width %1 (%2px)");
+        config.presetObjectName = [](double width) {
+            return QStringLiteral("screenshotBrushEraserStrokeWidth%1").arg(qRound(width));
+        };
+        if (auto reused =
+                takeReusableEditor(kRoleBrushWidth, kSignatureBrushWidth, layout, controls)) {
+            m_brushEraserStrokeWidthEditor.reset(
+                static_cast<ScreenshotToolPaletteNumericPresetEditor*>(reused.release()));
+            m_brushEraserStrokeWidthEditor->rebind(config, cycleWidth, setWidth);
+        } else {
+            m_brushEraserStrokeWidthEditor =
+                std::make_unique<ScreenshotToolPaletteNumericPresetEditor>();
+            m_brushEraserStrokeWidthEditor->build(layout, controls, controls, config,
+                                                  m_state.brushEraserStyle.strokeWidth, cycleWidth,
+                                                  setWidth, metrics);
+        }
+        tagEditor(m_brushEraserStrokeWidthEditor.get(), kRoleBrushWidth, kSignatureBrushWidth);
+        registerEditor(m_brushEraserStrokeWidthEditor.get());
+        updateBrushEraserStrokeWidthControls(m_state.brushEraserStyle.strokeWidth);
+    }
+    return controls;
+}
+
+void ScreenshotToolPaletteStyleControls::updateBrushEraserStrokeWidthControls(double width) {
+    if (m_brushEraserStrokeWidthEditor != nullptr)
+        m_brushEraserStrokeWidthEditor->update(width, false);
+}
+
 ScreenshotToolPaletteFilterFamilyResult ScreenshotToolPaletteStyleControls::buildFilterFamily(
     const ScreenshotToolPaletteFilterFamilyConfig& config,
     const ScreenshotToolPaletteFilterCallbacks& callbacks, QWidget* panel,
@@ -2790,6 +2953,7 @@ ScreenshotToolPaletteFilterFamilyResult ScreenshotToolPaletteStyleControls::buil
         appendFilterType("Grayscale", 2);
         appendFilterType("Inversion", 3);
         appendFilterType("Emboss", 4);
+        appendFilterType("Brightness", 6);
         result.typeSelect->setModel(typeModel);
         layout->addWidget(result.typeSelect);
     } else {
@@ -3191,12 +3355,25 @@ void ScreenshotToolPaletteStyleControls::registerSerialNumberEntries() {
                                                    mixed(SnowCanvasSerialNumberStyleMixedColor));
              }
          }},
+        {SerialNumberNumericTypeRefresh,
+         [this, mixed]() {
+             if (m_serialNumberNumericTypeButtonGroup != nullptr) {
+                 const QSignalBlocker blocker(m_serialNumberNumericTypeButtonGroup);
+                 m_serialNumberNumericTypeButtonGroup->setCheckedId(
+                     mixed(SnowCanvasSerialNumberStyleMixedNumericType)
+                         ? -1
+                         : static_cast<int>(m_state.m_serialNumberStyle.numericType));
+             }
+         }},
         {SerialNumberTypeRefresh,
          [this, mixed]() {
              SNOW_SHOT_TOOLBAR_PERF_COUNTER("style.serial_number.type_refresh");
              const bool typeMixed = mixed(SnowCanvasSerialNumberStyleMixedType);
              const bool supportsNumber = typeMixed || m_state.m_serialNumberStyle.type !=
                                                           SnowCanvasSerialNumberType::Circle;
+             if (m_serialNumberNumericTypeControlsContainer != nullptr) {
+                 m_serialNumberNumericTypeControlsContainer->setEnabled(supportsNumber);
+             }
              if (m_serialNumberEditor != nullptr) {
                  m_serialNumberEditor->setEnabled(supportsNumber);
              }
@@ -3396,6 +3573,7 @@ void ScreenshotToolPaletteStyleControls::releaseControlBindings() {
     m_penHighlightColorEditor.reset();
     m_penHighlightStrokeWidthEditor.reset();
     m_penFilterStrokeWidthEditor.reset();
+    m_brushEraserStrokeWidthEditor.reset();
     m_arrowStrokeWidthEditor.reset();
     m_arrowStrokeEditor.reset();
     m_arrowTypeButtonGroup = nullptr;
@@ -3412,6 +3590,8 @@ void ScreenshotToolPaletteStyleControls::releaseControlBindings() {
     m_serialNumberColorEditor.reset();
     m_serialNumberTypeControlsContainer = nullptr;
     m_serialNumberTypeButtonGroup = nullptr;
+    m_serialNumberNumericTypeControlsContainer = nullptr;
+    m_serialNumberNumericTypeButtonGroup = nullptr;
     m_serialNumberFillEditor.reset();
     m_serialNumberEditor = nullptr;
     m_serialNumberFontEditor.reset();
@@ -3459,6 +3639,7 @@ void ScreenshotToolPaletteStyleControls::discardBindingsExcept(int destinationTo
     const bool keepText = destination == Tool::Text;
     const bool keepSerialNumber = destination == Tool::SerialNumber;
     const bool keepPenFilter = destination == Tool::PenFilter;
+    const bool keepBrushEraser = destination == Tool::BrushEraser;
     const bool keepWatermark = destination == Tool::Watermark;
 
     const auto resetUnless = [](bool keep, auto& editor) {
@@ -3475,6 +3656,7 @@ void ScreenshotToolPaletteStyleControls::discardBindingsExcept(int destinationTo
     resetUnless(keepPenHighlight, m_penHighlightColorEditor);
     resetUnless(keepPenHighlight, m_penHighlightStrokeWidthEditor);
     resetUnless(keepPenFilter, m_penFilterStrokeWidthEditor);
+    resetUnless(keepBrushEraser, m_brushEraserStrokeWidthEditor);
     resetUnless(keepArrow, m_arrowStrokeWidthEditor);
     resetUnless(keepArrow, m_arrowStrokeEditor);
     resetUnless(keepArrow, m_startArrowheadEditor);
@@ -3510,6 +3692,8 @@ void ScreenshotToolPaletteStyleControls::discardBindingsExcept(int destinationTo
     if (!keepSerialNumber) {
         m_serialNumberTypeControlsContainer = nullptr;
         m_serialNumberTypeButtonGroup = nullptr;
+        m_serialNumberNumericTypeControlsContainer = nullptr;
+        m_serialNumberNumericTypeButtonGroup = nullptr;
         m_serialNumberEditor = nullptr;
     }
     if (!keepWatermark) {
@@ -3562,6 +3746,7 @@ void ScreenshotToolPaletteStyleControls::setCreationStyleDefaults(
     updateArrowStyleControls();
     updateHighlightStyleControls();
     updatePenHighlightStyleControls();
+    updateBrushEraserStrokeWidthControls(m_state.brushEraserStyle.strokeWidth);
     updateTextStyleControls();
     updateSerialNumberStyleControls();
 }
@@ -3688,35 +3873,16 @@ bool ScreenshotToolPaletteStyleControls::stepStrokeWidth(int direction) {
         return true;
     }
 
-    const bool strokeWidthMixed = hasMixedProperty(SnowCanvasShapeStylePropertyStrokeWidth);
-    auto& style = activeShapeStyle();
-    auto& creationStyle = activeCreationShapeStyle();
-    const double previousStrokeWidth = style.strokeWidth();
-    if (!style.stepStrokeWidth(direction)) {
+    if (direction == 0)
         return false;
-    }
-
-    if (strokeWidthMixed || !qFuzzyCompare(previousStrokeWidth + 1.0, style.strokeWidth() + 1.0)) {
-        static_cast<void>(creationStyle.setStrokeWidth(style.strokeWidth()));
-        clearMixedProperties(SnowCanvasShapeStylePropertyStrokeWidth);
-        updateRectangleStyleControls();
-        notifyShapeStyleChanged(style.rectangleStyle(), SnowCanvasShapeStylePropertyStrokeWidth,
-                                activeShapeKind());
-    }
+    setStrokeWidth(activeShapeStyle().strokeWidth() + (direction > 0 ? 1.0 : -1.0));
     return true;
 }
 
 bool ScreenshotToolPaletteStyleControls::stepTextFontSize(int direction) {
-    const bool wasMixed = m_state.m_showingSelectedTextStyle &&
-                          (m_state.m_textStyleMixed & SnowCanvasTextStyleMixedFontSize) != 0;
-    if (!m_state.m_textStyle.stepFontSize(direction) && !wasMixed) {
+    if (direction == 0)
         return false;
-    }
-    static_cast<void>(
-        m_state.m_creationTextStyle.setFontSize(m_state.m_textStyle.textStyle().fontSize));
-    m_state.m_textStyleMixed &= ~SnowCanvasTextStyleMixedFontSize;
-    updateTextStyleControls();
-    notifyTextStyleChanged();
+    setTextFontSize(m_state.m_textStyle.textStyle().fontSize + (direction > 0 ? 1.0 : -1.0));
     return true;
 }
 
@@ -3753,15 +3919,7 @@ bool ScreenshotToolPaletteStyleControls::handleTextStrokeWidthWheel(const QPoint
     if (direction == 0 || !hasPicker) {
         return false;
     }
-    const bool wasMixed = m_state.m_showingSelectedTextStyle &&
-                          (m_state.m_textStyleMixed & SnowCanvasTextStyleMixedStrokeWidth) != 0;
-    if (m_state.m_textStyle.stepStrokeWidth(direction) || wasMixed) {
-        static_cast<void>(m_state.m_creationTextStyle.setStrokeWidth(
-            m_state.m_textStyle.textStyle().strokeWidth));
-        m_state.m_textStyleMixed &= ~SnowCanvasTextStyleMixedStrokeWidth;
-        updateTextStyleControls();
-        notifyTextStyleChanged();
-    }
+    setTextStrokeWidth(m_state.m_textStyle.textStyle().strokeWidth + (direction > 0 ? 1.0 : -1.0));
     return true;
 }
 
@@ -3913,9 +4071,29 @@ SnowCanvasStyleDefaults ScreenshotToolPaletteStyleControls::creationStyleDefault
     defaults.serialNumber = m_state.m_creationSerialNumberStyle;
     defaults.rectangleFilter = m_state.creationRectangleFilterStyle;
     defaults.penFilter = m_state.creationPenFilterStyle;
-    defaults.watermark = m_state.m_watermarkConfig;
-    defaults.spotlight = m_state.spotlightConfig;
+    defaults.brushEraser = m_state.creationBrushEraserStyle;
+    defaults.watermark = m_state.creationWatermarkConfig;
+    defaults.spotlight = m_state.creationSpotlightConfig;
     return defaults;
+}
+
+void ScreenshotToolPaletteStyleControls::rememberStyleEdit(const SnowCanvasStyleEdit& edit) {
+    auto defaults = creationStyleDefaults();
+    snowCanvasMergeStyleEdit(defaults, edit);
+    const ScreenshotToolPaletteStyleState remembered(defaults);
+    m_state.m_creationRectangleStyle = remembered.m_creationRectangleStyle;
+    m_state.m_creationLineStyle = remembered.m_creationLineStyle;
+    m_state.m_creationFreeDrawStyle = remembered.m_creationFreeDrawStyle;
+    m_state.m_creationHighlightStyle = remembered.m_creationHighlightStyle;
+    m_state.m_creationPenHighlightStyle = remembered.m_creationPenHighlightStyle;
+    m_state.m_creationArrowStyle = remembered.m_creationArrowStyle;
+    m_state.m_creationTextStyle = remembered.m_creationTextStyle;
+    m_state.m_creationSerialNumberStyle = remembered.m_creationSerialNumberStyle;
+    m_state.creationRectangleFilterStyle = remembered.creationRectangleFilterStyle;
+    m_state.creationPenFilterStyle = remembered.creationPenFilterStyle;
+    m_state.creationBrushEraserStyle = remembered.creationBrushEraserStyle;
+    m_state.creationWatermarkConfig = defaults.watermark;
+    m_state.creationSpotlightConfig = defaults.spotlight;
 }
 
 void ScreenshotToolPaletteStyleControls::setRectangleStyle(const SnowCanvasShapeStyle& style) {
@@ -3998,10 +4176,12 @@ void ScreenshotToolPaletteStyleControls::refreshToolbarMetrics(
         stampScreenshotToolbarReferenceWidth(m_watermarkTextEdit, kWatermarkTextWidth);
     }
     if (applies(m_watermarkTemplateSelect)) {
-        m_watermarkTemplateSelect->setFixedSize(
-            qMax(1, qRound(static_cast<qreal>(kScreenshotToolPaletteSelectWidth) *
-                           metrics.physicalScale)),
-            qMax(1, qRound(metrics.buttonSize * metrics.physicalScale)));
+        m_watermarkTemplateSelect->setFixedWidth(qMax(
+            1,
+            qRound(static_cast<qreal>(kScreenshotToolPaletteSelectWidth) * metrics.physicalScale)));
+        auto selectTokens = m_watermarkTemplateSelect->componentTokens();
+        selectTokens.metrics.controlHeight = metrics.buttonSize;
+        m_watermarkTemplateSelect->setComponentTokens(selectTokens);
         stampScreenshotToolbarReferenceWidth(m_watermarkTemplateSelect,
                                              kScreenshotToolPaletteSelectWidth);
     }
@@ -4040,9 +4220,9 @@ void ScreenshotToolPaletteStyleControls::refreshSpotlightOpacityMetrics(
     configureScreenshotToolPaletteSliderEditor(m_spotlightOpacityEditor, metrics);
 }
 
-void ScreenshotToolPaletteStyleControls::notifyWatermarkConfigChanged() const {
+void ScreenshotToolPaletteStyleControls::notifyWatermarkConfigChanged(quint32 properties) const {
     if (m_callbacks.watermarkConfigChanged) {
-        m_callbacks.watermarkConfigChanged(m_state.m_watermarkConfig);
+        m_callbacks.watermarkConfigChanged(m_state.m_watermarkConfig, properties);
     }
 }
 
@@ -4052,15 +4232,15 @@ void ScreenshotToolPaletteStyleControls::notifyWatermarkPreviewChanged() const {
     }
 }
 
-void ScreenshotToolPaletteStyleControls::notifyTextStyleChanged() const {
+void ScreenshotToolPaletteStyleControls::notifyTextStyleChanged(quint32 properties) const {
     if (m_callbacks.textStyleChanged) {
-        m_callbacks.textStyleChanged(m_state.m_textStyle.textStyle());
+        m_callbacks.textStyleChanged(m_state.m_textStyle.textStyle(), properties);
     }
 }
 
-void ScreenshotToolPaletteStyleControls::notifySerialNumberStyleChanged() const {
+void ScreenshotToolPaletteStyleControls::notifySerialNumberStyleChanged(quint32 properties) const {
     if (m_callbacks.serialNumberStyleChanged) {
-        m_callbacks.serialNumberStyleChanged(m_state.m_serialNumberStyle);
+        m_callbacks.serialNumberStyleChanged(m_state.m_serialNumberStyle, properties);
     }
 }
 
@@ -4092,17 +4272,14 @@ quint64 ScreenshotToolPaletteStyleControls::propertyGroupRefreshCount() const {
 }
 #endif
 
-template <typename Apply, typename Mirror>
-void ScreenshotToolPaletteStyleControls::commitShapeProperty(quint32 property, Apply apply,
-                                                             Mirror mirror) {
+template <typename Apply>
+void ScreenshotToolPaletteStyleControls::commitShapeProperty(quint32 property, Apply apply) {
     const bool wasMixed = hasMixedProperty(property);
     auto& style = activeShapeStyle();
-    auto& creationStyle = activeCreationShapeStyle();
     if (!apply(style) && !wasMixed) {
         return;
     }
 
-    mirror(style, creationStyle);
     clearMixedProperties(property);
     updateRectangleStyleControls();
     notifyShapeStyleChanged(style.rectangleStyle(), property, activeShapeKind());
@@ -4114,130 +4291,96 @@ void ScreenshotToolPaletteStyleControls::commitArrowProperty(quint32 property, A
     if (!apply(m_state.m_arrowStyle) && !wasMixed) {
         return;
     }
-    apply(m_state.m_creationArrowStyle);
     clearMixedProperties(property);
     updateArrowStyleControls();
     notifyShapeStyleChanged(shapeStyleFromArrowStyle(m_state.m_arrowStyle), property,
                             SnowCanvasShapeKind::Arrow);
 }
 
-template <typename Apply, typename Mirror>
-void ScreenshotToolPaletteStyleControls::commitPenHighlightProperty(quint32 property, Apply apply,
-                                                                    Mirror mirror) {
+template <typename Apply>
+void ScreenshotToolPaletteStyleControls::commitPenHighlightProperty(quint32 property, Apply apply) {
     const bool wasMixed = hasMixedProperty(property);
     if (!apply(m_state.m_penHighlightStyle) && !wasMixed) {
         return;
     }
-    mirror(m_state.m_penHighlightStyle, m_state.m_creationPenHighlightStyle);
     clearMixedProperties(property);
     updatePenHighlightStyleControls();
     notifyShapeStyleChanged(m_state.m_penHighlightStyle, property,
                             SnowCanvasShapeKind::PenHighlight);
 }
 
-template <typename Apply, typename Mirror>
-void ScreenshotToolPaletteStyleControls::commitTextProperty(quint32 mixedFlag, Apply apply,
-                                                            Mirror mirror) {
+template <typename Apply>
+void ScreenshotToolPaletteStyleControls::commitTextProperty(quint32 mixedFlag, Apply apply) {
     const bool wasMixed =
         m_state.m_showingSelectedTextStyle && (m_state.m_textStyleMixed & mixedFlag) != 0;
     if (!apply(m_state.m_textStyle) && !wasMixed) {
         return;
     }
-    mirror(m_state.m_textStyle, m_state.m_creationTextStyle);
     m_state.m_textStyleMixed &= ~mixedFlag;
     updateTextStyleControls();
-    notifyTextStyleChanged();
+    notifyTextStyleChanged(mixedFlag);
 }
 
 template <typename Apply>
 void ScreenshotToolPaletteStyleControls::commitSerialNumberProperty(quint32 mixedFlag,
                                                                     Apply apply) {
     const bool wasMixed = (m_state.m_serialNumberStyleMixed & mixedFlag) != 0;
-    if (!apply(m_state.m_serialNumberStyle, m_state.m_creationSerialNumberStyle) && !wasMixed) {
+    if (!apply(m_state.m_serialNumberStyle) && !wasMixed) {
         return;
     }
     m_state.m_serialNumberStyleMixed &= ~mixedFlag;
     updateSerialNumberStyleControls();
-    notifySerialNumberStyleChanged();
+    notifySerialNumberStyleChanged(mixedFlag);
 }
 
 template <typename Apply>
-void ScreenshotToolPaletteStyleControls::commitWatermarkField(Apply apply) {
+void ScreenshotToolPaletteStyleControls::commitWatermarkField(quint32 properties, Apply apply) {
     if (!apply(m_state.m_watermarkConfig)) {
         return;
     }
     updateWatermarkControls();
-    notifyWatermarkConfigChanged();
+    notifyWatermarkConfigChanged(properties);
 }
 
 void ScreenshotToolPaletteStyleControls::setStrokeWidth(double strokeWidth) {
-    commitShapeProperty(
-        SnowCanvasShapeStylePropertyStrokeWidth,
-        [strokeWidth](ScreenshotToolPaletteRectangleStyleModel& style) {
-            return style.setStrokeWidth(strokeWidth);
-        },
-        [](const ScreenshotToolPaletteRectangleStyleModel& style,
-           ScreenshotToolPaletteRectangleStyleModel& creation) {
-            static_cast<void>(creation.setStrokeWidth(style.strokeWidth()));
-        });
+    commitShapeProperty(SnowCanvasShapeStylePropertyStrokeWidth,
+                        [strokeWidth](ScreenshotToolPaletteRectangleStyleModel& style) {
+                            return style.setStrokeWidth(strokeWidth);
+                        });
 }
 
 void ScreenshotToolPaletteStyleControls::cycleStrokeWidth() {
     commitShapeProperty(
         SnowCanvasShapeStylePropertyStrokeWidth,
-        [](ScreenshotToolPaletteRectangleStyleModel& style) { return style.cycleStrokeWidth(); },
-        [](const ScreenshotToolPaletteRectangleStyleModel& style,
-           ScreenshotToolPaletteRectangleStyleModel& creation) {
-            static_cast<void>(creation.setStrokeWidth(style.strokeWidth()));
-        });
+        [](ScreenshotToolPaletteRectangleStyleModel& style) { return style.cycleStrokeWidth(); });
 }
 
 void ScreenshotToolPaletteStyleControls::setStrokeColor(const QColor& color) {
-    commitShapeProperty(
-        SnowCanvasShapeStylePropertyStrokeColor,
-        [color](ScreenshotToolPaletteRectangleStyleModel& style) {
-            return style.setStrokeColor(color);
-        },
-        [](const ScreenshotToolPaletteRectangleStyleModel& style,
-           ScreenshotToolPaletteRectangleStyleModel& creation) {
-            static_cast<void>(creation.setStrokeColor(style.strokeColor()));
-        });
+    commitShapeProperty(SnowCanvasShapeStylePropertyStrokeColor,
+                        [color](ScreenshotToolPaletteRectangleStyleModel& style) {
+                            return style.setStrokeColor(color);
+                        });
 }
 
 void ScreenshotToolPaletteStyleControls::setStrokeStyle(SnowCanvasStrokeStyle strokeStyle) {
-    commitShapeProperty(
-        SnowCanvasShapeStylePropertyStrokeStyle,
-        [strokeStyle](ScreenshotToolPaletteRectangleStyleModel& style) {
-            return style.setStrokeStyle(strokeStyle);
-        },
-        [](const ScreenshotToolPaletteRectangleStyleModel& style,
-           ScreenshotToolPaletteRectangleStyleModel& creation) {
-            static_cast<void>(creation.setStrokeStyle(style.strokeStyle()));
-        });
+    commitShapeProperty(SnowCanvasShapeStylePropertyStrokeStyle,
+                        [strokeStyle](ScreenshotToolPaletteRectangleStyleModel& style) {
+                            return style.setStrokeStyle(strokeStyle);
+                        });
 }
 
 void ScreenshotToolPaletteStyleControls::setFillColor(const QColor& color) {
-    commitShapeProperty(
-        SnowCanvasShapeStylePropertyFillColor,
-        [color](ScreenshotToolPaletteRectangleStyleModel& style) {
-            return style.setFillColor(color);
-        },
-        [](const ScreenshotToolPaletteRectangleStyleModel& style,
-           ScreenshotToolPaletteRectangleStyleModel& creation) {
-            static_cast<void>(creation.setFillColor(style.fillColor()));
-        });
+    commitShapeProperty(SnowCanvasShapeStylePropertyFillColor,
+                        [color](ScreenshotToolPaletteRectangleStyleModel& style) {
+                            return style.setFillColor(color);
+                        });
 }
 
 void ScreenshotToolPaletteStyleControls::setFillStyle(SnowCanvasFillStyle fillStyle) {
-    commitShapeProperty(
-        SnowCanvasShapeStylePropertyFillStyle,
-        [fillStyle](ScreenshotToolPaletteRectangleStyleModel& style) {
-            return style.setFillStyle(fillStyle);
-        },
-        [](const ScreenshotToolPaletteRectangleStyleModel& style,
-           ScreenshotToolPaletteRectangleStyleModel& creation) {
-            static_cast<void>(creation.setFillStyle(style.fillStyle()));
-        });
+    commitShapeProperty(SnowCanvasShapeStylePropertyFillStyle,
+                        [fillStyle](ScreenshotToolPaletteRectangleStyleModel& style) {
+                            return style.setFillStyle(fillStyle);
+                        });
 }
 
 void ScreenshotToolPaletteStyleControls::setCornerRadius(int cornerRadius) {
@@ -4246,8 +4389,6 @@ void ScreenshotToolPaletteStyleControls::setCornerRadius(int cornerRadius) {
         return;
     }
 
-    static_cast<void>(
-        m_state.m_creationRectangleStyle.setCornerRadius(m_state.m_rectangleStyle.cornerRadius()));
     clearMixedProperties(SnowCanvasShapeStylePropertyCornerRadius);
     updateRectangleStyleControls();
     notifyShapeStyleChanged(m_state.m_rectangleStyle.rectangleStyle(),
@@ -4260,7 +4401,6 @@ void ScreenshotToolPaletteStyleControls::setShape(SnowCanvasRectangleShape shape
     if (!m_state.m_rectangleStyle.setShape(shape) && !wasMixed) {
         return;
     }
-    static_cast<void>(m_state.m_creationRectangleStyle.setShape(shape));
     clearMixedProperties(SnowCanvasShapeStylePropertyShape);
     updateRectangleStyleControls();
     notifyShapeStyleChanged(m_state.m_rectangleStyle.rectangleStyle(),
@@ -4268,33 +4408,25 @@ void ScreenshotToolPaletteStyleControls::setShape(SnowCanvasRectangleShape shape
 }
 
 void ScreenshotToolPaletteStyleControls::setPenHighlightColor(const QColor& color) {
-    commitPenHighlightProperty(
-        SnowCanvasShapeStylePropertyStrokeColor,
-        [color](SnowCanvasShapeStyle& style) {
-            if (!color.isValid() || style.stroke == color) {
-                return false;
-            }
-            style.stroke = color;
-            return true;
-        },
-        [](const SnowCanvasShapeStyle& style, SnowCanvasShapeStyle& creation) {
-            creation.stroke = style.stroke;
-        });
+    commitPenHighlightProperty(SnowCanvasShapeStylePropertyStrokeColor,
+                               [color](SnowCanvasShapeStyle& style) {
+                                   if (!color.isValid() || style.stroke == color) {
+                                       return false;
+                                   }
+                                   style.stroke = color;
+                                   return true;
+                               });
 }
 
 void ScreenshotToolPaletteStyleControls::setPenHighlightStrokeWidth(double strokeWidth) {
     const double clampedStrokeWidth = std::clamp(strokeWidth, 1.0, 72.0);
     commitPenHighlightProperty(
-        SnowCanvasShapeStylePropertyStrokeWidth,
-        [clampedStrokeWidth](SnowCanvasShapeStyle& style) {
+        SnowCanvasShapeStylePropertyStrokeWidth, [clampedStrokeWidth](SnowCanvasShapeStyle& style) {
             if (qFuzzyCompare(style.strokeWidth + 1.0, clampedStrokeWidth + 1.0)) {
                 return false;
             }
             style.strokeWidth = clampedStrokeWidth;
             return true;
-        },
-        [](const SnowCanvasShapeStyle& style, SnowCanvasShapeStyle& creation) {
-            creation.strokeWidth = style.strokeWidth;
         });
 }
 
@@ -4381,15 +4513,10 @@ void ScreenshotToolPaletteStyleControls::setArrowType(SnowCanvasArrowType arrowT
 void ScreenshotToolPaletteStyleControls::setLineType(SnowCanvasArrowType arrowType) {
     arrowType = arrowType == SnowCanvasArrowType::Straight ? SnowCanvasArrowType::Straight
                                                            : SnowCanvasArrowType::Curve;
-    commitShapeProperty(
-        SnowCanvasShapeStylePropertyArrowType,
-        [arrowType](ScreenshotToolPaletteRectangleStyleModel& style) {
-            return style.setArrowType(arrowType);
-        },
-        [](const ScreenshotToolPaletteRectangleStyleModel& style,
-           ScreenshotToolPaletteRectangleStyleModel& creation) {
-            static_cast<void>(creation.setArrowType(style.arrowType()));
-        });
+    commitShapeProperty(SnowCanvasShapeStylePropertyArrowType,
+                        [arrowType](ScreenshotToolPaletteRectangleStyleModel& style) {
+                            return style.setArrowType(arrowType);
+                        });
 }
 
 void ScreenshotToolPaletteStyleControls::setArrowhead(bool start, SnowCanvasArrowhead arrowhead) {
@@ -4408,114 +4535,69 @@ void ScreenshotToolPaletteStyleControls::setArrowhead(bool start, SnowCanvasArro
 void ScreenshotToolPaletteStyleControls::setTextColor(const QColor& color) {
     commitTextProperty(
         SnowCanvasTextStyleMixedColor,
-        [color](ScreenshotToolPaletteTextStyleModel& style) { return style.setColor(color); },
-        [color](const ScreenshotToolPaletteTextStyleModel&,
-                ScreenshotToolPaletteTextStyleModel& creation) {
-            static_cast<void>(creation.setColor(color));
-        });
+        [color](ScreenshotToolPaletteTextStyleModel& style) { return style.setColor(color); });
 }
 
 void ScreenshotToolPaletteStyleControls::setTextFontSize(double fontSize) {
-    commitTextProperty(
-        SnowCanvasTextStyleMixedFontSize,
-        [fontSize](ScreenshotToolPaletteTextStyleModel& style) {
-            return style.setFontSize(fontSize);
-        },
-        [](const ScreenshotToolPaletteTextStyleModel& style,
-           ScreenshotToolPaletteTextStyleModel& creation) {
-            static_cast<void>(creation.setFontSize(style.textStyle().fontSize));
-        });
+    commitTextProperty(SnowCanvasTextStyleMixedFontSize,
+                       [fontSize](ScreenshotToolPaletteTextStyleModel& style) {
+                           return style.setFontSize(fontSize);
+                       });
 }
 
 void ScreenshotToolPaletteStyleControls::cycleTextFontSize() {
-    if (m_state.m_textStyle.cycleFontSize()) {
-        static_cast<void>(
-            m_state.m_creationTextStyle.setFontSize(m_state.m_textStyle.textStyle().fontSize));
-        m_state.m_textStyleMixed &= ~SnowCanvasTextStyleMixedFontSize;
-        updateTextStyleControls();
-        notifyTextStyleChanged();
-    }
+    auto next = m_state.m_textStyle;
+    if (next.cycleFontSize())
+        setTextFontSize(next.textStyle().fontSize);
 }
 
 void ScreenshotToolPaletteStyleControls::setTextFontFamily(const QString& fontFamily) {
-    commitTextProperty(
-        SnowCanvasTextStyleMixedFontFamily,
-        [fontFamily](ScreenshotToolPaletteTextStyleModel& style) {
-            return style.setFontFamily(fontFamily);
-        },
-        [fontFamily](const ScreenshotToolPaletteTextStyleModel&,
-                     ScreenshotToolPaletteTextStyleModel& creation) {
-            static_cast<void>(creation.setFontFamily(fontFamily));
-        });
+    commitTextProperty(SnowCanvasTextStyleMixedFontFamily,
+                       [fontFamily](ScreenshotToolPaletteTextStyleModel& style) {
+                           return style.setFontFamily(fontFamily);
+                       });
 }
 
 void ScreenshotToolPaletteStyleControls::setTextStrokeColor(const QColor& color) {
-    commitTextProperty(
-        SnowCanvasTextStyleMixedStroke,
-        [color](ScreenshotToolPaletteTextStyleModel& style) { return style.setStrokeColor(color); },
-        [color](const ScreenshotToolPaletteTextStyleModel&,
-                ScreenshotToolPaletteTextStyleModel& creation) {
-            static_cast<void>(creation.setStrokeColor(color));
-        });
+    commitTextProperty(SnowCanvasTextStyleMixedStroke,
+                       [color](ScreenshotToolPaletteTextStyleModel& style) {
+                           return style.setStrokeColor(color);
+                       });
 }
 
 void ScreenshotToolPaletteStyleControls::setTextStrokeWidth(double strokeWidth) {
-    commitTextProperty(
-        SnowCanvasTextStyleMixedStrokeWidth,
-        [strokeWidth](ScreenshotToolPaletteTextStyleModel& style) {
-            return style.setStrokeWidth(strokeWidth);
-        },
-        [](const ScreenshotToolPaletteTextStyleModel& style,
-           ScreenshotToolPaletteTextStyleModel& creation) {
-            static_cast<void>(creation.setStrokeWidth(style.textStyle().strokeWidth));
-        });
+    commitTextProperty(SnowCanvasTextStyleMixedStrokeWidth,
+                       [strokeWidth](ScreenshotToolPaletteTextStyleModel& style) {
+                           return style.setStrokeWidth(strokeWidth);
+                       });
 }
 
 void ScreenshotToolPaletteStyleControls::setTextFillColor(const QColor& color) {
     commitTextProperty(
         SnowCanvasTextStyleMixedFill,
-        [color](ScreenshotToolPaletteTextStyleModel& style) { return style.setFillColor(color); },
-        [color](const ScreenshotToolPaletteTextStyleModel&,
-                ScreenshotToolPaletteTextStyleModel& creation) {
-            static_cast<void>(creation.setFillColor(color));
-        });
+        [color](ScreenshotToolPaletteTextStyleModel& style) { return style.setFillColor(color); });
 }
 
 void ScreenshotToolPaletteStyleControls::setTextFillStyle(SnowCanvasFillStyle fillStyle) {
-    commitTextProperty(
-        SnowCanvasTextStyleMixedFillStyle,
-        [fillStyle](ScreenshotToolPaletteTextStyleModel& style) {
-            return style.setFillStyle(fillStyle);
-        },
-        [fillStyle](const ScreenshotToolPaletteTextStyleModel&,
-                    ScreenshotToolPaletteTextStyleModel& creation) {
-            static_cast<void>(creation.setFillStyle(fillStyle));
-        });
+    commitTextProperty(SnowCanvasTextStyleMixedFillStyle,
+                       [fillStyle](ScreenshotToolPaletteTextStyleModel& style) {
+                           return style.setFillStyle(fillStyle);
+                       });
 }
 
 void ScreenshotToolPaletteStyleControls::setTextCornerRadius(int cornerRadius) {
-    commitTextProperty(
-        SnowCanvasTextStyleMixedCornerRadii,
-        [cornerRadius](ScreenshotToolPaletteTextStyleModel& style) {
-            return style.setCornerRadius(cornerRadius);
-        },
-        [cornerRadius](const ScreenshotToolPaletteTextStyleModel&,
-                       ScreenshotToolPaletteTextStyleModel& creation) {
-            static_cast<void>(creation.setCornerRadius(cornerRadius));
-        });
+    commitTextProperty(SnowCanvasTextStyleMixedCornerRadii,
+                       [cornerRadius](ScreenshotToolPaletteTextStyleModel& style) {
+                           return style.setCornerRadius(cornerRadius);
+                       });
 }
 
 void ScreenshotToolPaletteStyleControls::setTextHorizontalAlign(
     SnowCanvasTextHorizontalAlign alignment) {
-    commitTextProperty(
-        SnowCanvasTextStyleMixedHorizontalAlign,
-        [alignment](ScreenshotToolPaletteTextStyleModel& style) {
-            return style.setHorizontalAlign(alignment);
-        },
-        [alignment](const ScreenshotToolPaletteTextStyleModel&,
-                    ScreenshotToolPaletteTextStyleModel& creation) {
-            static_cast<void>(creation.setHorizontalAlign(alignment));
-        });
+    commitTextProperty(SnowCanvasTextStyleMixedHorizontalAlign,
+                       [alignment](ScreenshotToolPaletteTextStyleModel& style) {
+                           return style.setHorizontalAlign(alignment);
+                       });
 }
 
 void ScreenshotToolPaletteStyleControls::setWatermarkColor(const QColor& color) {
@@ -4526,21 +4608,23 @@ void ScreenshotToolPaletteStyleControls::setWatermarkColor(const QColor& color) 
     m_state.m_watermarkConfig.color = color;
     m_watermarkColorPreviewPending = false;
     updateWatermarkControls();
-    notifyWatermarkConfigChanged();
+    notifyWatermarkConfigChanged(SnowCanvasWatermarkColor);
 }
 
 void ScreenshotToolPaletteStyleControls::setWatermarkFontSize(double fontSize) {
     if (!std::isfinite(fontSize)) {
         return;
     }
-    commitWatermarkField([fontSize](SnowCanvasWatermarkConfig& config) {
-        const double clamped = std::clamp(fontSize, kMinWatermarkFontSize, kMaxWatermarkFontSize);
-        if (qFuzzyCompare(config.fontSize + 1.0, clamped + 1.0)) {
-            return false;
-        }
-        config.fontSize = clamped;
-        return true;
-    });
+    commitWatermarkField(SnowCanvasWatermarkFontSize,
+                         [fontSize](SnowCanvasWatermarkConfig& config) {
+                             const double clamped =
+                                 std::clamp(fontSize, kMinWatermarkFontSize, kMaxWatermarkFontSize);
+                             if (qFuzzyCompare(config.fontSize + 1.0, clamped + 1.0)) {
+                                 return false;
+                             }
+                             config.fontSize = clamped;
+                             return true;
+                         });
 }
 
 void ScreenshotToolPaletteStyleControls::cycleWatermarkFontSize() {
@@ -4558,13 +4642,14 @@ void ScreenshotToolPaletteStyleControls::cycleWatermarkFontSize() {
 
 void ScreenshotToolPaletteStyleControls::setWatermarkFontFamily(const QString& fontFamily) {
     const QString normalized = fontFamily.trimmed();
-    commitWatermarkField([&normalized](SnowCanvasWatermarkConfig& config) {
-        if (config.fontFamily == normalized) {
-            return false;
-        }
-        config.fontFamily = normalized;
-        return true;
-    });
+    commitWatermarkField(SnowCanvasWatermarkFontFamily,
+                         [&normalized](SnowCanvasWatermarkConfig& config) {
+                             if (config.fontFamily == normalized) {
+                                 return false;
+                             }
+                             config.fontFamily = normalized;
+                             return true;
+                         });
 }
 
 void ScreenshotToolPaletteStyleControls::syncWatermarkTemplateEditorValue(
@@ -4603,7 +4688,7 @@ ScreenshotToolPaletteStyleControls::watermarkTemplateApplicationTime() const {
 void ScreenshotToolPaletteStyleControls::setWatermarkTemplateValue(const QString& templateValue) {
     m_state.m_watermarkConfig.templateValue = templateValue;
     m_state.m_watermarkConfig.templateApplicationTime = watermarkTemplateApplicationTime();
-    notifyWatermarkConfigChanged();
+    notifyWatermarkConfigChanged(SnowCanvasWatermarkTemplate);
 }
 
 void ScreenshotToolPaletteStyleControls::refreshWatermarkTemplateOptions() {
@@ -4773,7 +4858,9 @@ void ScreenshotToolPaletteStyleControls::openDeleteWatermarkTemplateModal(
     }
     auto* modal = new adqt::widgets::AdModal(m_watermarkTemplateSelect);
     modal->setObjectName(QStringLiteral("screenshotWatermarkTemplateDeleteModal"));
-    modal->setOwnerWindow(m_watermarkTemplateSelect->window());
+    modal->setOwnerWindow(m_callbacks.watermarkTemplateModalOwnerWindow
+                              ? m_callbacks.watermarkTemplateModalOwnerWindow()
+                              : m_watermarkTemplateSelect->window());
     modal->setMode(adqt::widgets::AdModal::Mode::Window);
     modal->setWindowModality(Qt::ApplicationModal);
     modal->setCentered(true);
@@ -4899,7 +4986,7 @@ void ScreenshotToolPaletteStyleControls::setWatermarkAngle(double angle) {
     if (!std::isfinite(angle)) {
         return;
     }
-    commitWatermarkField([angle](SnowCanvasWatermarkConfig& config) {
+    commitWatermarkField(SnowCanvasWatermarkAngle, [angle](SnowCanvasWatermarkConfig& config) {
         const double clamped = std::clamp(angle, -90.0, 90.0);
         if (qFuzzyCompare(config.angle + 1.0, clamped + 1.0)) {
             return false;
@@ -4913,7 +5000,7 @@ void ScreenshotToolPaletteStyleControls::setWatermarkGap(double gap) {
     if (!std::isfinite(gap)) {
         return;
     }
-    commitWatermarkField([gap](SnowCanvasWatermarkConfig& config) {
+    commitWatermarkField(SnowCanvasWatermarkGap, [gap](SnowCanvasWatermarkConfig& config) {
         const double clamped = std::clamp(gap, 10.0, 200.0);
         if (qFuzzyCompare(config.gap + 1.0, clamped + 1.0)) {
             return false;
@@ -4927,7 +5014,7 @@ void ScreenshotToolPaletteStyleControls::setWatermarkOpacity(double opacity) {
     if (!std::isfinite(opacity)) {
         return;
     }
-    commitWatermarkField([opacity](SnowCanvasWatermarkConfig& config) {
+    commitWatermarkField(SnowCanvasWatermarkOpacity, [opacity](SnowCanvasWatermarkConfig& config) {
         const double clamped = std::clamp(opacity, 0.0, 1.0);
         if (qFuzzyCompare(config.opacity + 1.0, clamped + 1.0)) {
             return false;
@@ -4938,55 +5025,59 @@ void ScreenshotToolPaletteStyleControls::setWatermarkOpacity(double opacity) {
 }
 
 void ScreenshotToolPaletteStyleControls::setSerialNumberColor(const QColor& color) {
-    commitSerialNumberProperty(
-        SnowCanvasSerialNumberStyleMixedColor,
-        [color](SnowCanvasSerialNumberStyle& style, SnowCanvasSerialNumberStyle& creation) {
-            if (!color.isValid() || style.color == color) {
-                return false;
-            }
-            style.color = color;
-            creation.color = color;
-            return true;
-        });
+    commitSerialNumberProperty(SnowCanvasSerialNumberStyleMixedColor,
+                               [color](SnowCanvasSerialNumberStyle& style) {
+                                   if (!color.isValid() || style.color == color) {
+                                       return false;
+                                   }
+                                   style.color = color;
+                                   return true;
+                               });
+}
+
+void ScreenshotToolPaletteStyleControls::setSerialNumberNumericType(
+    SnowCanvasSerialNumberNumericType type) {
+    commitSerialNumberProperty(SnowCanvasSerialNumberStyleMixedNumericType,
+                               [type](SnowCanvasSerialNumberStyle& style) {
+                                   if (style.numericType == type) {
+                                       return false;
+                                   }
+                                   style.numericType = type;
+                                   return true;
+                               });
 }
 
 void ScreenshotToolPaletteStyleControls::setSerialNumberType(SnowCanvasSerialNumberType type) {
-    commitSerialNumberProperty(
-        SnowCanvasSerialNumberStyleMixedType,
-        [type](SnowCanvasSerialNumberStyle& style, SnowCanvasSerialNumberStyle& creation) {
-            if (style.type == type && creation.type == type) {
-                return false;
-            }
-            style.type = type;
-            creation.type = type;
-            return true;
-        });
+    commitSerialNumberProperty(SnowCanvasSerialNumberStyleMixedType,
+                               [type](SnowCanvasSerialNumberStyle& style) {
+                                   if (style.type == type) {
+                                       return false;
+                                   }
+                                   style.type = type;
+                                   return true;
+                               });
 }
 
 void ScreenshotToolPaletteStyleControls::setSerialNumberFillColor(const QColor& color) {
-    commitSerialNumberProperty(
-        SnowCanvasSerialNumberStyleMixedFill,
-        [color](SnowCanvasSerialNumberStyle& style, SnowCanvasSerialNumberStyle& creation) {
-            if (!color.isValid() || style.fill == color) {
-                return false;
-            }
-            style.fill = color;
-            creation.fill = color;
-            return true;
-        });
+    commitSerialNumberProperty(SnowCanvasSerialNumberStyleMixedFill,
+                               [color](SnowCanvasSerialNumberStyle& style) {
+                                   if (!color.isValid() || style.fill == color) {
+                                       return false;
+                                   }
+                                   style.fill = color;
+                                   return true;
+                               });
 }
 
 void ScreenshotToolPaletteStyleControls::setSerialNumberFillStyle(SnowCanvasFillStyle fillStyle) {
-    commitSerialNumberProperty(
-        SnowCanvasSerialNumberStyleMixedFillStyle,
-        [fillStyle](SnowCanvasSerialNumberStyle& style, SnowCanvasSerialNumberStyle& creation) {
-            if (style.fillStyle == fillStyle) {
-                return false;
-            }
-            style.fillStyle = fillStyle;
-            creation.fillStyle = fillStyle;
-            return true;
-        });
+    commitSerialNumberProperty(SnowCanvasSerialNumberStyleMixedFillStyle,
+                               [fillStyle](SnowCanvasSerialNumberStyle& style) {
+                                   if (style.fillStyle == fillStyle) {
+                                       return false;
+                                   }
+                                   style.fillStyle = fillStyle;
+                                   return true;
+                               });
 }
 
 void ScreenshotToolPaletteStyleControls::setSerialNumber(qint64 number) {
@@ -4995,30 +5086,29 @@ void ScreenshotToolPaletteStyleControls::setSerialNumber(qint64 number) {
         return;
     }
     number = std::max<qint64>(0, number);
-    commitSerialNumberProperty(
-        SnowCanvasSerialNumberStyleMixedNumber,
-        [number](SnowCanvasSerialNumberStyle& style, SnowCanvasSerialNumberStyle& creation) {
-            if (style.number == number) {
-                return false;
-            }
-            style.number = number;
-            creation.number = number;
-            return true;
-        });
+    commitSerialNumberProperty(SnowCanvasSerialNumberStyleMixedNumber,
+                               [number](SnowCanvasSerialNumberStyle& style) {
+                                   if (style.number == number) {
+                                       return false;
+                                   }
+                                   style.number = number;
+                                   return true;
+                               });
 }
 
 void ScreenshotToolPaletteStyleControls::setSerialNumberFontSize(double fontSize) {
-    const double clamped = std::clamp(fontSize, 6.0, 512.0);
-    commitSerialNumberProperty(
-        SnowCanvasSerialNumberStyleMixedFontSize,
-        [clamped](SnowCanvasSerialNumberStyle& style, SnowCanvasSerialNumberStyle& creation) {
-            if (qFuzzyCompare(style.fontSize + 1.0, clamped + 1.0)) {
-                return false;
-            }
-            style.fontSize = clamped;
-            creation.fontSize = clamped;
-            return true;
-        });
+    if (!std::isfinite(fontSize))
+        return;
+    const double clamped = std::clamp(fontSize, snow_canvas_style_limits::minimumFontSize,
+                                      snow_canvas_style_limits::maximumBadgeFontSize);
+    commitSerialNumberProperty(SnowCanvasSerialNumberStyleMixedFontSize,
+                               [clamped](SnowCanvasSerialNumberStyle& style) {
+                                   if (qFuzzyCompare(style.fontSize + 1.0, clamped + 1.0)) {
+                                       return false;
+                                   }
+                                   style.fontSize = clamped;
+                                   return true;
+                               });
 }
 
 void ScreenshotToolPaletteStyleControls::cycleSerialNumberFontSize() {
@@ -5040,16 +5130,14 @@ void ScreenshotToolPaletteStyleControls::setSerialNumberFontFamily(const QString
         return;
     }
     const QString normalized = fontFamily.trimmed();
-    commitSerialNumberProperty(
-        SnowCanvasSerialNumberStyleMixedFontFamily,
-        [&normalized](SnowCanvasSerialNumberStyle& style, SnowCanvasSerialNumberStyle& creation) {
-            if (style.fontFamily == normalized) {
-                return false;
-            }
-            style.fontFamily = normalized;
-            creation.fontFamily = normalized;
-            return true;
-        });
+    commitSerialNumberProperty(SnowCanvasSerialNumberStyleMixedFontFamily,
+                               [&normalized](SnowCanvasSerialNumberStyle& style) {
+                                   if (style.fontFamily == normalized) {
+                                       return false;
+                                   }
+                                   style.fontFamily = normalized;
+                                   return true;
+                               });
 }
 
 void ScreenshotToolPaletteStyleControls::setStyleToolbarState(
@@ -5091,6 +5179,9 @@ void ScreenshotToolPaletteStyleControls::setStyleToolbarState(
             if (m_state.m_serialNumberStyle.color != displayedStyle.color ||
                 (mixedChanged & SnowCanvasSerialNumberStyleMixedColor) != 0)
                 groups |= SerialNumberColorRefresh;
+            if (m_state.m_serialNumberStyle.numericType != displayedStyle.numericType ||
+                (mixedChanged & SnowCanvasSerialNumberStyleMixedNumericType) != 0)
+                groups |= SerialNumberNumericTypeRefresh;
             if (m_state.m_serialNumberStyle.type != displayedStyle.type ||
                 (mixedChanged & SnowCanvasSerialNumberStyleMixedType) != 0)
                 groups |= SerialNumberTypeRefresh;

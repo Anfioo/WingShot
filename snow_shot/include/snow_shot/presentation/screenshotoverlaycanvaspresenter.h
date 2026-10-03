@@ -2,6 +2,7 @@
 #define SNOW_SHOT_PRESENTATION_SCREENSHOTOVERLAYCANVASPRESENTER_H
 
 #include "snow_draw_engine_qt/snow_canvas_types.h"
+#include "snow_shot/presentation/screenshotselectioneffectgeometry.h"
 #include "snow_shot/presentation/screenshotselectiongeometry.h"
 #include "snow_shot/presentation/screenshottypes.h"
 
@@ -11,6 +12,7 @@
 #include <QRectF>
 
 #include <functional>
+#include <optional>
 
 class ScreenshotDisplaySession;
 class ScreenshotOverlayWindow;
@@ -35,14 +37,18 @@ class ScreenshotOverlayCanvasPresenter final {
     void updateGuideLines(const ScreenshotDisplaySession& displaySession,
                           ScreenshotOverlayWindow* owner, const QPointF& localPosition,
                           bool selecting, const QColor& cursorColor,
-                          const QColor& monitorCenterColor) const;
-    void updateGuideLinesAtGlobalPosition(const ScreenshotDisplaySession& displaySession,
-                                          const QPoint& globalPosition, bool selecting,
-                                          const QColor& cursorColor,
-                                          const QColor& monitorCenterColor) const;
+                          const QColor& monitorCenterColor,
+                          const QColor& selectionCenterColor = Qt::transparent) const;
+    void
+    updateGuideLinesAtGlobalPosition(const ScreenshotDisplaySession& displaySession,
+                                     const QPoint& globalPosition, bool selecting,
+                                     const QColor& cursorColor, const QColor& monitorCenterColor,
+                                     const QColor& selectionCenterColor = Qt::transparent) const;
     void clearGuideLines(const ScreenshotDisplaySession& displaySession) const;
     void setOverlayCursor(ScreenshotOverlayWindow* overlay,
                           ScreenshotSelectionDragMode dragMode) const;
+    static void setOverlayEffectCursor(ScreenshotOverlayWindow* overlay,
+                                       ScreenshotSelectionEffectHandle handle);
     void setCanvasInteractionEnabled(const ScreenshotDisplaySession& displaySession,
                                      bool enabled) const;
     void setCanvasTool(const ScreenshotDisplaySession& displaySession, SnowCanvasTool tool) const;
@@ -67,9 +73,10 @@ class ScreenshotOverlayCanvasPresenter final {
     void previewSpotlightConfig(ScreenshotDisplaySession& displaySession,
                                 const SnowCanvasSpotlightConfig& config) const;
     void setTextStyle(const ScreenshotDisplaySession& displaySession,
-                      const SnowCanvasTextStyle& style) const;
+                      const SnowCanvasTextStyle& style, quint32 properties) const;
     void setSerialNumberStyle(const ScreenshotDisplaySession& displaySession,
-                              const SnowCanvasSerialNumberStyle& style) const;
+                              const SnowCanvasSerialNumberStyle& style,
+                              std::optional<quint32> properties = std::nullopt) const;
     void adjustSelectedSerialNumbers(const ScreenshotDisplaySession& displaySession,
                                      qint64 delta) const;
     void createTextForSelectedSerialNumber(const ScreenshotDisplaySession& displaySession) const;

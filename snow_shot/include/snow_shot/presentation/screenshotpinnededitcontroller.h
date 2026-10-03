@@ -7,6 +7,7 @@
 #include <QPointF>
 #include <QMap>
 #include <QRect>
+#include <QJsonObject>
 
 #include <memory>
 #include <optional>
@@ -45,6 +46,7 @@ class ScreenshotPinnedEditController final : public QObject {
     ScreenshotFloatingToolPaletteWindow* toolbarWindow() const;
     ScreenshotToolPaletteHost* toolbarHost() const;
     void setEditMode(bool enabled);
+    bool automationSetTool(SnowCanvasTool tool);
     void activateResizeWindowTool();
     [[nodiscard]] bool beginTemporaryResizeWindowTool();
     void endTemporaryResizeWindowTool();
@@ -57,6 +59,9 @@ class ScreenshotPinnedEditController final : public QObject {
     void updateAfterPinnedWindowMove(const QPoint& logicalDelta);
     void updateCanvasColorSamplingAfterCursorMove(const QPoint& physicalPosition);
     void raiseToolbar();
+    [[nodiscard]] bool automationAutoFilter(const QStringList& categories);
+    [[nodiscard]] QJsonObject automationAutoFilterState() const;
+    void cancelAutomationAutoFilter();
 
   signals:
     void toolbarCreated(ScreenshotFloatingToolPaletteWindow* toolbarWindow);
@@ -67,9 +72,12 @@ class ScreenshotPinnedEditController final : public QObject {
     void textTranslationRequested();
 
   private:
+    QStringList m_automationFilterCategories;
+    QString m_automationFilterError;
     bool eventFilter(QObject* watched, QEvent* event) override;
     void ensureToolbar();
     void destroyToolbar();
+    void resetAutoFilterSession();
     void registerDrawingShortcuts();
     void reloadDrawingShortcuts();
     void registerRecognitionShortcuts();
@@ -81,10 +89,6 @@ class ScreenshotPinnedEditController final : public QObject {
     void syncPaletteFromCanvasStyle();
     void activateCanvasTool(SnowCanvasTool tool);
     void applyResizeWindowTool();
-    void applyShapeStyleFromPalette(const SnowCanvasShapeStyle& style, quint32 properties,
-                                    SnowCanvasShapeKind kind);
-    void applyTextStyleFromPalette(const SnowCanvasTextStyle& style);
-    void applySerialNumberStyleFromPalette(const SnowCanvasSerialNumberStyle& style);
     void markToolbarManuallyPlaced();
     void beginCanvasColorSampling(adqt::widgets::AdColorPicker* picker);
     void cancelCanvasColorSampling();

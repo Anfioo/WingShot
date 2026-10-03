@@ -1,6 +1,11 @@
+#include "snow_shot/platform/applicationqos.h"
 #include "snow_shot/network/snowshotapiclient.h"
+#include "snow_shot/serverconfiguration.h"
 #include "snow_shot/diagnostics/diagnostics.h"
 #include <QElapsedTimer>
+#include <QDateTime>
+#include <QHttp1Configuration>
+#include "texttranslationprotocol.h"
 #include <QUuid>
 
 #include "snowimageqtcodec.h"
@@ -33,6 +38,21 @@ constexpr int kRequestTimeoutMs = 35'000;
 constexpr int kTranslationTimeoutMs = 120'000;
 constexpr qsizetype kMaximumResponseBytes = 4 * 1024 * 1024;
 constexpr qsizetype kMaximumChatRequestBytes = 2 * 1024 * 1024;
+
+QImage prepareLatexImage(const QImage& image) {
+    // Match RapidLaTeXOCR's max_width/max_height in SnowShotApi. Extra pixels
+    // would be discarded by the worker after uploading and decoding them.
+    constexpr int maximumWidth = 672;
+    constexpr int maximumHeight = 192;
+    if (image.isNull() || (image.width() <= maximumWidth && image.height() <= maximumHeight)) {
+        return image;
+    }
+    const double ratio = std::max(static_cast<double>(image.width()) / maximumWidth,
+                                  static_cast<double>(image.height()) / maximumHeight);
+    const QSize size(std::max(1, static_cast<int>(image.width() / ratio)),
+                     std::max(1, static_cast<int>(image.height() / ratio)));
+    return image.scaled(size, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+}
 
 QByteArray imageConversionBody(const SnowShotImageConversionRequest& input) {
     const QByteArray webp =
@@ -191,13 +211,15 @@ std::optional<QString> qwenMtLanguage(const QString& language) {
 } // namespace
 
 struct SnowShotApiClient::Request {
-    enum class Kind { TableExtract, ChatModels, Translation, ImageConversion };
+    enum class Kind { LatexExtract, TableExtract, ChatModels, Translation, ImageConversion };
     explicit Request(Kind requestKind) : kind(requestKind) {
         elapsed.start();
     }
     const Kind kind;
     QString kindName() const {
         switch (kind) {
+        case Kind::LatexExtract:
+            return QStringLiteral("latex_extract");
         case Kind::TableExtract:
             return QStringLiteral("table_extract");
         case Kind::ChatModels:
@@ -228,6 +250,7 @@ struct SnowShotApiClient::Request {
     }
     QPointer<QObject> receiver;
     Completion completion;
+    LatexCompletion latexCompletion;
     ChatModelsCompletion chatModelsCompletion;
     TranslationDelta translationDelta;
     TranslationCompletion translationCompletion;
@@ -243,14 +266,21 @@ struct SnowShotApiClient::Request {
     QString model;
     QString endpoint;
     QByteArray apiKey;
+    QByteArray pendingBody;
     bool custom = false;
+    bool textTranslation = false;
+    SnowShotTranslationRequest translationInput;
     QString format;
 };
 
-QString SnowShotApiClient::configuredBaseUrl() {
+QString SnowShotApiClient::configuredBaseUrl(const QString& savedUrl) {
+    if (const auto url = snow_shot::normalizedServerUrl(savedUrl); url && !url->isEmpty())
+        return *url;
     const QString overrideUrl =
         QProcessEnvironment::systemEnvironment().value(QStringLiteral("SNOW_SHOT_API_BASE_URL"));
-    return overrideUrl.trimmed().isEmpty() ? QStringLiteral(SNOW_SHOT_API_BASE_URL) : overrideUrl;
+    if (const auto url = snow_shot::normalizedServerUrl(overrideUrl); url && !url->isEmpty())
+        return *url;
+    return normalizedBaseUrl(QStringLiteral(SNOW_SHOT_API_BASE_URL));
 }
 
 SnowShotApiClient::SnowShotApiClient(QString baseUrl, QObject* parent)
@@ -267,6 +297,22 @@ SnowShotApiClient::~SnowShotApiClient() {
         manager->setParent(nullptr);
         manager->deleteLater();
     }
+}
+
+bool SnowShotApiClient::setBaseUrl(const QString& baseUrl) {
+    const auto normalized = snow_shot::normalizedServerUrl(baseUrl);
+    if (!normalized || normalized->isEmpty())
+        return false;
+    if (m_baseUrl == *normalized)
+        return true;
+    m_baseUrl = *normalized;
+    ++m_serverGeneration;
+    m_cachedChatModels.clear();
+    m_cachedChatModelsLocale.clear();
+    rebuildAvailableModels();
+    emit baseUrlChanged();
+    emit chatModelsChanged();
+    return true;
 }
 
 bool SnowShotApiClient::usesSystemProxy() const {
@@ -329,6 +375,7 @@ SnowShotApiClient::extractTable(const QImage& source, QObject* receiver, Complet
 
     const RequestToken token = ++m_nextToken;
     auto* state = new Request(Request::Kind::TableExtract);
+    state->endpoint = m_baseUrl + QStringLiteral("/api/v1/table/extract");
     state->receiver = receiver;
     state->completion = std::move(completion);
     m_requests.insert(token, state);
@@ -347,6 +394,7 @@ SnowShotApiClient::extractTable(const QImage& source, QObject* receiver, Complet
     const QElapsedTimer accepted = state->elapsed;
     const auto prepare = m_tableImagePreparation;
     QThreadPool::globalInstance()->start([guard, token, source, accepted, prepare]() {
+        snow_shot::platform::applyApplicationQoSToCurrentThread();
         const qint64 queueMs = accepted.elapsed();
         QElapsedTimer encoding;
         encoding.start();
@@ -392,7 +440,7 @@ void SnowShotApiClient::startTableUpload(RequestToken token, const QByteArray& w
     }
     auto* manager = networkAccessManager();
     requestState->transport.start();
-    QNetworkRequest request(QUrl(m_baseUrl + QStringLiteral("/api/v1/table/extract")));
+    QNetworkRequest request(QUrl(requestState->endpoint));
     request.setRawHeader("X-Request-ID",
                          QUuid::createUuid().toString(QUuid::WithoutBraces).toUtf8());
     request.setTransferTimeout(static_cast<int>(remaining));
@@ -463,6 +511,151 @@ void SnowShotApiClient::startTableUpload(RequestToken token, const QByteArray& w
     });
 }
 
+SnowShotApiClient::RequestToken SnowShotApiClient::extractLatex(const QImage& source,
+                                                                QObject* receiver,
+                                                                LatexCompletion completion) {
+    if (receiver == nullptr || !completion || m_baseUrl.isEmpty() || source.isNull()) {
+        return 0;
+    }
+
+    const RequestToken token = ++m_nextToken;
+    auto* state = new Request(Request::Kind::LatexExtract);
+    state->endpoint = m_baseUrl + QStringLiteral("/api/v1/latex/extract");
+    state->receiver = receiver;
+    state->latexCompletion = std::move(completion);
+    m_requests.insert(token, state);
+    state->receiverDestroyed =
+        connect(receiver, &QObject::destroyed, this, [this, token]() { cancel(token); });
+    auto* deadline = new QTimer(this);
+    deadline->setSingleShot(true);
+    state->timeout = deadline;
+    connect(deadline, &QTimer::timeout, this, [this, token]() {
+        SnowShotLatexResult result;
+        result.error = tr("LaTeX recognition request timed out");
+        finishLatex(token, std::move(result));
+    });
+    deadline->start(m_latexTimeoutMs);
+    const QPointer<SnowShotApiClient> guard(this);
+    const QElapsedTimer accepted = state->elapsed;
+    const auto prepare = m_tableImagePreparation;
+    QThreadPool::globalInstance()->start([guard, token, source, accepted, prepare]() {
+        snow_shot::platform::applyApplicationQoSToCurrentThread();
+        const qint64 queueMs = accepted.elapsed();
+        QElapsedTimer encoding;
+        encoding.start();
+        const QByteArray webp = prepare ? prepare(source) : encodeWebp(prepareLatexImage(source));
+        const qint64 preparationMs = encoding.elapsed();
+        QMetaObject::invokeMethod(
+            QCoreApplication::instance(),
+            [guard, token, webp, queueMs, preparationMs, dimensions = source.size()]() {
+                if (!guard || !guard->m_requests.contains(token)) {
+                    return;
+                }
+                auto* requestState = guard->m_requests.value(token);
+                if (!requestState->receiver) {
+                    guard->cancel(token);
+                    return;
+                }
+                snow_shot::diagnostics::logEvent(
+                    QStringLiteral("snow_shot.network"), QStringLiteral("latex.image_prepared"),
+                    {{QStringLiteral("operation"), requestState->operation},
+                     {QStringLiteral("queue_ms"), queueMs},
+                     {QStringLiteral("preparation_ms"), preparationMs},
+                     {QStringLiteral("width"), dimensions.width()},
+                     {QStringLiteral("height"), dimensions.height()}});
+                guard->startLatexUpload(token, webp);
+            },
+            Qt::QueuedConnection);
+    });
+    return token;
+}
+
+void SnowShotApiClient::startLatexUpload(RequestToken token, const QByteArray& webp) {
+    auto* requestState = m_requests.value(token, nullptr);
+    if (!requestState) {
+        return;
+    }
+    const qint64 remaining = m_latexTimeoutMs - requestState->elapsed.elapsed();
+    if (webp.isEmpty() || remaining <= 0) {
+        SnowShotLatexResult result;
+        result.error = remaining <= 0 ? tr("LaTeX recognition request timed out")
+                                      : tr("LaTeX recognition failed");
+        finishLatex(token, std::move(result));
+        return;
+    }
+    auto* manager = networkAccessManager();
+    requestState->transport.start();
+    QNetworkRequest request(QUrl(requestState->endpoint));
+    request.setRawHeader("X-Request-ID",
+                         QUuid::createUuid().toString(QUuid::WithoutBraces).toUtf8());
+    request.setTransferTimeout(static_cast<int>(remaining));
+
+    auto* multipart = new QHttpMultiPart(QHttpMultiPart::FormDataType);
+    QHttpPart imagePart;
+    imagePart.setHeader(
+        QNetworkRequest::ContentDispositionHeader,
+        QVariant(QStringLiteral("form-data; name=\"image\"; filename=\"latex.webp\"")));
+    imagePart.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("image/webp"));
+    imagePart.setBody(webp);
+    multipart->append(imagePart);
+
+    QNetworkReply* reply = manager->post(request, multipart);
+    multipart->setParent(reply);
+    requestState->reply = reply;
+
+    connect(reply, &QNetworkReply::finished, this, [this, token, reply]() {
+        if (!m_requests.contains(token)) {
+            reply->deleteLater();
+            return;
+        }
+
+        SnowShotLatexResult result;
+        result.httpStatus = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        const QByteArray body = reply->read(kMaximumResponseBytes + 1);
+        if (body.size() > kMaximumResponseBytes) {
+            result.error = tr("LaTeX recognition response is too large");
+        } else {
+            QJsonParseError parseError{};
+            const QJsonDocument document = QJsonDocument::fromJson(body, &parseError);
+            const QJsonObject root = document.isObject() ? document.object() : QJsonObject{};
+            result.code = root.value(QStringLiteral("code")).toVariant().toString();
+
+            if (reply->error() != QNetworkReply::NoError) {
+                if (reply->error() == QNetworkReply::OperationCanceledError) {
+                    result.error = tr("LaTeX recognition request timed out");
+                } else {
+                    QString description = problemDetail(root);
+                    if (description.isEmpty() && result.httpStatus > 0) {
+                        description =
+                            reply->attribute(QNetworkRequest::HttpReasonPhraseAttribute).toString();
+                    }
+                    if (description.isEmpty()) {
+                        description = reply->errorString();
+                    }
+                    result.error = formatFailure(result.httpStatus, result.code, description);
+                }
+            } else if (!document.isObject()) {
+                result.error = tr("Invalid LaTeX recognition response");
+            } else {
+                if (result.httpStatus == 200 && root.value(QStringLiteral("data")).isObject()) {
+                    const QJsonObject data = root.value(QStringLiteral("data")).toObject();
+                    result.latex = data.value(QStringLiteral("latex")).toString();
+                    if (result.latex.trimmed().isEmpty()) {
+                        result.error = tr("LaTeX recognition returned no formula");
+                    }
+                } else {
+                    result.error = problemDetail(root);
+                    if (result.error.isEmpty()) {
+                        result.error = tr("LaTeX recognition failed");
+                    }
+                    result.error = formatFailure(result.httpStatus, result.code, result.error);
+                }
+            }
+        }
+        finishLatex(token, std::move(result));
+    });
+}
+
 const QVector<SnowShotChatModel>& SnowShotApiClient::cachedChatModels() const {
     return m_availableModels;
 }
@@ -484,23 +677,34 @@ bool SnowShotApiClient::hasBuiltInModels(const QString& locale) const {
     return !m_cachedChatModels.isEmpty() && m_cachedChatModelsLocale == locale;
 }
 QString SnowShotApiClient::modelFingerprint(const QString& id) const {
+    if (const auto* config = textTranslation(id)) {
+        auto copy = *config;
+        copy.name.clear();
+        copy.concurrency = 4;
+        return QString::fromLatin1(
+            QCryptographicHash::hash(
+                QJsonDocument(snow_shot::textTranslationConfigurationsToJson({copy}))
+                    .toJson(QJsonDocument::Compact),
+                QCryptographicHash::Sha256)
+                .toHex());
+    }
     const auto* model = customModel(id);
     return model == nullptr ? QString() : snow_shot::customAiModelFingerprint(*model);
 }
 
 void SnowShotApiClient::rebuildAvailableModels() {
     m_availableModels = m_cachedChatModels;
+    for (const auto& config : m_textTranslations)
+        m_availableModels.push_back(
+            {config.selectionId(), config.name, false, QStringLiteral("text-translation"), false});
     for (const auto& model : m_customModels) {
-        m_availableModels.push_back({model.selectionId(), model.name, false,
-                                     QStringLiteral("default"), model.supportsVision,
-                                     SnowShotModelOrigin::Custom});
+        m_availableModels.push_back({model.selectionId(), model.name, model.supportsReasoning,
+                                     QStringLiteral("default"), model.supportsVision});
     }
 }
 
 QString SnowShotApiClient::fallbackModel(bool vision) const {
-    const auto eligible = [vision](const auto& model) {
-        return vision ? model.supportsVision : model.supportsTranslation();
-    };
+    const auto eligible = [vision](const auto& model) { return !vision || model.supportsVision; };
     for (const auto& model : m_cachedChatModels) {
         if (eligible(model) && model.translationMode == QStringLiteral("default")) {
             return model.id;
@@ -528,7 +732,8 @@ void SnowShotApiClient::setCustomModels(const snow_shot::CustomAiModels& models)
         const QString id = old.selectionId();
         const auto* current = customModel(id);
         const bool changed = current == nullptr || old.baseUrl != current->baseUrl ||
-                             old.apiKey != current->apiKey || old.model != current->model;
+                             old.apiKey != current->apiKey || old.model != current->model ||
+                             old.supportsReasoning != current->supportsReasoning;
         const bool vision = changed || (old.supportsVision && !current->supportsVision);
         if (!changed && !vision) {
             continue;
@@ -544,13 +749,15 @@ void SnowShotApiClient::setCustomModels(const snow_shot::CustomAiModels& models)
         }
         emit customModelInvalidated(id, changed, vision);
     }
+    QTimer::singleShot(0, this, &SnowShotApiClient::pumpCustomChatStreams);
     emit chatModelsChanged();
 }
 
 SnowShotApiClient::RequestToken
 SnowShotApiClient::fetchChatModels(const QString& locale, QObject* receiver,
                                    ChatModelsCompletion completion) {
-    if (receiver == nullptr || !completion || (m_baseUrl.isEmpty() && m_customModels.isEmpty())) {
+    if (receiver == nullptr || !completion ||
+        (m_baseUrl.isEmpty() && m_customModels.isEmpty() && m_textTranslations.isEmpty())) {
         return 0;
     }
     auto* manager = networkAccessManager();
@@ -577,7 +784,8 @@ SnowShotApiClient::fetchChatModels(const QString& locale, QObject* receiver,
     request.setTransferTimeout(kRequestTimeoutMs);
     QNetworkReply* reply = manager->get(request);
     state->reply = reply;
-    connect(reply, &QNetworkReply::finished, this, [this, token, reply, locale]() {
+    const auto generation = m_serverGeneration;
+    connect(reply, &QNetworkReply::finished, this, [this, token, reply, locale, generation]() {
         if (!m_requests.contains(token)) {
             reply->deleteLater();
             return;
@@ -610,23 +818,32 @@ SnowShotApiClient::fetchChatModels(const QString& locale, QObject* receiver,
                     parsed.translationMode = QStringLiteral("default");
                 }
                 if (!parsed.id.isEmpty() && !parsed.name.isEmpty() &&
-                    !parsed.id.startsWith(QStringLiteral("custom:"))) {
+                    !parsed.id.startsWith(QStringLiteral("custom:")) &&
+                    !parsed.id.startsWith(QStringLiteral("translation:"))) {
                     result.models.push_back(std::move(parsed));
                 }
             }
             if (result.models.isEmpty()) {
                 result.error = tr("No translation services are available");
-            } else {
+            } else if (generation == m_serverGeneration) {
                 m_cachedChatModels = result.models;
                 m_cachedChatModelsLocale = locale;
             }
         }
         rebuildAvailableModels();
-        if (!m_customModels.isEmpty()) {
+        // Other consumers also use the completion's models directly. Never deliver
+        // an obsolete server catalog after a switch, even when its request finishes last.
+        if (generation != m_serverGeneration) {
+            result = {};
+            result.models = m_availableModels;
+            if (result.models.isEmpty())
+                result.error = tr("No translation services are available");
+        } else if (!m_customModels.isEmpty()) {
             result.models = m_availableModels;
             result.error.clear();
         }
-        emit chatModelsChanged();
+        if (generation == m_serverGeneration)
+            emit chatModelsChanged();
         finishChatModels(token, std::move(result));
         reply->deleteLater();
     });
@@ -636,6 +853,8 @@ SnowShotApiClient::fetchChatModels(const QString& locale, QObject* receiver,
 SnowShotApiClient::RequestToken
 SnowShotApiClient::streamTranslation(const SnowShotTranslationRequest& input, QObject* receiver,
                                      TranslationDelta delta, TranslationCompletion completion) {
+    if (input.model.startsWith(QStringLiteral("translation:")))
+        return enqueueTextTranslation(input, receiver, std::move(delta), std::move(completion));
     const auto* custom = customModel(input.model);
     if ((input.model.startsWith(QStringLiteral("custom:")) && custom == nullptr) ||
         receiver == nullptr || !delta || !completion ||
@@ -681,11 +900,12 @@ SnowShotApiClient::streamTranslation(const SnowShotTranslationRequest& input, QO
     if (custom != nullptr) {
         body.remove(QStringLiteral("temperature"));
         body.remove(QStringLiteral("max_tokens"));
-        body.remove(QStringLiteral("enable_thinking"));
+        body.insert(QStringLiteral("enable_thinking"), custom->supportsReasoning);
         body.insert(QStringLiteral("stream"), true);
     }
     const RequestToken token = ++m_nextToken;
     auto* state = new Request(Request::Kind::Translation);
+    state->endpoint = m_baseUrl + QStringLiteral("/api/v1/chat/completions");
     state->model = input.model;
     if (custom != nullptr) {
         state->custom = true;
@@ -695,14 +915,18 @@ SnowShotApiClient::streamTranslation(const SnowShotTranslationRequest& input, QO
     state->receiver = receiver;
     state->translationDelta = std::move(delta);
     state->translationCompletion = std::move(completion);
+    state->receiverDestroyed =
+        connect(receiver, &QObject::destroyed, this, [this, token] { cancel(token); });
     m_requests.insert(token, state);
-    startChatStream(token, QJsonDocument(body).toJson(QJsonDocument::Compact));
+    submitChatStream(token, QJsonDocument(body).toJson(QJsonDocument::Compact));
     return token;
 }
 
 SnowShotApiClient::RequestToken SnowShotApiClient::streamImageConversion(
     const SnowShotImageConversionRequest& input, QObject* receiver, TranslationDelta delta,
     std::function<void(SnowShotImageConversionResult)> completion) {
+    if (input.model.startsWith(QStringLiteral("translation:")))
+        return 0;
     const auto* custom = customModel(input.model);
     if ((input.model.startsWith(QStringLiteral("custom:")) && custom == nullptr) ||
         receiver == nullptr || !delta || !completion ||
@@ -715,6 +939,7 @@ SnowShotApiClient::RequestToken SnowShotApiClient::streamImageConversion(
         return 0;
     }
     auto* state = new Request(Request::Kind::ImageConversion);
+    state->endpoint = m_baseUrl + QStringLiteral("/api/v1/chat/completions");
     if (custom != nullptr) {
         state->custom = true;
         state->endpoint = custom->baseUrl + QStringLiteral("/chat/completions");
@@ -747,13 +972,15 @@ SnowShotApiClient::RequestToken SnowShotApiClient::streamImageConversion(
         effectiveInput.model = custom->model;
     }
     QThreadPool::globalInstance()->start(
-        [guard, token, effectiveInput, isCustom = custom != nullptr]() {
+        [guard, token, effectiveInput, isCustom = custom != nullptr,
+         supportsReasoning = custom != nullptr && custom->supportsReasoning]() {
+            snow_shot::platform::applyApplicationQoSToCurrentThread();
             QByteArray body = imageConversionBody(effectiveInput);
             if (isCustom && !body.isEmpty()) {
                 auto object = QJsonDocument::fromJson(body).object();
                 object.remove(QStringLiteral("temperature"));
                 object.remove(QStringLiteral("max_tokens"));
-                object.remove(QStringLiteral("enable_thinking"));
+                object.insert(QStringLiteral("enable_thinking"), supportsReasoning);
                 body = QJsonDocument(object).toJson(QJsonDocument::Compact);
             }
             QMetaObject::invokeMethod(
@@ -773,13 +1000,57 @@ SnowShotApiClient::RequestToken SnowShotApiClient::streamImageConversion(
                         guard->finishTranslation(token, std::move(result));
                         return;
                     }
-                    guard->startChatStream(token, body);
+                    guard->submitChatStream(token, body);
                 },
                 Qt::QueuedConnection);
         });
     state->receiverDestroyed =
-        connect(receiver, &QObject::destroyed, deadline, [this, token]() { cancel(token); });
+        connect(receiver, &QObject::destroyed, this, [this, token]() { cancel(token); });
     return token;
+}
+
+void SnowShotApiClient::submitChatStream(RequestToken token, QByteArray body) {
+    auto* state = m_requests.value(token);
+    if (!state)
+        return;
+    if (!state->custom) {
+        startChatStream(token, body);
+        return;
+    }
+    if (state->imageConversion && state->timeout)
+        state->timeout->stop();
+    state->pendingBody = std::move(body);
+    m_customChatQueue.append(token);
+    QTimer::singleShot(0, this, &SnowShotApiClient::pumpCustomChatStreams);
+}
+
+void SnowShotApiClient::pumpCustomChatStreams() {
+    QHash<QString, int> active;
+    for (const auto* request : m_requests)
+        if (request->custom && request->reply)
+            ++active[request->model];
+    const auto queued = m_customChatQueue;
+    const QPointer<SnowShotApiClient> guard(this);
+    for (const auto token : queued) {
+        auto* request = m_requests.value(token);
+        if (!request || !m_customChatQueue.contains(token)) {
+            m_customChatQueue.removeAll(token);
+            continue;
+        }
+        const auto* model = customModel(request->model);
+        if (!model) {
+            cancel(token);
+            continue;
+        }
+        if (active.value(request->model) >= model->concurrency)
+            continue;
+        ++active[request->model];
+        m_customChatQueue.removeAll(token);
+        QByteArray body = std::move(request->pendingBody);
+        startChatStream(token, body);
+        if (!guard)
+            return;
+    }
 }
 
 void SnowShotApiClient::startChatStream(RequestToken token, const QByteArray& body) {
@@ -787,9 +1058,11 @@ void SnowShotApiClient::startChatStream(RequestToken token, const QByteArray& bo
     if (state == nullptr) {
         return;
     }
-    QNetworkRequest request(QUrl(
-        state->custom ? state->endpoint : m_baseUrl + QStringLiteral("/api/v1/chat/completions")));
+    QNetworkRequest request(QUrl(state->endpoint));
     if (state->custom) {
+        QHttp1Configuration http1;
+        http1.setNumberOfConnectionsPerHost(16);
+        request.setHttp1Configuration(http1);
         request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
                              QNetworkRequest::SameOriginRedirectPolicy);
         if (!state->apiKey.isEmpty()) {
@@ -804,6 +1077,8 @@ void SnowShotApiClient::startChatStream(RequestToken token, const QByteArray& bo
     QNetworkReply* reply = networkAccessManager()->post(request, body);
     reply->setReadBufferSize(64 * 1024);
     state->reply = reply;
+    if (state->imageConversion && state->timeout)
+        state->timeout->start(kTranslationTimeoutMs);
 
     const auto parseAvailable = [this, token]() {
         Request* current = m_requests.value(token, nullptr);
@@ -982,7 +1257,15 @@ void SnowShotApiClient::cancel(RequestToken token) {
         return;
     }
     request->report(QStringLiteral("cancelled"));
+    const bool translation = request->textTranslation;
+    const bool custom = request->custom;
+    m_translationQueue.removeAll(token);
+    m_customChatQueue.removeAll(token);
     cleanupRequest(request);
+    if (translation)
+        QTimer::singleShot(0, this, &SnowShotApiClient::pumpTextTranslations);
+    if (custom)
+        QTimer::singleShot(0, this, &SnowShotApiClient::pumpCustomChatStreams);
 }
 
 void SnowShotApiClient::finish(RequestToken token, SnowShotTableResult result) {
@@ -994,6 +1277,21 @@ void SnowShotApiClient::finish(RequestToken token, SnowShotTableResult result) {
                     result.httpStatus);
     const QPointer<QObject> receiver = request->receiver;
     Completion completion = std::move(request->completion);
+    cleanupRequest(request);
+    if (receiver && completion) {
+        completion(std::move(result));
+    }
+}
+
+void SnowShotApiClient::finishLatex(RequestToken token, SnowShotLatexResult result) {
+    Request* request = m_requests.take(token);
+    if (!request) {
+        return;
+    }
+    request->report(result.succeeded() ? QStringLiteral("succeeded") : QStringLiteral("failed"),
+                    result.httpStatus);
+    const QPointer<QObject> receiver = request->receiver;
+    LatexCompletion completion = std::move(request->latexCompletion);
     cleanupRequest(request);
     if (receiver && completion) {
         completion(std::move(result));
@@ -1036,7 +1334,14 @@ void SnowShotApiClient::finishTranslation(RequestToken token, SnowShotTranslatio
     const QPointer<QObject> receiver = request->receiver;
     TranslationCompletion completion = std::move(request->translationCompletion);
     const QPointer<QNetworkReply> reply = request->reply;
+    const bool translation = request->textTranslation;
+    const bool custom = request->custom;
+    m_customChatQueue.removeAll(token);
     delete request;
+    if (translation)
+        QTimer::singleShot(0, this, &SnowShotApiClient::pumpTextTranslations);
+    if (custom)
+        QTimer::singleShot(0, this, &SnowShotApiClient::pumpCustomChatStreams);
     // An SSE error can arrive before HTTP completion. Release its connection before
     // the consumer starts another request in the newly available queue slot.
     if (reply != nullptr && reply->isRunning()) {
@@ -1045,4 +1350,192 @@ void SnowShotApiClient::finishTranslation(RequestToken token, SnowShotTranslatio
     if (receiver != nullptr && completion) {
         completion(std::move(result));
     }
+}
+
+const snow_shot::TextTranslationConfiguration*
+SnowShotApiClient::textTranslation(const QString& id) const {
+    for (const auto& config : m_textTranslations)
+        if (config.selectionId() == id)
+            return &config;
+    return nullptr;
+}
+
+bool SnowShotApiClient::isTextTranslation(const QString& id) const {
+    return textTranslation(id) != nullptr;
+}
+
+int SnowShotApiClient::translationConcurrency(const QString& id) const {
+    const auto* config = textTranslation(id);
+    return config == nullptr ? 4 : config->concurrency;
+}
+
+void SnowShotApiClient::setTextTranslationConfigurations(
+    const snow_shot::TextTranslationConfigurations& values) {
+    bool valid = false;
+    const auto normalized = snow_shot::textTranslationConfigurationsFromJson(
+        snow_shot::textTranslationConfigurationsToJson(values), &valid);
+    if (!valid || normalized == m_textTranslations)
+        return;
+    const auto previous = m_textTranslations;
+    m_textTranslations = normalized;
+    rebuildAvailableModels();
+    const QPointer<SnowShotApiClient> guard(this);
+    for (const auto& old : previous) {
+        const auto* current = textTranslation(old.selectionId());
+        if (current != nullptr && current->endpoint == old.endpoint &&
+            current->provider == old.provider && current->apiKey == old.apiKey &&
+            current->applicationId == old.applicationId)
+            continue;
+        const auto tokens = m_requests.keys();
+        for (const auto token : tokens) {
+            const auto* request = m_requests.value(token);
+            if (request != nullptr && request->model == old.selectionId())
+                cancel(token);
+        }
+        emit customModelInvalidated(old.selectionId(), true, false);
+        if (!guard)
+            return;
+    }
+    QTimer::singleShot(0, this, &SnowShotApiClient::pumpTextTranslations);
+    emit chatModelsChanged();
+}
+
+SnowShotApiClient::RequestToken
+SnowShotApiClient::enqueueTextTranslation(const SnowShotTranslationRequest& input,
+                                          QObject* receiver, TranslationDelta delta,
+                                          TranslationCompletion completion) {
+    if (!textTranslation(input.model) || !receiver || !delta || !completion || input.text.isEmpty())
+        return 0;
+    const auto token = ++m_nextToken;
+    auto* state = new Request(Request::Kind::Translation);
+    state->textTranslation = true;
+    state->model = input.model;
+    state->translationInput = input;
+    state->receiver = receiver;
+    state->translationDelta = std::move(delta);
+    state->translationCompletion = std::move(completion);
+    state->receiverDestroyed =
+        connect(receiver, &QObject::destroyed, this, [this, token] { cancel(token); });
+    m_requests.insert(token, state);
+    m_translationQueue.append(token);
+    // Always return the token before invoking consumers, including validation failures.
+    QTimer::singleShot(0, this, &SnowShotApiClient::pumpTextTranslations);
+    return token;
+}
+
+void SnowShotApiClient::pumpTextTranslations() {
+    QHash<QString, int> active;
+    for (const auto* request : m_requests)
+        if (request->textTranslation && request->reply)
+            ++active[request->model];
+    const auto queued = m_translationQueue;
+    const QPointer<SnowShotApiClient> guard(this);
+    for (const auto token : queued) {
+        auto* request = m_requests.value(token);
+        if (!request) {
+            m_translationQueue.removeAll(token);
+            continue;
+        }
+        if (!m_translationQueue.contains(token))
+            continue;
+        if (active.value(request->model) >= translationConcurrency(request->model))
+            continue;
+        ++active[request->model];
+        m_translationQueue.removeAll(token);
+        startTextTranslation(token);
+        if (!guard)
+            return;
+    }
+}
+
+void SnowShotApiClient::startTextTranslation(RequestToken token) {
+    auto* state = m_requests.value(token);
+    if (!state)
+        return;
+    const auto* configuration = textTranslation(state->model);
+    if (!configuration) {
+        cancel(token);
+        return;
+    }
+    const auto config = *configuration;
+    const QByteArray body = snow_shot::text_translation::body(
+        config, state->translationInput, QUuid::createUuid().toString(QUuid::WithoutBraces),
+        QString::number(QDateTime::currentSecsSinceEpoch()));
+    if (body.isEmpty() || body.size() > kMaximumChatRequestBytes) {
+        SnowShotTranslationResult result;
+        result.error = body.isEmpty()
+                           ? tr("This service does not support the selected language combination.")
+                           : tr("The text is too large to translate.");
+        finishTranslation(token, result);
+        return;
+    }
+    QNetworkRequest request(QUrl(config.endpoint));
+    QHttp1Configuration http1;
+    http1.setNumberOfConnectionsPerHost(16);
+    request.setHttp1Configuration(http1);
+    request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
+                         QNetworkRequest::SameOriginRedirectPolicy);
+    request.setHeader(QNetworkRequest::ContentTypeHeader,
+                      config.provider == QStringLiteral("deepl")
+                          ? QStringLiteral("application/json")
+                          : QStringLiteral("application/x-www-form-urlencoded"));
+    request.setRawHeader("Accept", "application/json");
+    if (config.provider == QStringLiteral("deepl") && !config.apiKey.isEmpty())
+        request.setRawHeader("Authorization", "DeepL-Auth-Key " + config.apiKey.toUtf8());
+    state->transport.start();
+    auto* reply = networkAccessManager()->post(request, body);
+    state->reply = reply;
+    auto* timeout = new QTimer(this);
+    timeout->setSingleShot(true);
+    state->timeout = timeout;
+    connect(timeout, &QTimer::timeout, this, [this, token] {
+        SnowShotTranslationResult result;
+        result.error = tr("Translation request timed out.");
+        finishTranslation(token, result);
+    });
+    timeout->start(kTranslationTimeoutMs);
+    connect(reply, &QNetworkReply::readyRead, this, [this, token] {
+        auto* pending = m_requests.value(token);
+        if (!pending || !pending->reply)
+            return;
+        pending->streamBuffer += pending->reply->readAll();
+        if (pending->streamBuffer.size() > kMaximumResponseBytes) {
+            SnowShotTranslationResult result;
+            result.error = tr("The translation response is too large.");
+            finishTranslation(token, result);
+        }
+    });
+    connect(reply, &QNetworkReply::finished, reply, &QObject::deleteLater);
+    connect(reply, &QNetworkReply::finished, this, [this, token, provider = config.provider] {
+        auto* pending = m_requests.value(token);
+        if (!pending || !pending->reply)
+            return;
+        pending->streamBuffer += pending->reply->readAll();
+        SnowShotTranslationResult result;
+        result.httpStatus =
+            pending->reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        const auto parsed = snow_shot::text_translation::parse(provider, pending->streamBuffer);
+        result.code = parsed.code;
+        if (parsed.throttled)
+            result.httpStatus = 429;
+        if (pending->streamBuffer.size() > kMaximumResponseBytes) {
+            result.error = tr("The translation response is too large.");
+        } else if (pending->reply->error() != QNetworkReply::NoError || result.httpStatus >= 400 ||
+                   !parsed.code.isEmpty()) {
+            // Do not surface arbitrary gateway bodies, URLs, or credentials in errors.
+            result.error = tr("Translation service request failed (HTTP %1, code %2).")
+                               .arg(result.httpStatus)
+                               .arg(result.code.isEmpty() ? QStringLiteral("-") : result.code);
+        } else if (!parsed.valid) {
+            result.error = tr("Invalid translation service response");
+        }
+        if (result.succeeded() && pending->receiver) {
+            const QPointer<SnowShotApiClient> guard(this);
+            const auto delta = pending->translationDelta;
+            delta(parsed.text);
+            if (!guard || !m_requests.contains(token))
+                return;
+        }
+        finishTranslation(token, result);
+    });
 }

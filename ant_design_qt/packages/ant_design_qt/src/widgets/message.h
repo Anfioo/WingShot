@@ -103,6 +103,8 @@ class AdMessage final : public QObject {
     SemanticStyleResolver semanticStyleResolver;
     Callback onClick;
     Callback onClose;
+    // Keep the message open but hidden while its full layout cannot fit in the owner.
+    bool hideWhenClipped = false;
   };
 
   struct Config {
@@ -235,6 +237,8 @@ class AdMessageHandle final : public QObject {
 class AdMessageService final {
  public:
   // Returns the shared service for ownerWindow's top-level window.
+  // Without an owner, selects a visible, non-minimized application window or dialog;
+  // returns nullptr when only auxiliary windows (tools, popups, etc.) are visible.
   static AdMessage* instance(QWidget* ownerWindow = nullptr);
 
   static AdMessage::Config config();

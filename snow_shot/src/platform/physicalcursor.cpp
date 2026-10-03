@@ -85,7 +85,12 @@ PhysicalCursorAccess nativeAccess() {
             CFRelease(event);
             return QPointF(point.x, point.y);
         },
-        false};
+        false,
+        [display] {
+            // CoreGraphics warps floor desktop coordinates to whole points. A Retina
+            // half-point request otherwise moves up/left but stalls down/right.
+            return *display ? qRound((*display)->devicePixelRatio()) : 1;
+        }};
 #else
     return {};
 #endif
@@ -106,7 +111,7 @@ QPoint offsetForDirection(PhysicalCursorDirection direction) {
 }
 
 std::optional<QPoint> targetPosition(const QPoint& current, PhysicalCursorDirection direction,
-                                     int distance) {
+                                     qint64 distance) {
     if (distance <= 0)
         return std::nullopt;
     const QPoint offset = offsetForDirection(direction);
@@ -160,7 +165,12 @@ PhysicalCursorMoveResult PhysicalCursor::movePixels(PhysicalCursorDirection dire
         return {PhysicalCursorMoveStatus::ReadFailed, std::nullopt};
     }
 
-    const std::optional<QPoint> target = targetPosition(current.value(), direction, distance);
+    const int quantum = m_access.movementQuantum ? m_access.movementQuantum() : 1;
+    if (distance <= 0 || quantum <= 0)
+        return {PhysicalCursorMoveStatus::InvalidTarget, std::nullopt};
+    const qint64 nativeDistance =
+        ((static_cast<qint64>(distance) + quantum - 1) / quantum) * quantum;
+    const std::optional<QPoint> target = targetPosition(current.value(), direction, nativeDistance);
     if (!target.has_value()) {
         return {PhysicalCursorMoveStatus::InvalidTarget, std::nullopt};
     }

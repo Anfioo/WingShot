@@ -42,6 +42,10 @@
             <translation>取消</translation>
         </message>
         <message>
+            <source>Could not insert the draw template</source>
+            <translation>无法插入绘图模板</translation>
+        </message>
+        <message>
             <source>Could not read the selected files from Finder. Please try again.</source>
             <translation>无法读取访达中选中的文件，请重试。</translation>
         </message>
@@ -68,6 +72,10 @@
         <message>
             <source>No recognized result is available to copy</source>
             <translation>没有可复制的识别结果</translation>
+        </message>
+        <message>
+            <source>Save recognition text</source>
+            <translation>保存识别文本</translation>
         </message>
         <message>
             <source>Save screenshot</source>
@@ -106,8 +114,20 @@
             <translation>将剪贴板内容固定到屏幕的队列已满</translation>
         </message>
         <message>
+            <source>The dropped content could not be opened</source>
+            <translation>无法打开拖放的内容</translation>
+        </message>
+        <message>
+            <source>The dropped content could not be queued</source>
+            <translation>无法将拖放的内容加入队列</translation>
+        </message>
+        <message>
             <source>The pinned window could not be restored</source>
             <translation>无法恢复固定到屏幕窗口</translation>
+        </message>
+        <message>
+            <source>The recognition text could not be saved: %1</source>
+            <translation>无法保存识别文本：%1</translation>
         </message>
         <message>
             <source>The screenshot clipboard operation could not be started</source>
@@ -155,10 +175,52 @@
         </message>
     </context>
     <context>
+        <name>ScreenshotMcpServer</name>
+        <message>
+            <source>MCP request failed (%1).</source>
+            <translation>MCP 请求失败（%1）。</translation>
+        </message>
+    </context>
+    <context>
         <name>ScreenshotOverlayWindow</name>
         <message>
             <source>Loading screenshot history</source>
             <translation>正在加载截图历史</translation>
+        </message>
+        <message>
+            <source>Result Preview in Progress</source>
+            <translation>正在预览结果</translation>
+        </message>
+    </context>
+    <context>
+        <name>ScreenshotQrController</name>
+        <message>
+            <source>Copy Text</source>
+            <translation>复制文本</translation>
+        </message>
+        <message>
+            <source>Open URL</source>
+            <translation>打开链接</translation>
+        </message>
+        <message>
+            <source>QR Code</source>
+            <translation>二维码</translation>
+        </message>
+        <message>
+            <source>QR Code %1</source>
+            <translation>二维码 %1</translation>
+        </message>
+        <message>
+            <source>QR code recognition failed</source>
+            <translation>二维码识别失败</translation>
+        </message>
+        <message>
+            <source>QR code text</source>
+            <translation>二维码文本</translation>
+        </message>
+        <message>
+            <source>Unable to open the recognized link</source>
+            <translation>无法打开识别出的链接</translation>
         </message>
     </context>
     <context>
@@ -301,12 +363,44 @@
     <context>
         <name>ScreenshotSelectionToolbarWidget</name>
         <message>
+            <source>16:9</source>
+            <translation>16:9</translation>
+        </message>
+        <message>
+            <source>1:1</source>
+            <translation>1:1</translation>
+        </message>
+        <message>
+            <source>2:3</source>
+            <translation>2:3</translation>
+        </message>
+        <message>
+            <source>3:2</source>
+            <translation>3:2</translation>
+        </message>
+        <message>
+            <source>3:4</source>
+            <translation>3:4</translation>
+        </message>
+        <message>
+            <source>4:3</source>
+            <translation>4:3</translation>
+        </message>
+        <message>
+            <source>9:16</source>
+            <translation>9:16</translation>
+        </message>
+        <message>
             <source>Corner radius</source>
             <translation>圆角半径</translation>
         </message>
         <message>
             <source>Corner radius is unavailable for custom regions</source>
             <translation>自定义区域不支持圆角半径</translation>
+        </message>
+        <message>
+            <source>Free</source>
+            <translation>自由</translation>
         </message>
         <message>
             <source>Height</source>
@@ -317,12 +411,16 @@
             <translation>锁定选区宽高比</translation>
         </message>
         <message>
+            <source>Logical pixels</source>
+            <translation>逻辑像素</translation>
+        </message>
+        <message>
             <source>Pixels</source>
             <translation>像素</translation>
         </message>
         <message>
-            <source>Points</source>
-            <translation>点</translation>
+            <source>Selection aspect ratio</source>
+            <translation>选区宽高比</translation>
         </message>
         <message>
             <source>Shadow width</source>
@@ -341,8 +439,8 @@
             <translation> Y 坐标</translation>
         </message>
         <message>
-            <source>pt</source>
-            <translation>pt</translation>
+            <source>dp</source>
+            <translation>dp</translation>
         </message>
         <message>
             <source>px</source>
@@ -384,6 +482,10 @@
             <translation>从中心缩放</translation>
         </message>
         <message>
+            <source>Selection Aspect Ratio Snap</source>
+            <translation>选区宽高比吸附</translation>
+        </message>
+        <message>
             <source>Switch color format</source>
             <translation>切换颜色格式</translation>
         </message>
@@ -402,6 +504,32 @@
         <message>
             <source>mouse wheel</source>
             <translation>鼠标滚轮</translation>
+        </message>
+    </context>
+    <context>
+        <name>snow_shot::app::mcp::ScreenshotMcpServer</name>
+        <message>
+            <source>Another Snow Shot instance owns the MCP endpoint.</source>
+            <translation>另一个 Snow Shot 实例正在使用 MCP 端点。</translation>
+        </message>
+        <message>
+            <source>Could not open the local MCP endpoint.</source>
+            <translation>无法打开本地 MCP 端点。</translation>
+        </message>
+        <message>
+            <source>Could not secure the MCP runtime directory.</source>
+            <translation>无法设置 MCP 运行目录的安全权限。</translation>
+        </message>
+        <message>
+            <source>Could not write the private MCP descriptor.</source>
+            <translation>无法写入私有 MCP 描述文件。</translation>
+        </message>
+    </context>
+    <context>
+        <name>snow_shot::app::mcp::ScreenshotMcpSession</name>
+        <message>
+            <source>MCP request failed (%1).</source>
+            <translation>MCP 请求失败（%1）。</translation>
         </message>
     </context>
     <context>

@@ -1,8 +1,12 @@
 #ifndef SNOW_SHOT_PRESENTATION_SCREENSHOTTABLEEDITOR_H
 #define SNOW_SHOT_PRESENTATION_SCREENSHOTTABLEEDITOR_H
 
-#include "snow_shot/presentation/screenshottabledocument.h"
+#include "snow_shot/app/edition.h"
 
+#include <QMetaType>
+
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
+#include "snow_shot/presentation/screenshottabledocument.h"
 #include <QPoint>
 #include <QTableView>
 #include <QUndoStack>
@@ -17,6 +21,7 @@ class QPlainTextEdit;
 class QWheelEvent;
 class ScreenshotTableModel;
 class ScreenshotTableDelegate;
+#endif
 
 struct ScreenshotTableCommandState {
     bool canUndo = false;
@@ -36,6 +41,7 @@ struct ScreenshotTableCommandState {
     }
 };
 
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
 class ScreenshotTableEditingSession final {
   public:
     explicit ScreenshotTableEditingSession(ScreenshotTableDocument recognizedDocument);
@@ -50,6 +56,8 @@ class ScreenshotTableEditingSession final {
     std::function<void()> documentChanged;
 
     void replaceDocument(const ScreenshotTableDocument& replacement);
+    static void applyDocument(const std::shared_ptr<ScreenshotTableEditingSession>& session,
+                              const ScreenshotTableDocument& replacement, const QString& label);
 };
 
 class ScreenshotTableEditor final : public QTableView {
@@ -90,6 +98,7 @@ class ScreenshotTableEditor final : public QTableView {
     void mouseReleaseEvent(QMouseEvent* event) override;
     void mouseDoubleClickEvent(QMouseEvent* event) override;
     void keyPressEvent(QKeyEvent* event) override;
+    bool focusNextPrevChild(bool next) override;
     void contextMenuEvent(QContextMenuEvent* event) override;
     void wheelEvent(QWheelEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;
@@ -138,6 +147,7 @@ class ScreenshotTableEditor final : public QTableView {
     std::optional<PendingCellEdit> m_pendingCellEdit;
     quint64 m_nextCellEditId = 0;
 };
+#endif
 
 Q_DECLARE_METATYPE(ScreenshotTableCommandState)
 

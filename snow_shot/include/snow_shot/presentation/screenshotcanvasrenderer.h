@@ -4,6 +4,7 @@
 #include "snow_draw_engine_qt/snow_canvas_custom_renderer.h"
 #include "snow_shot/presentation/screenshotimagesource.h"
 #include "snow_shot/presentation/screenshotresultcompositor.h"
+#include "snow_shot/presentation/screenshotselectioneffectgeometry.h"
 
 #include <QColor>
 #include <QImage>
@@ -20,6 +21,7 @@
 #include <cstddef>
 #include <array>
 #include <memory>
+#include <optional>
 
 class SnowCanvasWidget;
 class ScreenshotOcrPresentation;
@@ -35,6 +37,10 @@ struct ScreenshotSelectionVisualState {
     int shadowWidth = 0;
     QColor shadowColor = QColor(0x33, 0x33, 0x33);
     bool toolbarHovered = false;
+    bool effectEditorsVisible = false;
+    ScreenshotSelectionEffectHandle hoveredEffectHandle = ScreenshotSelectionEffectHandle::None;
+    ScreenshotSelectionEffectHandle activeEffectHandle = ScreenshotSelectionEffectHandle::None;
+    bool effectPreviewVisible = false;
     std::optional<ScreenshotRegionGeometry> region;
     ScreenshotRegionGeometry confirmedRegion;
     QRectF marquee;
@@ -48,10 +54,13 @@ struct ScreenshotSelectionVisualState {
                handlesVisible == other.handlesVisible && borderVisible == other.borderVisible &&
                cornerRadius == other.cornerRadius && shadowWidth == other.shadowWidth &&
                shadowColor == other.shadowColor && toolbarHovered == other.toolbarHovered &&
-               region == other.region && confirmedRegion == other.confirmedRegion &&
-               marquee == other.marquee && subtracting == other.subtracting &&
-               dangerColor == other.dangerColor && draftPath == other.draftPath &&
-               draftVertices == other.draftVertices;
+               effectEditorsVisible == other.effectEditorsVisible &&
+               hoveredEffectHandle == other.hoveredEffectHandle &&
+               activeEffectHandle == other.activeEffectHandle &&
+               effectPreviewVisible == other.effectPreviewVisible && region == other.region &&
+               confirmedRegion == other.confirmedRegion && marquee == other.marquee &&
+               subtracting == other.subtracting && dangerColor == other.dangerColor &&
+               draftPath == other.draftPath && draftVertices == other.draftVertices;
     }
 
     [[nodiscard]] bool operator!=(const ScreenshotSelectionVisualState& other) const {
@@ -105,7 +114,14 @@ class ScreenshotCanvasRenderer final : public SnowCanvasCustomRenderer {
 
     void setRenderMode(RenderMode mode);
     void setImage(QImage image, const QRectF& canvasRect);
-    void setImageSource(ScreenshotImageSource source);
+    void setImageSource(ScreenshotImageSource source, const QRectF& damage = {});
+    [[nodiscard]] ScreenshotImageSource imageSourceSnapshot() const {
+        return m_imageSource;
+    }
+    void setScrollingResultPreview(QImage image, const QRectF& canvasRect,
+                                   std::optional<Qt::Orientation> cropGuide = std::nullopt);
+    void clearScrollingResultPreview();
+    [[nodiscard]] bool hasScrollingResultPreview() const;
     void setImageViewportPhysicalSize(const QSize& size);
     void setPinnedResultSurface(const QRectF& contentCanvasRect, const QRectF& surfaceCanvasRect,
                                 const ScreenshotResultStyle& style);
@@ -129,6 +145,8 @@ class ScreenshotCanvasRenderer final : public SnowCanvasCustomRenderer {
     void setMaskColor(const QColor& color);
     void setGuideLines(const QPointF& cursorPosition, const QColor& cursorColor,
                        const QColor& monitorCenterColor);
+    void setGuideCursorPosition(const QPointF& cursorPosition);
+    void setSelectionCenterGuideLineColor(const QColor& color);
     void clearGuideLines();
     void setSelection(const QRectF& selection, bool handlesVisible = true, int cornerRadius = 0,
                       int shadowWidth = 0, const QColor& shadowColor = QColor(0x33, 0x33, 0x33));
@@ -157,8 +175,12 @@ class ScreenshotCanvasRenderer final : public SnowCanvasCustomRenderer {
     void updateOcrSelection();
     void clearOcrPresentation();
     void reset();
+    void clearRenderState() override;
 
     [[nodiscard]] std::uint64_t contentRevision() const override;
+    [[nodiscard]] std::uint64_t originalBackgroundRevision() const override;
+    [[nodiscard]] std::optional<SnowCanvasFilterRenderReference>
+    filterRenderReference() const override;
     [[nodiscard]] RenderMode renderMode() const;
     [[nodiscard]] bool maskVisible() const;
     [[nodiscard]] QColor maskColor() const;
@@ -178,6 +200,8 @@ class ScreenshotCanvasRenderer final : public SnowCanvasCustomRenderer {
 #endif
 
     void renderBeforeCanvas(QPainter& painter, const SnowCanvasRenderContext& context) override;
+    void renderOriginalBackground(QPainter& painter,
+                                  const SnowCanvasRenderContext& context) override;
     void renderAfterCanvas(QPainter& painter, const SnowCanvasRenderContext& context) override;
 
   private:
@@ -195,17 +219,24 @@ class ScreenshotCanvasRenderer final : public SnowCanvasCustomRenderer {
         bool draw(QPainter& painter, const QPainterPath& path, const QColor& color, bool exterior,
                   const QRect& viewport);
     };
-    void invalidateCachedContent();
+    void invalidateCachedContent(bool originalChanged = true);
+    void paintBackground(QPainter& painter, const SnowCanvasRenderContext& context,
+                         bool originalOnly);
     [[nodiscard]] ScreenshotOcrTextLayer* ensureOcrTextLayer();
-    // Widget-space repaint region for a filtered-image canvas rect; empty when the
+    // Widget-space repaint region for an image canvas rect; empty when the
     // rect maps outside the viewport, the full viewport when the display cache is
     // unsynchronized.
-    [[nodiscard]] QRegion ocrFilterImageDamageRegion(const QRectF& canvasRect) const;
+    [[nodiscard]] QRegion canvasImageDamageRegion(const QRectF& canvasRect) const;
 
     SnowCanvasWidget& m_canvas;
+    QPointer<SnowCanvasWidget> m_canvasGuard;
     QMetaObject::Connection m_themeConnection;
     std::uint64_t m_contentRevision = 0;
+    std::uint64_t m_originalBackgroundRevision = 0;
     ScreenshotImageSource m_imageSource;
+    QImage m_scrollingResultPreviewImage;
+    QRectF m_scrollingResultPreviewCanvasRect;
+    std::optional<Qt::Orientation> m_scrollingCropGuide;
     QSize m_imageViewportPhysicalSize;
     QRectF m_pinnedContentCanvasRect;
     QRectF m_pinnedSurfaceCanvasRect;
@@ -227,6 +258,7 @@ class ScreenshotCanvasRenderer final : public SnowCanvasCustomRenderer {
     QColor m_maskColor = QColor(0, 0, 0, 128);
     QPoint m_guideLineCursorPosition;
     QColor m_cursorGuideLineColor = QColor(0, 0, 0, 0);
+    QColor m_selectionCenterGuideLineColor = QColor(0, 0, 0, 0);
     QColor m_monitorCenterGuideLineColor = QColor(0, 0, 0, 0);
     bool m_guideLinesVisible = false;
     bool m_ocrVisible = true;

@@ -5,6 +5,7 @@
 #include <QtGlobal>
 
 #include <functional>
+#include <optional>
 
 enum class SnowCanvasTool;
 struct SnowCanvasShapeStyle;
@@ -31,8 +32,9 @@ struct ScreenshotToolCommandActions {
     std::function<void(const SnowCanvasFilterStyle& style, quint32 properties)> setFilterStyle;
     std::function<void(const SnowCanvasWatermarkConfig& config)> setWatermarkConfig;
     std::function<void(const SnowCanvasSpotlightConfig& config)> setSpotlightConfig;
-    std::function<void(const SnowCanvasTextStyle& style)> setTextStyle;
-    std::function<void(const SnowCanvasSerialNumberStyle& style)> setSerialNumberStyle;
+    std::function<void(const SnowCanvasTextStyle& style, quint32 properties)> setTextStyle;
+    std::function<void(const SnowCanvasSerialNumberStyle& style, std::optional<quint32> properties)>
+        setSerialNumberStyle;
     std::function<void(qint64 delta)> adjustSelectedSerialNumbers;
     std::function<void()> createCanvasTextForSelectedSerialNumber;
     std::function<bool(int direction)> stepToolbarStrokeWidth;

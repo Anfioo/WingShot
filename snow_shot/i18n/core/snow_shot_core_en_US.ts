@@ -4,16 +4,28 @@
     <context>
         <name>AboutPageWidget</name>
         <message>
+            <source>%1 logo</source>
+            <translation>%1 logo</translation>
+        </message>
+        <message>
             <source>%1 · %2</source>
             <translation>%1 · %2</translation>
+        </message>
+        <message>
+            <source>%1 · Make expression clearer</source>
+            <translation>%1 · Make expression clearer</translation>
         </message>
         <message>
             <source>, excellent work.</source>
             <translation>, excellent work.</translation>
         </message>
         <message>
-            <source>About WingShot</source>
-            <translation>About WingShot</translation>
+            <source>About %1</source>
+            <translation>About %1</translation>
+        </message>
+        <message>
+            <source>About Snow Shot</source>
+            <translation>About Snow Shot</translation>
         </message>
         <message>
             <source>Automatic updates are unavailable for this copy.</source>
@@ -28,16 +40,22 @@
             <translation>Cancel download</translation>
         </message>
         <message>
-            <source>Capture, annotate, recognize text, and record your screen.</source>
-            <translation>Capture, annotate, recognize text, and record your screen.</translation>
+            <source>Capture, annotate, recognize text, and record your screen,
+so every moment on screen can be expressed clearly and shared easily.</source>
+            <translation>Capture, annotate, recognize text, and record your screen,
+so every moment on screen can be expressed clearly and shared easily.</translation>
         </message>
         <message>
             <source>Changelog</source>
             <translation>Changelog</translation>
         </message>
         <message>
-            <source>Check for a newer version of WingShot.</source>
-            <translation>Check for a newer version of WingShot.</translation>
+            <source>Check for a newer version of %1.</source>
+            <translation>Check for a newer version of %1.</translation>
+        </message>
+        <message>
+            <source>Check for a newer version of Snow Shot.</source>
+            <translation>Check for a newer version of Snow Shot.</translation>
         </message>
         <message>
             <source>Check for updates</source>
@@ -80,8 +98,16 @@
             <translation>Discover more features and ways to use it</translation>
         </message>
         <message>
-            <source>Download from website</source>
-            <translation>Download from website</translation>
+            <source>Discussion and support · Group No. %1</source>
+            <translation>Discussion and support · Group No. %1</translation>
+        </message>
+        <message>
+            <source>Download from GitHub</source>
+            <translation>Download from GitHub</translation>
+        </message>
+        <message>
+            <source>Download from Gitee</source>
+            <translation>Download from Gitee</translation>
         </message>
         <message>
             <source>Download update</source>
@@ -108,12 +134,8 @@
             <translation>Feedback and suggestions</translation>
         </message>
         <message>
-            <source>Fork of %1 by mg-chao · %2</source>
-            <translation>Fork of %1 by mg-chao · %2</translation>
-        </message>
-        <message>
-            <source>Free software, without warranty.</source>
-            <translation>Free software, without warranty.</translation>
+            <source>Free and open-source software. Distributed without any warranty.</source>
+            <translation>Free and open-source software. Distributed without any warranty.</translation>
         </message>
         <message>
             <source>Free · Open source</source>
@@ -152,6 +174,14 @@
             <translation>Preview</translation>
         </message>
         <message>
+            <source>QQ Group 2</source>
+            <translation>QQ Group 2</translation>
+        </message>
+        <message>
+            <source>QQ Group 3</source>
+            <translation>QQ Group 3</translation>
+        </message>
+        <message>
             <source>Ready to install %1</source>
             <translation>Ready to install %1</translation>
         </message>
@@ -174,6 +204,18 @@
         <message>
             <source>Screenshot selection, annotation tools, and recognized text</source>
             <translation>Screenshot selection, annotation tools, and recognized text</translation>
+        </message>
+        <message>
+            <source>Snow Shot</source>
+            <translation>Snow Shot</translation>
+        </message>
+        <message>
+            <source>Snow Shot logo</source>
+            <translation>Snow Shot logo</translation>
+        </message>
+        <message>
+            <source>Snow Shot · Make expression clearer</source>
+            <translation>Snow Shot · Make expression clearer</translation>
         </message>
         <message>
             <source>Text recognition</source>
@@ -206,22 +248,6 @@
         <message>
             <source>View the source and improve it together</source>
             <translation>View the source and improve it together</translation>
-        </message>
-        <message>
-            <source>WingShot</source>
-            <translation>WingShot</translation>
-        </message>
-        <message>
-            <source>WingShot is a fork of Snow Shot (https://github.com/mg-chao/snow-apps) by mg-chao. The earlier Tauri version is at https://github.com/xiaofeiTM233/snow-shot. In https://github.com/Anfioo/WingShot the main branch keeps the original project and the new branch carries the WingShot changes.</source>
-            <translation>WingShot is a fork of Snow Shot (https://github.com/mg-chao/snow-apps) by mg-chao. The earlier Tauri version is at https://github.com/xiaofeiTM233/snow-shot. In https://github.com/Anfioo/WingShot the main branch keeps the original project and the new branch carries the WingShot changes.</translation>
-        </message>
-        <message>
-            <source>WingShot logo</source>
-            <translation>WingShot logo</translation>
-        </message>
-        <message>
-            <source>WingShot · Make expression clearer</source>
-            <translation>WingShot · Make expression clearer</translation>
         </message>
         <message>
             <source>You are up to date.</source>
@@ -331,6 +357,68 @@
         </message>
     </context>
     <context>
+        <name>EditionMetadata</name>
+        <message>
+            <source>Snow Shot</source>
+            <translation>Snow Shot</translation>
+        </message>
+        <message>
+            <source>Snow Shot Mini</source>
+            <translation>Snow Shot Mini</translation>
+        </message>
+    </context>
+    <context>
+        <name>FloatingToolbar</name>
+        <message>
+            <source>Close</source>
+            <translation>Close</translation>
+        </message>
+        <message>
+            <source>Customize toolbar</source>
+            <translation>Customize toolbar</translation>
+        </message>
+        <message>
+            <source>Delay %1 seconds to execute</source>
+            <translation>Delay %1 seconds to execute</translation>
+        </message>
+        <message>
+            <source>Formula recognition</source>
+            <translation>Formula recognition</translation>
+        </message>
+        <message>
+            <source>Hide during screenshots</source>
+            <translation>Hide during screenshots</translation>
+        </message>
+        <message>
+            <source>Hide in fullscreen</source>
+            <translation>Hide in fullscreen</translation>
+        </message>
+        <message>
+            <source>Icon mode</source>
+            <translation>Icon mode</translation>
+        </message>
+        <message>
+            <source>More tools</source>
+            <translation>More tools</translation>
+        </message>
+        <message>
+            <source>QR code recognition</source>
+            <translation>QR code recognition</translation>
+        </message>
+        <message>
+            <source>Screen recording</source>
+            <translation>Screen recording</translation>
+        </message>
+        <message>
+            <source>Screenshot</source>
+            <translation>Screenshot</translation>
+        </message>
+        <message>
+            <source>Toolbar mode</source>
+            <translation>Toolbar mode</translation>
+        </message>
+    </context>
+    <context>
         <name>LanguageCatalog</name>
         <message>
             <source>Language name</source>
@@ -353,6 +441,13 @@
         <message>
             <source>Grant the required permission to continue</source>
             <translation>Grant the required permission to continue</translation>
+        </message>
+    </context>
+    <context>
+        <name>McpDocumentService</name>
+        <message>
+            <source>Document request failed (%1).</source>
+            <translation>Document request failed (%1).</translation>
         </message>
     </context>
     <context>
@@ -511,6 +606,10 @@
             <translation>Image conversion timed out. Try a smaller area.</translation>
         </message>
         <message>
+            <source>Invalid LaTeX recognition response</source>
+            <translation>Invalid LaTeX recognition response</translation>
+        </message>
+        <message>
             <source>Invalid model stream response</source>
             <translation>Invalid model stream response</translation>
         </message>
@@ -525,6 +624,22 @@
         <message>
             <source>Invalid translation stream response</source>
             <translation>Invalid translation stream response</translation>
+        </message>
+        <message>
+            <source>LaTeX recognition failed</source>
+            <translation>LaTeX recognition failed</translation>
+        </message>
+        <message>
+            <source>LaTeX recognition request timed out</source>
+            <translation>LaTeX recognition request timed out</translation>
+        </message>
+        <message>
+            <source>LaTeX recognition response is too large</source>
+            <translation>LaTeX recognition response is too large</translation>
+        </message>
+        <message>
+            <source>LaTeX recognition returned no formula</source>
+            <translation>LaTeX recognition returned no formula</translation>
         </message>
         <message>
             <source>No translation services are available</source>
@@ -563,8 +678,28 @@
             <translation>The model returned no content</translation>
         </message>
         <message>
+            <source>The text is too large to translate.</source>
+            <translation>The text is too large to translate.</translation>
+        </message>
+        <message>
+            <source>The translation response is too large.</source>
+            <translation>The translation response is too large.</translation>
+        </message>
+        <message>
+            <source>This service does not support the selected language combination.</source>
+            <translation>This service does not support the selected language combination.</translation>
+        </message>
+        <message>
             <source>Translation failed</source>
             <translation>Translation failed</translation>
+        </message>
+        <message>
+            <source>Translation request timed out.</source>
+            <translation>Translation request timed out.</translation>
+        </message>
+        <message>
+            <source>Translation service request failed (HTTP %1, code %2).</source>
+            <translation>Translation service request failed (HTTP %1, code %2).</translation>
         </message>
         <message>
             <source>Translation service response is too large</source>
@@ -616,8 +751,24 @@
     <context>
         <name>snow_shot::app::ApplicationController</name>
         <message>
-            <source>An update is ready. Open About to restart and update WingShot.</source>
-            <translation>An update is ready. Open About to restart and update WingShot.</translation>
+            <source>%1 %2 is available. Open About for update options.</source>
+            <translation>%1 %2 is available. Open About for update options.</translation>
+        </message>
+        <message>
+            <source>%1 will close and restart to install the update. Continue?</source>
+            <translation>%1 will close and restart to install the update. Continue?</translation>
+        </message>
+        <message>
+            <source>An update is ready. Open About to restart and update %1.</source>
+            <translation>An update is ready. Open About to restart and update %1.</translation>
+        </message>
+        <message>
+            <source>An update is ready. Open About to restart and update Snow Shot.</source>
+            <translation>An update is ready. Open About to restart and update Snow Shot.</translation>
+        </message>
+        <message>
+            <source>Cancel</source>
+            <translation>Cancel</translation>
         </message>
         <message>
             <source>Could not pin selected files</source>
@@ -626,6 +777,10 @@
         <message>
             <source>Feature unavailable</source>
             <translation>Feature unavailable</translation>
+        </message>
+        <message>
+            <source>Finish capturing, recording, exporting, recognizing text, or updating before changing storage.</source>
+            <translation>Finish capturing, recording, exporting, recognizing text, or updating before changing storage.</translation>
         </message>
         <message>
             <source>Finish capturing, recording, or exporting before updating.</source>
@@ -640,12 +795,12 @@
             <translation>Restart failed</translation>
         </message>
         <message>
-            <source>WingShot %1 is available. Open About for update options.</source>
-            <translation>WingShot %1 is available. Open About for update options.</translation>
+            <source>Snow Shot %1 is available. Open About for update options.</source>
+            <translation>Snow Shot %1 is available. Open About for update options.</translation>
         </message>
         <message>
-            <source>WingShot will close and restart to install the update. Continue?</source>
-            <translation>WingShot will close and restart to install the update. Continue?</translation>
+            <source>Snow Shot will close and restart to install the update. Continue?</source>
+            <translation>Snow Shot will close and restart to install the update. Continue?</translation>
         </message>
         <message>
             <source>Your settings could not be saved. Please retry before updating.</source>

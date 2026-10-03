@@ -1,3 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" data-adqt-slot="primary" fill="currentColor">
-  <path d="M832 896H192a64 64 0 0 1-64-64V192a64 64 0 0 1 64-64h640a64 64 0 0 1 64 64v640a64 64 0 0 1-64 64z m-576-128h512V256H256v512z"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" fill="none" stroke="currentColor" stroke-width="80.64" stroke-linecap="round" stroke-linejoin="round" data-adqt-slot="primary">
+  <circle cx="512" cy="512" r="394.24"/>
+  <rect x="364.16" y="364.16" width="295.68" height="295.68" rx="26.88" fill="currentColor" stroke="none"/>
 </svg>

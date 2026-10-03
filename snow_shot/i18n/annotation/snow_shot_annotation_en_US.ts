@@ -12,6 +12,10 @@
             <translation>Add</translation>
         </message>
         <message>
+            <source>Add Template</source>
+            <translation>Add Template</translation>
+        </message>
+        <message>
             <source>Add screenshot region</source>
             <translation>Add screenshot region</translation>
         </message>
@@ -60,6 +64,10 @@
             <translation>Animated recording formats do not contain audio</translation>
         </message>
         <message>
+            <source>Arabic numerals</source>
+            <translation>Arabic numerals</translation>
+        </message>
+        <message>
             <source>Arrow</source>
             <translation>Arrow</translation>
         </message>
@@ -92,6 +100,10 @@
             <translation>Auto-scroll</translation>
         </message>
         <message>
+            <source>Auto-scroll interval (scroll to adjust; click to reset to 200 ms)</source>
+            <translation>Auto-scroll interval (scroll to adjust; click to reset to 200 ms)</translation>
+        </message>
+        <message>
             <source>Avatar</source>
             <translation>Avatar</translation>
         </message>
@@ -104,12 +116,24 @@
             <translation>Blue</translation>
         </message>
         <message>
+            <source>Brightness</source>
+            <translation>Brightness</translation>
+        </message>
+        <message>
             <source>Bring forward</source>
             <translation>Bring forward</translation>
         </message>
         <message>
             <source>Bring to front</source>
             <translation>Bring to front</translation>
+        </message>
+        <message>
+            <source>Brush Eraser</source>
+            <translation>Brush Eraser</translation>
+        </message>
+        <message>
+            <source>Brush eraser stroke width %1 (%2px)</source>
+            <translation>Brush eraser stroke width %1 (%2px)</translation>
         </message>
         <message>
             <source>Cancel</source>
@@ -120,10 +144,6 @@
             <translation>Cancel screenshot</translation>
         </message>
         <message>
-            <source>Capture cursor</source>
-            <translation>Capture cursor</translation>
-        </message>
-        <message>
             <source>Center horizontally</source>
             <translation>Center horizontally</translation>
         </message>
@@ -132,8 +152,16 @@
             <translation>Center vertically</translation>
         </message>
         <message>
+            <source>Chinese numerals</source>
+            <translation>Chinese numerals</translation>
+        </message>
+        <message>
             <source>Circle</source>
             <translation>Circle</translation>
+        </message>
+        <message>
+            <source>Click-through</source>
+            <translation>Click-through</translation>
         </message>
         <message>
             <source>Close recording</source>
@@ -168,6 +196,18 @@
             <translation>Corner radius (scroll to adjust)</translation>
         </message>
         <message>
+            <source>Could not capture selected elements</source>
+            <translation>Could not capture selected elements</translation>
+        </message>
+        <message>
+            <source>Could not delete the draw template</source>
+            <translation>Could not delete the draw template</translation>
+        </message>
+        <message>
+            <source>Could not save the draw template</source>
+            <translation>Could not save the draw template</translation>
+        </message>
+        <message>
             <source>Cross-line fill</source>
             <translation>Cross-line fill</translation>
         </message>
@@ -182,6 +222,10 @@
         <message>
             <source>Current arrow stroke width</source>
             <translation>Current arrow stroke width</translation>
+        </message>
+        <message>
+            <source>Current brush eraser stroke width</source>
+            <translation>Current brush eraser stroke width</translation>
         </message>
         <message>
             <source>Current pen filter stroke width</source>
@@ -206,6 +250,10 @@
         <message>
             <source>Current watermark font size</source>
             <translation>Current watermark font size</translation>
+        </message>
+        <message>
+            <source>Cursor data is unavailable for this screenshot.</source>
+            <translation>Cursor data is unavailable for this screenshot.</translation>
         </message>
         <message>
             <source>Curve region</source>
@@ -238,6 +286,14 @@
         <message>
             <source>Delete</source>
             <translation>Delete</translation>
+        </message>
+        <message>
+            <source>Delete Draw Template</source>
+            <translation>Delete Draw Template</translation>
+        </message>
+        <message>
+            <source>Delete draw template "%1"? This action cannot be undone.</source>
+            <translation>Delete draw template "%1"? This action cannot be undone.</translation>
         </message>
         <message>
             <source>Delete selected elements</source>
@@ -276,6 +332,10 @@
             <translation>Drag toolbar</translation>
         </message>
         <message>
+            <source>Draw Template</source>
+            <translation>Draw Template</translation>
+        </message>
+        <message>
             <source>Edit</source>
             <translation>Edit</translation>
         </message>
@@ -284,8 +344,16 @@
             <translation>Edit selection</translation>
         </message>
         <message>
+            <source>Effect Settings</source>
+            <translation>Effect Settings</translation>
+        </message>
+        <message>
             <source>Elbow arrow</source>
             <translation>Elbow arrow</translation>
+        </message>
+        <message>
+            <source>Element Eraser</source>
+            <translation>Element Eraser</translation>
         </message>
         <message>
             <source>Ellipse</source>
@@ -358,6 +426,10 @@
         <message>
             <source>Eraser</source>
             <translation>Eraser</translation>
+        </message>
+        <message>
+            <source>Exit</source>
+            <translation>Exit</translation>
         </message>
         <message>
             <source>Export Settings</source>
@@ -488,6 +560,10 @@
             <translation>Keyboard Size</translation>
         </message>
         <message>
+            <source>LaTeX Formula Recognition</source>
+            <translation>LaTeX Formula Recognition</translation>
+        </message>
+        <message>
             <source>Line</source>
             <translation>Line</translation>
         </message>
@@ -502,6 +578,14 @@
         <message>
             <source>Line text fill</source>
             <translation>Line text fill</translation>
+        </message>
+        <message>
+            <source>Logical Pixel Selection</source>
+            <translation>Logical Pixel Selection</translation>
+        </message>
+        <message>
+            <source>Lowercase letters</source>
+            <translation>Lowercase letters</translation>
         </message>
         <message>
             <source>Mask color</source>
@@ -576,6 +660,10 @@
             <translation>Move selection vertically (press and hold to drag)</translation>
         </message>
         <message>
+            <source>No matching templates</source>
+            <translation>No matching templates</translation>
+        </message>
+        <message>
             <source>No templates yet</source>
             <translation>No templates yet</translation>
         </message>
@@ -628,6 +716,10 @@
             <translation>Pen highlight stroke width %1 (%2px)</translation>
         </message>
         <message>
+            <source>Physical Pixel Selection</source>
+            <translation>Physical Pixel Selection</translation>
+        </message>
+        <message>
             <source>Pick color from canvas</source>
             <translation>Pick color from canvas</translation>
         </message>
@@ -650,6 +742,14 @@
         <message>
             <source>Polyline region</source>
             <translation>Polyline region</translation>
+        </message>
+        <message>
+            <source>Post-processing effects</source>
+            <translation>Post-processing effects</translation>
+        </message>
+        <message>
+            <source>Progress Bar Color</source>
+            <translation>Progress Bar Color</translation>
         </message>
         <message>
             <source>Punctuation</source>
@@ -688,8 +788,16 @@
             <translation>Recording format</translation>
         </message>
         <message>
+            <source>Recording settings</source>
+            <translation>Recording settings</translation>
+        </message>
+        <message>
             <source>Rectangle</source>
             <translation>Rectangle</translation>
+        </message>
+        <message>
+            <source>Rectangle Eraser</source>
+            <translation>Rectangle Eraser</translation>
         </message>
         <message>
             <source>Rectangle filter</source>
@@ -728,8 +836,16 @@
             <translation>Resume recording</translation>
         </message>
         <message>
+            <source>Roman numerals</source>
+            <translation>Roman numerals</translation>
+        </message>
+        <message>
             <source>Save as file</source>
             <translation>Save as file</translation>
+        </message>
+        <message>
+            <source>Save to File</source>
+            <translation>Save to File</translation>
         </message>
         <message>
             <source>Scrolling screenshot</source>
@@ -780,6 +896,10 @@
             <translation>Sequence number font size %1px</translation>
         </message>
         <message>
+            <source>Sequence number numeric type</source>
+            <translation>Sequence number numeric type</translation>
+        </message>
+        <message>
             <source>Sequence number type</source>
             <translation>Sequence number type</translation>
         </message>
@@ -796,6 +916,22 @@
             <translation>Shape</translation>
         </message>
         <message>
+            <source>Show Cursor</source>
+            <translation>Show Cursor</translation>
+        </message>
+        <message>
+            <source>Show Playback Time</source>
+            <translation>Show Playback Time</translation>
+        </message>
+        <message>
+            <source>Show Progress Bar</source>
+            <translation>Show Progress Bar</translation>
+        </message>
+        <message>
+            <source>Show QR Code</source>
+            <translation>Show QR Code</translation>
+        </message>
+        <message>
             <source>Show cursor in recording</source>
             <translation>Show cursor in recording</translation>
         </message>
@@ -810,6 +946,10 @@
         <message>
             <source>Smart Erase</source>
             <translation>Smart Erase</translation>
+        </message>
+        <message>
+            <source>Smart Typesetting</source>
+            <translation>Smart Typesetting</translation>
         </message>
         <message>
             <source>Solid arrow stroke</source>
@@ -1048,12 +1188,16 @@
             <translation>Transparent</translation>
         </message>
         <message>
-            <source>Unavailable while recording</source>
-            <translation>Unavailable while recording</translation>
+            <source>Trim Video</source>
+            <translation>Trim Video</translation>
         </message>
         <message>
             <source>Undo</source>
             <translation>Undo</translation>
+        </message>
+        <message>
+            <source>Uppercase letters</source>
+            <translation>Uppercase letters</translation>
         </message>
         <message>
             <source>Vertical scrolling</source>
@@ -1100,12 +1244,24 @@
             <translation>ms</translation>
         </message>
         <message>
+            <source>ms</source>
+            <comment>Auto-scroll interval unit</comment>
+            <translation>ms</translation>
+        </message>
+        <message>
             <source>px</source>
             <translation>px</translation>
         </message>
         <message>
             <source>{text} represents the current watermark text; timestamp formats such as {YYYY-MM-DD_HH-mm-ss} are supported</source>
             <translation>{text} represents the current watermark text; timestamp formats such as {YYYY-MM-DD_HH-mm-ss} are supported</translation>
+        </message>
+    </context>
+    <context>
+        <name>snow_shot::presentation::GlobalCanvasController</name>
+        <message>
+            <source>Could not change canvas click-through.</source>
+            <translation>Could not change canvas click-through.</translation>
         </message>
     </context>
 </TS>

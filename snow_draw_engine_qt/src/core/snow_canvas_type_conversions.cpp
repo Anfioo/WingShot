@@ -3,6 +3,7 @@
 #include "snow_canvas_utf8.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <iterator>
 #include <type_traits>
@@ -99,6 +100,10 @@ SnowCanvasTool toCanvasTool(SnowActiveTool tool) {
         return SnowCanvasTool::AutoFilter;
     case SNOW_ACTIVE_TOOL_SPOTLIGHT:
         return SnowCanvasTool::Spotlight;
+    case SNOW_ACTIVE_TOOL_RECTANGLE_ERASER:
+        return SnowCanvasTool::RectangleEraser;
+    case SNOW_ACTIVE_TOOL_BRUSH_ERASER:
+        return SnowCanvasTool::BrushEraser;
     }
     return SnowCanvasTool::Select;
 }
@@ -135,6 +140,10 @@ SnowActiveTool toEngineTool(SnowCanvasTool tool) {
         return SNOW_ACTIVE_TOOL_AUTO_FILTER;
     case SnowCanvasTool::Spotlight:
         return SNOW_ACTIVE_TOOL_SPOTLIGHT;
+    case SnowCanvasTool::RectangleEraser:
+        return SNOW_ACTIVE_TOOL_RECTANGLE_ERASER;
+    case SnowCanvasTool::BrushEraser:
+        return SNOW_ACTIVE_TOOL_BRUSH_ERASER;
     }
     return SNOW_ACTIVE_TOOL_SELECT;
 }
@@ -189,6 +198,10 @@ SnowCanvasStyleToolbarSource toCanvasStyleToolbarSource(SnowStyleToolbarSource s
         return SnowCanvasStyleToolbarSource::DefaultSpotlight;
     case SNOW_STYLE_TOOLBAR_SOURCE_SELECTED_SPOTLIGHT:
         return SnowCanvasStyleToolbarSource::SelectedSpotlight;
+    case SNOW_STYLE_TOOLBAR_SOURCE_DEFAULT_RECTANGLE_ERASER:
+        return SnowCanvasStyleToolbarSource::DefaultRectangleEraser;
+    case SNOW_STYLE_TOOLBAR_SOURCE_DEFAULT_BRUSH_ERASER:
+        return SnowCanvasStyleToolbarSource::DefaultBrushEraser;
     }
     return SnowCanvasStyleToolbarSource::DefaultRectangle;
 }
@@ -507,6 +520,7 @@ SnowCanvasSerialNumberStyle toCanvasSerialNumberStyle(const SnowSerialNumberStyl
     return SnowCanvasSerialNumberStyle{
         static_cast<qint64>(style.number),
         static_cast<SnowCanvasSerialNumberType>(style.serial_number_type),
+        static_cast<SnowCanvasSerialNumberNumericType>(style.numeric_type),
         toQColor(style.color),
         toQColor(style.fill),
         toCanvasFillStyle(style.fill_style),
@@ -523,6 +537,7 @@ SnowSerialNumberStyle toEngineSerialNumberStyle(const SnowCanvasSerialNumberStyl
     SnowSerialNumberStyle engineStyle{};
     engineStyle.number = static_cast<std::int64_t>(style.number);
     engineStyle.serial_number_type = static_cast<SnowSerialNumberType>(style.type);
+    engineStyle.numeric_type = static_cast<SnowSerialNumberNumericType>(style.numericType);
     engineStyle.color = toEngineColor(style.color);
     engineStyle.fill = toEngineColor(style.fill);
     engineStyle.fill_style = toEngineFillStyle(style.fillStyle);
@@ -553,6 +568,8 @@ SnowCanvasStyleToolbarState toCanvasStyleToolbarState(const SnowStyleToolbarStat
             state.filter_style.stroke_width,
         },
         state.filter_style_mixed,
+        false,
+        SnowCanvasBrushEraserStyle{state.brush_eraser_style.stroke_width},
     };
 }
 
@@ -683,10 +700,12 @@ bool toEngineStyleDefaults(const SnowCanvasStyleDefaults& defaults,
     if (std::any_of(
             std::begin(shapes), std::end(shapes),
             [](const SnowCanvasShapeStyle* style) { return !validShapeStyleEnums(*style); }) ||
+        !std::isfinite(defaults.brushEraser.strokeWidth) ||
+        defaults.brushEraser.strokeWidth < 1.0 || defaults.brushEraser.strokeWidth > 72.0 ||
         !enumInRange(defaults.rectangleFilter.type, SnowCanvasFilterType::Mosaic,
-                     SnowCanvasFilterType::SmartErase) ||
+                     SnowCanvasFilterType::Brightness) ||
         !enumInRange(defaults.penFilter.type, SnowCanvasFilterType::Mosaic,
-                     SnowCanvasFilterType::SmartErase) ||
+                     SnowCanvasFilterType::Brightness) ||
         !enumInRange(defaults.text.fillStyle, SnowCanvasFillStyle::Line,
                      SnowCanvasFillStyle::Solid) ||
         !enumInRange(defaults.text.horizontalAlign, SnowCanvasTextHorizontalAlign::Left,
@@ -752,6 +771,7 @@ bool toEngineStyleDefaults(const SnowCanvasStyleDefaults& defaults,
     engineDefaults.serial_number = toEngineSerialNumberStyle(defaults.serialNumber);
     engineDefaults.watermark = toEngineWatermarkConfig(defaults.watermark);
     engineDefaults.spotlight = toEngineSpotlightConfig(defaults.spotlight);
+    engineDefaults.brush_eraser = SnowBrushEraserStyle{defaults.brushEraser.strokeWidth};
     return true;
 }
 

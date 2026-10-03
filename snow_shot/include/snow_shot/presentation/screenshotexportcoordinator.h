@@ -57,8 +57,10 @@ class ScreenshotExportJobHandle final {
 
   private:
     friend class ScreenshotExportCoordinator;
-    explicit ScreenshotExportJobHandle(std::shared_ptr<std::atomic_bool> cancelled);
+    ScreenshotExportJobHandle(std::shared_ptr<std::atomic_bool> cancelled,
+                              std::function<void()> cancelQueued);
     std::shared_ptr<std::atomic_bool> m_cancelled;
+    std::function<void()> m_cancelQueued;
 };
 
 class ScreenshotExportCoordinator final : public QObject {
@@ -81,7 +83,7 @@ class ScreenshotExportCoordinator final : public QObject {
 
   private:
     struct Impl;
-    std::unique_ptr<Impl> m_impl;
+    std::shared_ptr<Impl> m_impl;
 };
 
 #endif // SNOW_SHOT_PRESENTATION_SCREENSHOTEXPORTCOORDINATOR_H

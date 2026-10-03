@@ -1,3 +1,4 @@
+#include "snow_shot/presentation/windowcloseshortcut.h"
 #include "snow_shot/presentation/screenrecordingtoolbarwindow.h"
 
 #include "snow_shot/presentation/screenshotgeometry.h"
@@ -51,13 +52,14 @@ ScreenshotToolPalette::Options recordingToolbarOptions() {
 
 ScreenRecordingToolbarWindow::ScreenRecordingToolbarWindow(QWidget* parent)
     : ScreenshotFloatingToolPaletteWindow(recordingToolbarOptions(), parent) {
+    snow_shot::presentation::installWindowCloseShortcut(this, [this] { close(); });
     setWindowFlag(Qt::WindowDoesNotAcceptFocus, false);
     setAttribute(Qt::WA_ShowWithoutActivating, false);
     setFocusPolicy(Qt::StrongFocus);
     setAttribute(Qt::WA_DeleteOnClose, false);
     prepareForDisplay();
 #ifdef Q_OS_MACOS
-    snow_shot::platform::configureScreenshotToolbarWindow(this);
+    snow_shot::platform::configureScreenRecordingToolbarWindow(this);
 #endif
     // Secondary rows can grow without changing the fixed native frame or the
     // main-row anchor. Observe the committed host content, including those cases.
@@ -153,6 +155,7 @@ void ScreenRecordingToolbarWindow::beginRegionInteraction() {
         return;
     }
     m_regionInteractionActive = true;
+    palette()->closeRecordingAudioGainPopovers();
     for (auto* picker : palette()->findChildren<adqt::widgets::AdColorPicker*>()) {
         picker->setPopupVisible(false);
     }

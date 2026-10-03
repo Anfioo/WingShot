@@ -3,6 +3,8 @@
 #include "snow_canvas_ffi_handles.h"
 #include "snow_draw_engine.h"
 
+#include <QByteArray>
+
 #include <cstdint>
 #include <vector>
 
@@ -82,6 +84,8 @@ MutationResult deleteSelected(SnowRuntime runtime, SnowViewport viewport);
 MutationResult deleteAllElements(SnowRuntime runtime, SnowViewport viewport);
 MutationResult duplicateSelected(SnowRuntime runtime, SnowViewport viewport, double offsetX,
                                  double offsetY);
+MutationResult insertDrawTemplate(SnowRuntime runtime, SnowViewport viewport,
+                                  const QByteArray& payload, double centerX, double centerY);
 MutationResult reorderSelected(SnowRuntime runtime, SnowViewport viewport, std::uint32_t action);
 MutationResult alignSelected(SnowRuntime runtime, SnowViewport viewport, std::uint32_t alignment);
 MutationResult setSelectedOpacity(SnowRuntime runtime, SnowViewport viewport, double opacity);
@@ -110,12 +114,27 @@ MutationResult setSpotlightConfig(SnowRuntime runtime, SnowViewport viewport,
                                   const SnowSpotlightConfig& config);
 MutationResult setFilterStyle(SnowRuntime runtime, SnowViewport viewport,
                               const SnowFilterStyle& style, std::uint32_t properties);
+MutationResult setFilterCreationStyle(SnowRuntime runtime, SnowViewport viewport,
+                                      const SnowFilterStyle& style, std::uint32_t properties,
+                                      SnowActiveTool tool);
+MutationResult setBrushEraserCreationStyle(SnowRuntime runtime, SnowViewport viewport,
+                                           const SnowBrushEraserStyle& style,
+                                           std::uint32_t properties);
 MutationResult setTextStyle(SnowRuntime runtime, SnowViewport viewport, const SnowTextStyle& style,
+                            std::uint32_t properties,
                             const std::vector<SnowTextLayoutOverride>& layouts = {});
+MutationResult setTextCreationStyle(SnowRuntime runtime, SnowViewport viewport,
+                                    const SnowTextStyle& style, std::uint32_t properties);
+MutationResult setSerialNumberStylePatch(SnowRuntime runtime, SnowViewport viewport,
+                                         const SnowSerialNumberStyle& style,
+                                         std::uint32_t properties);
 MutationResult setSerialNumberStyle(SnowRuntime runtime, SnowViewport viewport,
                                     const SnowSerialNumberStyle& style);
 PairedMutationResult setSnapConfig(SnowRuntime runtime, SnowViewport viewport,
                                    SnowSnapConfig config);
+MutationResult setSnapGuideTargets(SnowRuntime runtime, SnowViewport viewport,
+                                   const double* verticalXs, size_t verticalCount,
+                                   const double* horizontalYs, size_t horizontalCount);
 PairedMutationResult setGridConfig(SnowRuntime runtime, SnowViewport viewport,
                                    SnowGridConfig config);
 

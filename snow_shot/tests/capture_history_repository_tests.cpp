@@ -14,10 +14,14 @@
 
 #include <chrono>
 #include <atomic>
+#include <condition_variable>
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <iostream>
 #include <limits>
+#include <mutex>
+#include <thread>
 
 namespace storage = snow_shot::storage;
 
@@ -27,6 +31,19 @@ void require(bool condition, const char* message) {
         std::cerr << message << '\n';
         std::exit(1);
     }
+}
+
+bool equalPixels(const QImage& left, const QImage& right) {
+    if (left.size() != right.size())
+        return false;
+    const auto a = left.convertToFormat(QImage::Format_RGBA8888);
+    const auto b = right.convertToFormat(QImage::Format_RGBA8888);
+    for (int y = 0; y < a.height(); ++y) {
+        if (std::memcmp(a.constScanLine(y), b.constScanLine(y),
+                        static_cast<size_t>(a.width()) * 4) != 0)
+            return false;
+    }
+    return true;
 }
 
 void writeBytes(const QString& path, const QByteArray& bytes) {
@@ -132,10 +149,26 @@ void pointGeometryRoundTripsAndLegacyIndexRemainsReadable() {
     require(file.open(QIODevice::WriteOnly), "legacy index write failed");
     file.write(QJsonDocument(index).toJson());
     file.close();
-    auto repository = storage::makeCaptureHistoryRepository(temporary.path());
-    require(repository->records().size() == 1 &&
-                !repository->records().front().displays.front().canvasUsesPoints,
-            "legacy pixel-space history was rejected");
+    for (int version : {1, 2}) {
+        index.insert(QStringLiteral("format_version"), version);
+        auto legacyRecords = index.value(QStringLiteral("records")).toArray();
+        auto legacyRecord = legacyRecords[0].toObject();
+        legacyRecord.remove(QStringLiteral("cursor_visible"));
+        legacyRecord.remove(QStringLiteral("cursor_available"));
+        legacyRecords[0] = legacyRecord;
+        index.insert(QStringLiteral("records"), legacyRecords);
+        writeBytes(indexPath(temporary.path()), QJsonDocument(index).toJson());
+        auto repository = storage::makeCaptureHistoryRepository(temporary.path());
+        require(repository->records().size() == 1 &&
+                    !repository->records().front().displays.front().canvasUsesPoints &&
+                    !repository->records().front().cursorAvailable,
+                "legacy pixel-space history must load without offering cursor toggles");
+        const auto payload = repository->load(repository->records().front());
+        require(payload &&
+                    equalPixels(payload->displayImages.front(), draft.displays.front().image) &&
+                    payload->cursorPatches.front().isNull(),
+                "legacy entries must preserve their original pixels without synthesizing cursors");
+    }
 }
 
 void sourceCanvasOriginsRoundTripAndRejectInvalidCoordinates() {
@@ -191,6 +224,62 @@ void sourceCanvasOriginsRoundTripAndRejectInvalidCoordinates() {
         writeBytes(indexPath(temporary.path()), QJsonDocument(invalidIndex).toJson());
         auto repository = storage::makeCaptureHistoryRepository(temporary.path());
         require(repository->records().isEmpty(), "invalid source origin was accepted on load");
+    }
+}
+
+void cursorPatchesRoundTripWithoutChangingDesktopPixels() {
+    QTemporaryDir directory;
+    auto draft = draftAt(QDateTime::currentDateTimeUtc());
+    draft.cursorVisible = true;
+    draft.cursorAvailable = true;
+    draft.displays.front().cursorPixelRect = QRect(2, 3, 4, 5);
+    draft.displays.front().cursorPatch = QImage(4, 5, QImage::Format_RGBA8888);
+    draft.displays.front().cursorPatch.fill(Qt::red);
+    storage::CaptureHistoryRecord record;
+    {
+        auto repository = storage::makeCaptureHistoryRepository(directory.path());
+        const auto published = repository->publish(draft).get();
+        require(published.storage.success && published.record.displays.front().cursor,
+                "separate cursor history publication failed");
+        record = published.record;
+        const auto& cursor = *record.displays.front().cursor;
+        require(cursor.pixelRect == QRect(2, 3, 4, 5) && cursor.encodedBytes > 0 &&
+                    record.totalBytes == record.canvasBytes + record.displays.front().encodedBytes +
+                                             cursor.encodedBytes,
+                "cursor patch bytes must participate in history quota accounting");
+    }
+    {
+        auto repository = storage::makeCaptureHistoryRepository(directory.path());
+        require(repository->records().size() == 1 && repository->records().front() == record,
+                "cursor history metadata must survive reopening");
+        const auto payload = repository->load(record);
+        require(payload.has_value(), "cursor history payload must reopen");
+        require(record.cursorVisible && record.cursorAvailable,
+                "cursor history must preserve session visibility and availability");
+        require(equalPixels(payload->displayImages.front(), draft.displays.front().image),
+                "reopened cursor history must preserve clean desktop pixels");
+        require(equalPixels(payload->cursorPatches.front(), draft.displays.front().cursorPatch),
+                "reopened history must preserve separate cursor pixels");
+        const auto assetPath =
+            QDir(onlyRecordDirectory(directory.path())).filePath(QStringLiteral("cursor_0.png"));
+        QFile appendedPatch(assetPath);
+        require(appendedPatch.open(QIODevice::Append) && appendedPatch.write("x") == 1,
+                "append a trailing-byte cursor payload fixture");
+        appendedPatch.close();
+        require(!repository->load(record),
+                "cursor patch payload size must match the accounted manifest bytes");
+        require(repository->remove(record.id).get().success && !QFileInfo::exists(assetPath) &&
+                    repository->usage().entryCount == 0,
+                "removing history must delete cursor assets and release their accounted bytes");
+    }
+    require(readObject(indexPath(directory.path())).value(QStringLiteral("format_version")) == 3,
+            "new history must use format version 3");
+    for (const QRect invalid : {QRect(-1, 0, 4, 5), QRect(30, 20, 4, 5), QRect(2, 3, 5, 5)}) {
+        QTemporaryDir malformed;
+        draft.displays.front().cursorPixelRect = invalid;
+        auto repository = storage::makeCaptureHistoryRepository(malformed.path());
+        require(!repository->publish(draft).get().storage.success,
+                "cursor patch must fit the desktop and match its stored dimensions");
     }
 }
 
@@ -300,16 +389,16 @@ void desktopGeometryRoundTripsAndValidatesCoordinates() {
                         !repository->records().front().desktopGeometry,
                     "legacy records must load without inventing a desktop origin");
         }
-        for (const QJsonValue invalid :
+        for (const QJsonValue& invalid :
              {QJsonValue(QJsonValue::Null), QJsonValue(0), QJsonValue(QStringLiteral("invalid"))}) {
             record.insert(QStringLiteral("desktop_geometry"), invalid);
             writeRecord();
             auto repository = storage::makeCaptureHistoryRepository(temporary.path());
             require(repository->records().isEmpty(), "invalid desktop geometry was accepted");
         }
-        for (const QString key :
+        for (const QString& key :
              {QStringLiteral("x"), QStringLiteral("y"), QStringLiteral("space")}) {
-            for (const QJsonValue invalid :
+            for (const QJsonValue& invalid :
                  {QJsonValue(QJsonValue::Null), QJsonValue(0.5), QJsonValue(2147483648.0),
                   QJsonValue(QStringLiteral("unknown"))}) {
                 auto geometry = validGeometry;
@@ -346,7 +435,7 @@ void publicationAndRecovery() {
         const QJsonObject manifest = firstRecord(temporary.path());
         require(readObject(indexPath(temporary.path()))
                             .value(QStringLiteral("format_version"))
-                            .toInt() == 2 &&
+                            .toInt() == 3 &&
                     manifest.value(QStringLiteral("id")).toString() == published.id &&
                     manifest.value(QStringLiteral("source")).toString() ==
                         QStringLiteral("pinned_to_screen") &&
@@ -583,10 +672,13 @@ void publicationQueueCapacity() {
     std::promise<void> started;
     std::promise<void> release;
     auto released = release.get_future().share();
+    std::once_flag firstWorker;
     options.operationObserved = [&](storage::CaptureHistoryOperation operation) {
         if (operation == storage::CaptureHistoryOperation::WorkerStarted) {
-            started.set_value();
-            released.wait();
+            std::call_once(firstWorker, [&]() {
+                started.set_value();
+                released.wait();
+            });
         }
     };
     auto repository = storage::makeCaptureHistoryRepository(temporary.path(), options);
@@ -797,10 +889,13 @@ void failedCommitPreservesPublishedHistory() {
     const QString index = indexPath(temporary.path());
     const QString saved = index + QStringLiteral(".saved");
     require(QFile::rename(index, saved) && QDir().mkdir(index), "failed to block index commit");
+    const auto revision = repository->recordsSnapshot().revision;
     const auto failed = repository->publish(draftAt(QDateTime::currentDateTimeUtc())).get();
     require(!failed.storage.success && repository->records() == QVector{first.record} &&
                 repository->load(first.record).has_value(),
             "failed commit evicted acknowledged history");
+    require(repository->recordsSnapshot().revision == revision,
+            "failed index commit must not advance the history revision");
     require(QDir().rmdir(index) && QFile::rename(saved, index), "failed to restore index");
     repository.reset();
     auto reopened = storage::makeCaptureHistoryRepository(temporary.path());
@@ -986,10 +1081,13 @@ void clearCancelsQueuedPublicationsAndShutdownDrains() {
     std::promise<void> started, release;
     auto released = release.get_future().share();
     storage::CaptureHistoryRepositoryOptions options;
+    std::once_flag firstWorker;
     options.operationObserved = [&](storage::CaptureHistoryOperation operation) {
         if (operation == storage::CaptureHistoryOperation::WorkerStarted) {
-            started.set_value();
-            released.wait();
+            std::call_once(firstWorker, [&]() {
+                started.set_value();
+                released.wait();
+            });
         }
     };
     auto repository = storage::makeCaptureHistoryRepository(temporary.path(), options);
@@ -1002,6 +1100,60 @@ void clearCancelsQueuedPublicationsAndShutdownDrains() {
     auto accepted = repository->publish(draftAt(QDateTime::currentDateTimeUtc()));
     repository.reset();
     require(accepted.get().storage.success, "shutdown abandoned an accepted publication");
+}
+
+void idleWorkersRetireAndRestartWithoutLosingHistory() {
+    struct Lifecycle {
+        std::mutex mutex;
+        std::condition_variable changed;
+        int starts = 0;
+        int exits = 0;
+        int maximumLive = 0;
+    };
+    struct ExitNotice {
+        std::shared_ptr<Lifecycle> lifecycle;
+        ~ExitNotice() {
+            {
+                const std::lock_guard lock(lifecycle->mutex);
+                ++lifecycle->exits;
+            }
+            lifecycle->changed.notify_all();
+        }
+    };
+    const auto lifecycle = std::make_shared<Lifecycle>();
+    storage::CaptureHistoryRepositoryOptions options;
+    options.operationObserved = [lifecycle](storage::CaptureHistoryOperation operation) {
+        if (operation != storage::CaptureHistoryOperation::WorkerStarted)
+            return;
+        thread_local std::unique_ptr<ExitNotice> exitNotice;
+        exitNotice = std::make_unique<ExitNotice>(lifecycle);
+        const std::lock_guard lock(lifecycle->mutex);
+        ++lifecycle->starts;
+        lifecycle->maximumLive =
+            std::max(lifecycle->maximumLive, lifecycle->starts - lifecycle->exits);
+    };
+    QTemporaryDir temporary;
+    auto repository = storage::makeCaptureHistoryRepository(temporary.path(), options);
+    const QDateTime now = QDateTime::currentDateTimeUtc();
+    for (int cycle = 1; cycle <= 2; ++cycle) {
+        require(repository->publish(draftAt(now.addMSecs(cycle))).get().storage.success,
+                "publication failed after history worker restart");
+        repository->drain();
+        std::unique_lock lock(lifecycle->mutex);
+        require(lifecycle->changed.wait_for(lock, std::chrono::seconds(7),
+                                            [&]() { return lifecycle->exits == cycle; }),
+                "idle history storage worker did not actually terminate");
+        require(lifecycle->starts == cycle && lifecycle->maximumLive == 1,
+                "history storage worker restart overlapped or duplicated workers");
+    }
+    require(repository->records().size() == 2 && repository->recordsSnapshot().revision == 2,
+            "history worker restart lost records or changed revisions");
+    auto clear = repository->requestClear();
+    repository.reset();
+    require(clear.get().success, "shutdown abandoned clear after history worker restart");
+    const std::lock_guard lock(lifecycle->mutex);
+    require(lifecycle->starts == 3 && lifecycle->exits == 3 && lifecycle->maximumLive == 1,
+            "shutdown did not finish the restarted history storage worker");
 }
 } // namespace
 
@@ -1022,8 +1174,71 @@ void compoundSelectionSurvivesRepositoryRestart() {
             "reopened screenshot history must retain holes");
 }
 
+void revisionCheckedMutations() {
+    QTemporaryDir directory;
+    auto repository = storage::makeCaptureHistoryRepository(directory.path());
+    const auto initial = repository->recordsSnapshot();
+    auto first = draftAt(QDateTime::currentDateTimeUtc());
+    require(repository->publish(first).get().storage.success, "revision fixture publication");
+    const auto published = repository->recordsSnapshot();
+    require(published.revision > initial.revision && published.records.size() == 1,
+            "history snapshot atomically reports records and revision");
+    require(repository->removeIfRevision({QStringLiteral("missing")}, published.revision)
+                    .get()
+                    .success &&
+                repository->recordsSnapshot().revision == published.revision,
+            "no-op conditional removal preserves the revision");
+    require(!repository->removeIfRevision({first.id}, initial.revision).get().success &&
+                repository->records().size() == 1,
+            "stale deletion must not remove a newer history record");
+    auto second = draftAt(QDateTime::currentDateTimeUtc().addSecs(1));
+    require(repository->publish(second).get().storage.success,
+            "second revision fixture publication");
+    require(!repository->removeIfRevision({}, published.revision, true).get().success &&
+                repository->records().size() == 2,
+            "stale clear must not remove new captures");
+    require(repository->removeIfRevision({first.id}, repository->recordsSnapshot().revision)
+                    .get()
+                    .success &&
+                repository->records().size() == 1 && repository->records().first().id == second.id,
+            "revision-checked deletion affects only the selected record");
+    const auto removed = repository->recordsSnapshot();
+    require(removed.revision == published.revision + 2,
+            "publication and deletion advance once each; payload cleanup does not");
+    auto policy = repository->policy();
+    policy.maxEntries = 1;
+    require(repository->updatePolicy(policy).get().success &&
+                repository->recordsSnapshot().revision == removed.revision,
+            "policy-only changes preserve the record revision");
+    const auto replacement = draftAt(QDateTime::currentDateTimeUtc().addSecs(2));
+    require(repository->publish(replacement).get().storage.success &&
+                repository->recordsSnapshot().revision == removed.revision + 1 &&
+                repository->records().size() == 1 &&
+                repository->records().first().id == replacement.id,
+            "capacity replacement changes revision even when record count is unchanged");
+    const auto replacedRevision = repository->recordsSnapshot().revision;
+    require(repository->removeIfRevision({}, replacedRevision, true).get().success &&
+                repository->recordsSnapshot().revision == replacedRevision + 1,
+            "conditional clear advances the revision once");
+    require(repository->requestClear().get().success &&
+                repository->recordsSnapshot().revision == replacedRevision + 1,
+            "clearing empty history preserves the revision");
+}
+
 int main(int argc, char** argv) {
     QCoreApplication application(argc, argv);
+    if (application.arguments().contains(QStringLiteral("--worker-lifecycle-only"))) {
+        idleWorkersRetireAndRestartWithoutLosingHistory();
+        return 0;
+    }
+    revisionCheckedMutations();
+    if (application.arguments().contains(QStringLiteral("--revision-only"))) {
+        failedCommitPreservesPublishedHistory();
+        policyBoundariesAndDisabledPreservation();
+        startupExpiresAgeButDoesNotEnforceCapacity();
+        return 0;
+    }
+    cursorPatchesRoundTripWithoutChangingDesktopPixels();
     compoundSelectionSurvivesRepositoryRestart();
     pointGeometryRoundTripsAndLegacyIndexRemainsReadable();
     sourceCanvasOriginsRoundTripAndRejectInvalidCoordinates();
@@ -1047,5 +1262,6 @@ int main(int argc, char** argv) {
     batchRemovalCommitsAndNotifiesOnce();
     permanentHistoryBypassesLimitsAndAllowsManualDeletion();
     clearCancelsQueuedPublicationsAndShutdownDrains();
+    idleWorkersRetireAndRestartWithoutLosingHistory();
     return 0;
 }

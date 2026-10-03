@@ -5,6 +5,8 @@
 #include "snow_shot/presentation/screenshotselectionparams.h"
 #include "snow_shot/storage/capturehistorytypes.h"
 #include "snow_shot/storage/preparedpngimage.h"
+#include "snow_shot/presentation/screenshotclipboardcontent.h"
+#include "snow_shot/presentation/screenshotrecognitionresults.h"
 
 #include <QByteArray>
 #include <QDateTime>
@@ -24,6 +26,8 @@ struct ScreenshotHistoryDisplay {
     bool canvasUsesPoints = false;
     qreal backingScale = 0.0;
     quint32 nativeDisplayId = 0;
+    QImage cursorPatch{};
+    QRect cursorPixelRect{};
 };
 
 struct ScreenshotHistoryEntry {
@@ -42,9 +46,16 @@ struct ScreenshotHistoryEntry {
     // Absent on entries restored from records persisted before the scrolling marker existed.
     std::optional<bool> scrolling{};
     std::optional<snow_shot::storage::CaptureHistoryDesktopGeometry> desktopGeometry{};
+    bool cursorVisible = false;
+    bool cursorAvailable = false;
     bool intelligentSelectionMode = false;
     bool persistent = true;
     std::optional<ScreenshotIntelligentSelectionModel> liveIntelligentSelection;
+    // Transient MCP handoff state; historical on-disk records remain unchanged.
+    QByteArray documentSession;
+    ScreenshotClipboardOriginalContent originalContent;
+    ScreenshotRecognitionResults recognitionResults;
+    QString tool;
 };
 
 #endif // SNOW_SHOT_PRESENTATION_SCREENSHOTHISTORYTYPES_H

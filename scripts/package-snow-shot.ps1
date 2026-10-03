@@ -110,9 +110,10 @@ function Get-ValidatedStaticQtStamp {
     }
 
     $expectedValues = [ordered]@{
-        SchemaVersion = 3
+        SchemaVersion = $script:SnowStaticQtSchemaVersion
         QtVersion = $ExpectedVersion
         Configuration = $ExpectedConfiguration
+        FeatureFingerprint = $script:SnowStaticQtFeatureFingerprint
     }
     foreach ($property in $expectedValues.Keys) {
         if ($stamp.PSObject.Properties.Name -notcontains $property -or
@@ -120,7 +121,7 @@ function Get-ValidatedStaticQtStamp {
             throw "Static Qt build stamp '$property' is '$($stamp.$property)'; expected '$($expectedValues[$property])'."
         }
     }
-    foreach ($property in @("Ltcg", "SystemPng", "SystemZlib")) {
+    foreach ($property in @("Ltcg", "SystemPng", "SystemZlib", "Timezone")) {
         if ($stamp.PSObject.Properties.Name -notcontains $property -or
             $stamp.$property -isnot [bool] -or
             $stamp.$property -ne $true) {
@@ -128,7 +129,40 @@ function Get-ValidatedStaticQtStamp {
         }
     }
 
+    if (-not (Test-SnowStaticQtStamp -Stamp $stamp -Version $ExpectedVersion `
+            -Configuration $ExpectedConfiguration)) {
+        throw "The static Qt build stamp must describe the current feature policy with timezone_locale disabled."
+    }
+    if (-not (Test-SnowQtSystemCodecKit -Qt6Dir (Join-Path $Prefix "lib\cmake\Qt6"))) {
+        throw "The installed Qt targets do not match the audited system-codec/LTCG/timezone feature policy."
+    }
+    foreach ($patch in $script:SnowStaticQtSourcePatches) {
+        $patchPath = Join-Path $Prefix "share\snow-apps\qt-licenses\patches\$($patch.File)"
+        if (-not (Test-Path -LiteralPath $patchPath -PathType Leaf) -or
+            (Get-FileHash -LiteralPath $patchPath -Algorithm SHA256).Hash.ToLowerInvariant() -cne
+                $patch.SHA256) {
+            throw "The installed Qt source-patch provenance is missing or altered: $patchPath"
+        }
+    }
+
     return $stamp
+}
+
+function Get-SnowShotExpectedFfmpegComponents {
+    $expectedFfmpegComponents = [ordered]@{
+        BSF = @("AAC_ADTSTOASC", "H264_MP4TOANNEXB", "PGS_FRAME_MERGE", "VP9_SUPERFRAME")
+        DECODER = @("AAC", "APNG", "GIF", "H264", "HEVC", "MP3", "PCM_F32LE", "PCM_S16LE", "PNG", "VP8", "WEBP", "WEBP_ANIM")
+        ENCODER = @("AAC", "APNG", "GIF", "H263", "H264_MF", "H264_AMF", "H264_NVENC", "H264_QSV", "LIBWEBP_ANIM", "LIBX264", "LIBX265", "MP3_MF", "MPEG4")
+        HWACCEL = @("H264_D3D11VA", "H264_D3D11VA2", "H264_DXVA2", "HEVC_D3D11VA", "HEVC_D3D11VA2", "HEVC_DXVA2")
+        PARSER = @("AAC", "AC3", "GIF", "H264", "HEVC", "MPEGAUDIO")
+        DEMUXER = @("APNG", "GIF", "MATROSKA", "MOV", "WEBP_ANIM")
+        MUXER = @("APNG", "AVI", "GIF", "MATROSKA", "MOV", "MP4", "WEBP")
+        PROTOCOL = @("FILE")
+        FILTER = @()
+        INDEV = @()
+        OUTDEV = @()
+    }
+    return $expectedFfmpegComponents
 }
 
 function Assert-SnowShotStaticDependencies {
@@ -154,25 +188,24 @@ function Assert-SnowShotStaticDependencies {
             }
         }
     })
-    $expectedFfmpegComponents = [ordered]@{
-        BSF = @("AAC_ADTSTOASC", "H264_MP4TOANNEXB", "PGS_FRAME_MERGE", "VP9_SUPERFRAME")
-        DECODER = @("APNG", "GIF", "H264", "PNG", "VP8", "WEBP", "WEBP_ANIM")
-        ENCODER = @("AAC", "APNG", "GIF", "H263", "H264_MF", "H264_AMF", "H264_NVENC", "H264_QSV", "LIBWEBP_ANIM", "LIBX264", "LIBX265", "MP3_MF", "MPEG4")
-        HWACCEL = @("H264_D3D11VA", "H264_D3D11VA2", "H264_DXVA2")
-        PARSER = @("AAC", "AC3", "H264", "MPEGAUDIO")
-        DEMUXER = @("APNG", "GIF", "MATROSKA", "MOV", "WEBP_ANIM")
-        MUXER = @("APNG", "AVI", "GIF", "MATROSKA", "MOV", "MP4", "WEBP")
-        PROTOCOL = @("FILE")
-        FILTER = @()
-        INDEV = @()
-        OUTDEV = @()
-    }
-    foreach ($entry in $expectedFfmpegComponents.GetEnumerator()) {
+    foreach ($entry in (Get-SnowShotExpectedFfmpegComponents).GetEnumerator()) {
         $actual = @($enabledFfmpegComponents |
             Where-Object { $_.Kind -ceq $entry.Key } |
             ForEach-Object { $_.Name })
         Assert-ExactStringSet -Description "Enabled FFmpeg $($entry.Key) components" `
             -Expected $entry.Value -Actual $actual
+    }
+
+    $main10CapabilityPath = Join-Path $Prefix "share\x265\snow-main10-capability.json"
+    if (-not (Test-Path -LiteralPath $main10CapabilityPath -PathType Leaf)) {
+        throw "The audited x265 Main10 capability metadata was not found: $main10CapabilityPath"
+    }
+    $main10Capability = Get-Content -LiteralPath $main10CapabilityPath -Raw | ConvertFrom-Json
+    if ($main10Capability.schemaVersion -ne 1 -or
+        $main10Capability.bitDepth8 -ne $true -or
+        $main10Capability.bitDepth10 -ne $true -or
+        $main10Capability.singlePublicApi -ne $true) {
+        throw "The Snow Shot x265 build must provide both 8-bit and Main10 encoding."
     }
 
     $libraryDirectory = Join-Path $Prefix "lib"
@@ -230,7 +263,9 @@ $qtStamp = Get-ValidatedStaticQtStamp -Prefix $qtPrefix `
 
 $cachePath = Join-Path $buildDirectory "CMakeCache.txt"
 if (-not $SkipBuild) {
-    & cmake --fresh --preset snow-shot-msvc-release
+    $configureArguments = @(Get-SnowConfigureArguments -Preset "snow-shot-msvc-release" `
+        -BuildDirectory $buildDirectory)
+    & cmake @configureArguments
     if ($LASTEXITCODE -ne 0) {
         throw "Snow Shot release configuration failed."
     }
@@ -242,11 +277,16 @@ elseif (-not (Test-Path -LiteralPath $cachePath)) {
 $requiredCacheEntries = @(
     "SNOW_APPS_BUILD_TESTS:BOOL=OFF",
     "SNOW_APPS_BUILD_BENCHMARKS:BOOL=OFF",
+    "SNOW_APPS_ENABLE_RELEASE_OPTIMIZATION:BOOL=ON",
+    "SNOW_APPS_ENABLE_RELEASE_SIZE_OPTIMIZATION:BOOL=ON",
     "SNOW_APPS_RELEASE_STATIC:BOOL=ON",
     "SNOW_APPS_QT_STATIC:BOOL=ON",
     "SNOW_APPS_PACKAGE_SNOW_SHOT:BOOL=ON",
+    "SNOW_APPS_BUILD_SNOW_SHOT_MINI:BOOL=ON",
     "SNOW_SHOT_IMAGE_CODEC_BACKEND_STATIC:INTERNAL=ON",
-    "QT_FEATURE_static:INTERNAL=ON"
+    "QT_FEATURE_static:INTERNAL=ON",
+    "QT_FEATURE_timezone:INTERNAL=ON",
+    "QT_FEATURE_timezone_locale:INTERNAL=OFF"
 )
 $cache = Get-Content -LiteralPath $cachePath
 foreach ($entry in $requiredCacheEntries) {
@@ -256,17 +296,17 @@ foreach ($entry in $requiredCacheEntries) {
 }
 
 if (-not $SkipBuild) {
-    & cmake --build --preset build-snow-shot-msvc-release --parallel $Parallelism
+    & cmake --build $buildDirectory --config Release --target snow_shot snow_shot_mini --parallel $Parallelism
     if ($LASTEXITCODE -ne 0) {
         throw "Snow Shot release build failed."
     }
 }
 
 $updaterSizeReporter = Join-Path $PSScriptRoot 'report-snow-shot-updater-size.ps1'
-$updaterBuildExecutable = Join-Path $BuildDirectory 'snow_shot\Release\snow-shot-updater.exe'
+$updaterBuildExecutable = Join-Path $buildDirectory 'snow_shot\Release\snow-shot-updater.exe'
 $updaterCargoProfileDirectory =
-    Join-Path $BuildDirectory 'cargo\x86_64-pc-windows-msvc\release-size'
-$updaterSizeEvidence = Join-Path $BuildDirectory 'release-evidence\snow-shot-updater-size.json'
+    Join-Path $buildDirectory 'cargo\x86_64-pc-windows-msvc\release-size'
+$updaterSizeEvidence = Join-Path $buildDirectory 'release-evidence\snow-shot-updater-size.json'
 & $updaterSizeReporter -Executable $updaterBuildExecutable `
     -CargoProfileDirectory $updaterCargoProfileDirectory -Output $updaterSizeEvidence
 if ($LASTEXITCODE -ne 0) {
@@ -283,9 +323,13 @@ $updaterCargoManifest = Join-Path $repoRoot "snow_shot\rust\snow-shot-updater\Ca
     -VcpkgPrefix $staticVcpkgPrefix `
     -QtPrefix $qtPrefix `
     -CargoManifest @((Join-Path $repoRoot "snow_rust_ffi\Cargo.toml"), $ocrCargoManifest,
-        $updaterCargoManifest) `
-    -CargoOptions @{ $ocrCargoManifest = @('--no-default-features', '--features',
-        'static-onnx-runtime,directml-provider,crash-diagnostics') } `
+        $updaterCargoManifest, (Join-Path $repoRoot "snow_shot\rust\snow-shot-mcp\Cargo.toml")) `
+    -CargoOptions @{ (Join-Path $repoRoot "snow_rust_ffi\Cargo.toml") = @('--features', 'selected-text');
+        # The immutable published 1.0.8 worker still contains RapidOCR's former
+        # convenience dependencies. Collect its notices even though the local
+        # raw-pixel worker no longer enables those features.
+        $ocrCargoManifest = @('--no-default-features', '--features',
+        'static-onnx-runtime,directml-provider,crash-diagnostics,rapid-ocr-rs/cli') } `
     -AntDesignNotice (Join-Path $repoRoot "ant_design_qt\THIRD_PARTY_NOTICES.md") `
     -FallbackLicenseDirectory (Join-Path $repoRoot "licenses")
 if ($LASTEXITCODE -ne 0) {
@@ -297,24 +341,24 @@ if (Test-Path -LiteralPath $installDirectory) {
 }
 New-Item -ItemType Directory -Force -Path $installDirectory | Out-Null
 
-& cmake --install $buildDirectory --config Release --prefix $installDirectory
+& cmake --install $buildDirectory --config Release --component SnowShot --prefix $installDirectory
 if ($LASTEXITCODE -ne 0) {
     throw "Snow Shot install step failed."
 }
 
-$mainExecutable = Join-Path $installDirectory "bin\WingShot.exe"
+$mainExecutable = Join-Path $installDirectory "bin\snow_shot.exe"
 if (-not (Test-Path -LiteralPath $mainExecutable)) {
     throw "The staged application was not found: $mainExecutable"
 }
 
 $versionInfo = (Get-Item -LiteralPath $mainExecutable).VersionInfo
 $expectedBinaryMetadata = @{
-    CompanyName = "WingShot"
-    FileDescription = "WingShot screenshot utility"
-    InternalName = "WingShot"
+    CompanyName = "Snow Apps"
+    FileDescription = "Snow Shot screenshot utility"
+    InternalName = "snow_shot"
     LegalCopyright = "Copyright (C) 2025-2026 mg-chao"
-    OriginalFilename = "WingShot.exe"
-    ProductName = "WingShot"
+    OriginalFilename = "snow_shot.exe"
+    ProductName = "Snow Shot"
 }
 foreach ($property in $expectedBinaryMetadata.Keys) {
     if ($versionInfo.$property -ne $expectedBinaryMetadata[$property]) {
@@ -322,6 +366,10 @@ foreach ($property in $expectedBinaryMetadata.Keys) {
     }
 }
 
+$mcpExecutable = Join-Path $installDirectory 'bin\snow-shot-mcp.exe'
+if (-not (Test-Path -LiteralPath $mcpExecutable -PathType Leaf)) {
+    throw "The staged Rust MCP bridge was not found: $mcpExecutable"
+}
 $updaterExecutable = Join-Path $installDirectory 'bin\snow-shot-updater.exe'
 if (-not (Test-Path -LiteralPath $updaterExecutable -PathType Leaf)) {
     throw "The staged Rust updater was not found: $updaterExecutable"
@@ -343,7 +391,7 @@ foreach ($property in $expectedUpdaterMetadata.Keys) {
 }
 
 $requiredStageFiles = @(
-    "bin\WingShot.exe",
+    "bin\snow_shot.exe",
     "bin\crashpad_handler.exe",
     "bin\snow-ocr-process.exe",
     "bin\DirectML.dll",
@@ -388,7 +436,7 @@ if (Test-Path -LiteralPath $stagedQtPluginDirectory -PathType Container) {
 }
 
 $stagedExecutables = @(Get-ChildItem -LiteralPath $installDirectory -Recurse -File -Filter "*.exe")
-$expectedExecutables = @("WingShot.exe", "snow-ocr-process.exe", "crashpad_handler.exe", "snow-shot-updater.exe")
+$expectedExecutables = @("snow_shot.exe", "snow-ocr-process.exe", "crashpad_handler.exe", "snow-shot-updater.exe", "snow-shot-mcp.exe")
 $unexpectedExecutables = @($stagedExecutables | Where-Object { $_.Name -notin $expectedExecutables })
 if ($unexpectedExecutables.Count -gt 0) {
     throw "Release staging contains unexpected executables: $($unexpectedExecutables.FullName -join ', ')"
@@ -409,8 +457,9 @@ if ($debugArtifacts.Count -gt 0) {
 $stagedBinaries = @(Get-ChildItem -LiteralPath $installDirectory -Recurse -File |
     Where-Object { $_.Extension.ToLowerInvariant() -in @(".dll", ".exe") })
 $expectedBinaryPaths = @(
-    "bin\WingShot.exe",
+    "bin\snow_shot.exe",
     "bin\snow-shot-updater.exe",
+    "bin\snow-shot-mcp.exe",
     "bin\crashpad_handler.exe",
     "bin\snow-ocr-process.exe",
     "bin\DirectML.dll"
@@ -422,9 +471,9 @@ $unexpectedBinaries = @($stagedBinaries | Where-Object {
 if ($unexpectedBinaries.Count -gt 0) {
     throw "Release staging contains unexpected binary files: $($unexpectedBinaries.FullName -join ', ')"
 }
-$applicationPath = Join-Path $installDirectory "bin\WingShot.exe"
+$applicationPath = Join-Path $installDirectory "bin\snow_shot.exe"
 Assert-NoPeExports -Path $applicationPath
-Write-Output "PE export audit: WingShot.exe has no export directory or exported symbols"
+Write-Output "PE export audit: snow_shot.exe has no export directory or exported symbols"
 $stagedBinDirectory = Join-Path $installDirectory "bin"
 $windowsSystemDirectory = [Environment]::GetFolderPath([Environment+SpecialFolder]::System)
 $debugRuntimeImports = [System.Collections.Generic.List[string]]::new()
@@ -492,8 +541,9 @@ $allowedSystemImports = @(
     "wtsapi32.dll"
 )
 $allowedLocalImports = @{
-    "WingShot.exe" = @()
+    "snow_shot.exe" = @()
     "snow-shot-updater.exe" = @()
+    "snow-shot-mcp.exe" = @()
     "crashpad_handler.exe" = @()
     "snow-ocr-process.exe" = @("directml.dll")
     "directml.dll" = @()
@@ -550,7 +600,7 @@ $symbolOptions = @{
 }
 & (Join-Path $PSScriptRoot "collect-snow-shot-symbols.ps1") -BuildDirectory $buildDirectory -InstallDirectory $installDirectory @symbolOptions
 
-$linkMapPath = Join-Path $buildDirectory "snow_shot\Release\WingShot.map"
+$linkMapPath = Join-Path $buildDirectory "snow_shot\Release\snow_shot.map"
 if (-not (Test-Path -LiteralPath $linkMapPath -PathType Leaf)) {
     throw "The Snow Shot Release link map was not found: $linkMapPath"
 }
@@ -563,50 +613,11 @@ $linkedFfmpegRegistrations = @(Select-String -LiteralPath $linkMapPath `
 # Native hardware encoding retains the configured parser registrations, so the
 # optimized application must match the same restricted component set as FFmpeg.
 $expectedFfmpegRegistrations = @(
-    "ff_aac_adtstoasc_bsf",
-    "ff_h264_mp4toannexb_bsf",
-    "ff_pgs_frame_merge_bsf",
-    "ff_vp9_superframe_bsf",
-    "ff_apng_decoder",
-    "ff_gif_decoder",
-    "ff_h264_decoder",
-    "ff_png_decoder",
-    "ff_vp8_decoder",
-    "ff_webp_decoder",
-    "ff_webp_anim_decoder",
-    "ff_aac_encoder",
-    "ff_apng_encoder",
-    "ff_gif_encoder",
-    "ff_h263_encoder",
-    "ff_h264_mf_encoder",
-    "ff_h264_amf_encoder",
-    "ff_h264_nvenc_encoder",
-    "ff_h264_qsv_encoder",
-    "ff_libwebp_anim_encoder",
-    "ff_libx264_encoder",
-    "ff_libx265_encoder",
-    "ff_mp3_mf_encoder",
-    "ff_mpeg4_encoder",
-    "ff_h264_d3d11va_hwaccel",
-    "ff_h264_d3d11va2_hwaccel",
-    "ff_h264_dxva2_hwaccel",
-    "ff_aac_parser",
-    "ff_ac3_parser",
-    "ff_h264_parser",
-    "ff_mpegaudio_parser",
-    "ff_apng_demuxer",
-    "ff_gif_demuxer",
-    "ff_matroska_demuxer",
-    "ff_mov_demuxer",
-    "ff_webp_anim_demuxer",
-    "ff_apng_muxer",
-    "ff_avi_muxer",
-    "ff_gif_muxer",
-    "ff_matroska_muxer",
-    "ff_mov_muxer",
-    "ff_mp4_muxer",
-    "ff_webp_muxer",
-    "ff_file_protocol"
+    foreach ($entry in (Get-SnowShotExpectedFfmpegComponents).GetEnumerator()) {
+        foreach ($name in $entry.Value) {
+            "ff_$($name.ToLowerInvariant())_$($entry.Key.ToLowerInvariant())"
+        }
+    }
 )
 Assert-ExactStringSet -Description "Linked FFmpeg component registrations" `
     -Expected $expectedFfmpegRegistrations -Actual $linkedFfmpegRegistrations
@@ -640,18 +651,18 @@ if (-not (Test-Path -LiteralPath $cpackConfig)) {
 
 $cpackConfiguration = Get-Content -LiteralPath $cpackConfig -Raw
 $requiredCpackSettings = @{
-    CPACK_CREATE_DESKTOP_LINKS = "WingShot"
-    CPACK_PACKAGE_EXECUTABLES = "WingShot;WingShot"
-    CPACK_PACKAGE_HOMEPAGE_URL = "https://wingshot.anfioo.com"
-    CPACK_PACKAGE_INSTALL_DIRECTORY = "WingShot"
-    CPACK_PACKAGE_INSTALL_REGISTRY_KEY = "WingShot"
-    CPACK_NSIS_INSTALLED_ICON_NAME = "bin\\WingShot.exe"
+    CPACK_CREATE_DESKTOP_LINKS = "snow_shot"
+    CPACK_PACKAGE_EXECUTABLES = "snow_shot;Snow Shot"
+    CPACK_PACKAGE_HOMEPAGE_URL = "https://snowshot.top"
+    CPACK_PACKAGE_INSTALL_DIRECTORY = "SnowShot"
+    CPACK_PACKAGE_INSTALL_REGISTRY_KEY = "SnowShot"
+    CPACK_NSIS_INSTALLED_ICON_NAME = "bin\\snow_shot.exe"
 }
 foreach ($setting in $requiredCpackSettings.Keys) {
     $escapedSetting = [regex]::Escape($setting)
     $escapedValue = [regex]::Escape($requiredCpackSettings[$setting])
     $settingPresent = if ($setting -eq "CPACK_NSIS_INSTALLED_ICON_NAME") {
-        $cpackConfiguration -match 'set\(CPACK_NSIS_INSTALLED_ICON_NAME "bin\\+WingShot\.exe"\)'
+        $cpackConfiguration -match 'set\(CPACK_NSIS_INSTALLED_ICON_NAME "bin\\+snow_shot\.exe"\)'
     }
     else {
         $cpackConfiguration -match "set\($escapedSetting `"$escapedValue`"\)"
@@ -670,7 +681,7 @@ if ($versionInfo.FileVersion -ne "$packageVersionNumeric.0" -or
     throw "Snow Shot binary version '$($versionInfo.FileVersion)'/'$($versionInfo.ProductVersion)' does not match package version '$packageVersion'."
 }
 
-$ocrRuntimeVersion = "1.0.7"
+$ocrRuntimeVersion = "1.0.8"
 $ocrPlatform = "windows-x64"
 $ocrDefaultModelType = "small"
 $ocrDefaultModelId = "ppocrv6-small-463ea9f"
@@ -836,7 +847,7 @@ function New-DeterministicZip {
             $files = @(Get-ChildItem -LiteralPath $SourceDirectory -File -Recurse | Sort-Object FullName)
             foreach ($file in $files) {
                 $name = [System.IO.Path]::GetRelativePath($SourceDirectory, $file.FullName).Replace('\', '/')
-                $entry = $archive.CreateEntry($name, [System.IO.Compression.CompressionLevel]::Optimal)
+                $entry = $archive.CreateEntry($name, [System.IO.Compression.CompressionLevel]::SmallestSize)
                 $entry.LastWriteTime = $epoch
                 $input = [System.IO.File]::OpenRead($file.FullName)
                 $output = $entry.Open()
@@ -937,18 +948,18 @@ foreach ($binary in @(Get-ChildItem -LiteralPath $runtimeWork -File | Where-Obje
 
 $ocrVersionOutput = & (Join-Path $runtimeWork $ocrRuntimeFileName) --version 2>$null
 if ($LASTEXITCODE -ne 0 -or $ocrVersionOutput -cne
-    "snow-ocr-process $ocrRuntimeVersion windows-x86_64 protocol 3") {
+    "snow-ocr-process $ocrRuntimeVersion windows-x86_64 protocol 4") {
     throw "The staged OCR runtime reported an unexpected version: $ocrVersionOutput"
 }
 $ocrRuntimeVersionInfo = (Get-Item -LiteralPath (Join-Path $runtimeWork $ocrRuntimeFileName)).VersionInfo
 $expectedOcrMetadata = @{
     CompanyName = "Snow Apps"
     FileDescription = "Snow Shot OCR runtime"
-    FileVersion = "1.0.7.0"
+    FileVersion = "1.0.8.0"
     InternalName = "snow-ocr-process"
     OriginalFilename = $ocrRuntimeFileName
     ProductName = "Snow Shot OCR Runtime"
-    ProductVersion = "1.0.7"
+    ProductVersion = "1.0.8"
 }
 foreach ($property in $expectedOcrMetadata.Keys) {
     if ($ocrRuntimeVersionInfo.$property -ne $expectedOcrMetadata[$property]) {
@@ -981,7 +992,7 @@ $runtimeReleaseManifest = Join-Path $buildDirectory "snow-ocr-runtime-$ocrRuntim
     SchemaVersion = 1
     RuntimeVersion = $ocrRuntimeVersion
     Platform = $ocrPlatform
-    Protocol = 3
+    Protocol = 4
     UploadUrl = $ocrRuntimeUrl
     Archive = $runtimeArchive
     Files = $runtimeFiles
@@ -1133,22 +1144,8 @@ if ($manifestDrift) {
           "in the same change."
 }
 
-$publishedRuntime = Join-Path $artifactRoot "$ocrRuntimeArchiveName.remote"
-try {
-    Invoke-WebRequest -Uri $ocrRuntimeUrl -OutFile $publishedRuntime -MaximumRedirection 5
-    Assert-ReleaseFile -Path $publishedRuntime -Bytes $runtimeArchive.size `
-        -Sha256 $runtimeArchive.sha256
-}
-catch {
-    throw "OCR runtime $ocrRuntimeVersion has not been published at $ocrRuntimeUrl with the " +
-          "generated size and SHA-256. Run with -PrepareOcrRuntimeOnly, upload the emitted " +
-          "artifact, then rerun packaging. $($_.Exception.Message)"
-}
-finally {
-    if (Test-Path -LiteralPath $publishedRuntime) {
-        Remove-Item -LiteralPath $publishedRuntime -Force
-    }
-}
+# The archive came from the pinned publication URL and Expand-PinnedSnowOcrRuntime
+# already verified its size, hash, and complete file inventory.
 $runtimeArchive.sha256 | Set-Content -LiteralPath $runtimePublishedMarker -Encoding ascii
 
 $variantStages = [ordered]@{
@@ -1290,13 +1287,13 @@ string(REPLACE "snow-shot-$packageVersion-windows-x64.exe" "$packageBaseName.exe
     }
     $installerVersionInfo = (Get-Item -LiteralPath $packagePath).VersionInfo
     $expectedInstallerMetadata = @{
-        CompanyName = "WingShot"
-        FileDescription = "WingShot installer"
+        CompanyName = "Snow Apps"
+        FileDescription = "Snow Shot installer"
         FileVersion = "$packageVersionNumeric.0"
-        InternalName = "wingshot-installer"
+        InternalName = "snow-shot-installer"
         LegalCopyright = "Copyright (C) 2025-2026 mg-chao"
         OriginalFilename = "$packageBaseName.exe"
-        ProductName = "WingShot"
+        ProductName = "Snow Shot"
         ProductVersion = $packageVersion
     }
     foreach ($property in $expectedInstallerMetadata.Keys) {
@@ -1380,3 +1377,5 @@ Write-Output "Snow Shot audited install tree: $installDirectory"
 Write-Output "OCR runtime upload artifact: $runtimeArchivePath"
 Write-Output "OCR runtime checksum: $runtimeArchiveChecksum"
 Write-Output "OCR runtime manifest: $runtimeReleaseManifest"
+
+. (Join-Path $PSScriptRoot "package-snow-shot-mini.ps1")

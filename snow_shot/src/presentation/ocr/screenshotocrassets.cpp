@@ -1,5 +1,7 @@
+#include "snow_shot/platform/applicationqos.h"
 #include "snow_shot/presentation/screenshotocrassets.h"
 #include "snow_shot/platform/minizippath.h"
+#include "screenshotocrprotocol.h"
 
 #include <QCryptographicHash>
 #include <QCoreApplication>
@@ -39,7 +41,6 @@
 
 namespace {
 constexpr auto kManifestName = "asset-manifest.json";
-constexpr auto kRuntimeVersion = "1.0.7";
 #if defined(Q_OS_MACOS) && defined(Q_PROCESSOR_ARM_64)
 constexpr auto kPlatform = "macos-arm64";
 #else
@@ -143,14 +144,14 @@ QString formatError(const QString& context, const QString& detail = {}) {
 bool safeRelativePath(const QString& path) {
     const QString normalized = QDir::fromNativeSeparators(path);
     if (normalized.isEmpty() || normalized.startsWith(u'/') ||
-        normalized.contains(QStringLiteral("//")) || normalized.contains(u'\0') ||
+        normalized.contains(QStringLiteral("//")) || normalized.contains(QChar(u'\0')) ||
         QDir::isAbsolutePath(normalized)) {
         return false;
     }
     const QStringList parts = normalized.split(u'/');
     return std::all_of(parts.cbegin(), parts.cend(), [](const QString& part) {
         return !part.isEmpty() && part != QStringLiteral(".") && part != QStringLiteral("..") &&
-               !part.contains(u':');
+               !part.contains(QChar(u':'));
     });
 }
 
@@ -269,7 +270,7 @@ std::optional<Descriptor> loadDescriptor(const QString& root, QString* error) {
     const auto defaultModel =
         parseModelType(rootObject.value(QStringLiteral("default_model")).toString());
     if (rootObject.value(QStringLiteral("schema")).toInt() != (result.bundled ? 3 : 2) ||
-        result.runtimeVersion != QString::fromLatin1(kRuntimeVersion) ||
+        result.runtimeVersion != QString::fromLatin1(snow_shot::ocr::protocol::kRuntimeVersion) ||
         result.platform != QString::fromLatin1(kPlatform) || !defaultModel.has_value() ||
         *defaultModel != ScreenshotOcrModelType::Small) {
         if (error != nullptr)
@@ -279,7 +280,8 @@ std::optional<Descriptor> loadDescriptor(const QString& root, QString* error) {
     result.defaultModel = *defaultModel;
     if (result.bundled) {
         if (runtime.value(QStringLiteral("delivery")).toString() != QStringLiteral("bundled") ||
-            runtime.value(QStringLiteral("protocol")).toInt() != 3 ||
+            runtime.value(QStringLiteral("protocol")).toInt() !=
+                snow_shot::ocr::protocol::kProtocolVersion ||
             runtime.value(QStringLiteral("executable")).toString() != result.executable ||
             staticRuntime != expectedStaticRuntime || runtime.contains(QStringLiteral("archive"))) {
             if (error != nullptr)
@@ -890,6 +892,7 @@ class ScreenshotOcrAssets::Impl final {
             if (m_prepareRequested)
                 prepare();
         });
+        snow_shot::platform::configureApplicationQoSThread(m_thread);
         m_thread->start();
     }
 

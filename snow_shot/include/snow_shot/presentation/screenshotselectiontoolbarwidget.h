@@ -1,11 +1,17 @@
 #ifndef SNOW_SHOT_PRESENTATION_SCREENSHOTSELECTIONTOOLBARWIDGET_H
 #define SNOW_SHOT_PRESENTATION_SCREENSHOTSELECTIONTOOLBARWIDGET_H
 
+#include "snow_shot/presentation/screenshotselectiondisplayunit.h"
+#include "snow_shot/presentation/screenshotselectionaspectratio.h"
+
+#include <optional>
 #include <QList>
 #include <QMargins>
 #include <QPoint>
+#include <QPointer>
 #include <QRect>
 #include <QSize>
+#include <QString>
 #include <QWidget>
 
 class QLabel;
@@ -13,7 +19,11 @@ class QEvent;
 class QHideEvent;
 class QPaintEvent;
 class QShowEvent;
+class QListView;
 class ScreenshotSelectionToolbarCommandSink;
+namespace adqt::widgets {
+class AdSelect;
+}
 
 class ScreenshotSelectionToolbarWidget final : public QWidget {
     Q_OBJECT
@@ -26,15 +36,21 @@ class ScreenshotSelectionToolbarWidget final : public QWidget {
 
     explicit ScreenshotSelectionToolbarWidget(ScreenshotSelectionToolbarCommandSink& commands,
                                               QWidget* parent = nullptr);
+    ~ScreenshotSelectionToolbarWidget() override;
 
     void resetForNewCapture();
     void prepareForDisplay();
     void prewarm();
     void setSelectionResizable(bool enabled);
+    void setPointerInteractionEnabled(bool enabled);
     void setCornerRadiusApplicable(bool enabled);
-    void setSelectionState(const QRect& selection, bool aspectRatioLocked, int cornerRadius,
-                           int shadowWidth, DisplayMode displayMode = DisplayMode::Full,
-                           bool canvasUsesPoints = false);
+    void
+    setSelectionState(const QRect& selection, bool aspectRatioLocked, int cornerRadius,
+                      int shadowWidth, DisplayMode displayMode = DisplayMode::Full,
+                      bool canvasUsesPoints = false,
+                      std::optional<ScreenshotSelectionDisplayValues> displayValues = std::nullopt,
+                      ScreenshotSelectionAspectRatioPreset aspectRatioPreset =
+                          ScreenshotSelectionAspectRatioPreset::Free);
     QSize contentSizeHint() const;
     bool containsInteractiveGlobalPoint(const QPoint& globalPosition) const;
     void moveContentTo(const QPoint& position);
@@ -63,6 +79,11 @@ class ScreenshotSelectionToolbarWidget final : public QWidget {
     QWidget* addSeparator();
     void setToolbarHovered(bool hovered);
     void scheduleToolbarHoverSync();
+    void updateAspectRatioOptions();
+    void prepareAspectRatioPopupInput();
+    void updateAspectRatioSelectStyle();
+    void updateAspectRatioSelectAvailability();
+    void closeAspectRatioPopup();
     bool fieldForObject(QObject* object, Field* outField) const;
     void handleFieldWheel(Field field, int deltaY);
     bool isPointInInteractiveContent(const QPoint& localPosition) const;
@@ -74,6 +95,7 @@ class ScreenshotSelectionToolbarWidget final : public QWidget {
     void updateIconPixmaps();
     void updateDisplayMode();
     void updateMouseEventTransparency();
+    bool pointerInteractionEnabled() const;
     void updateWindowSize();
     QPoint contentOffset() const;
 
@@ -82,15 +104,26 @@ class ScreenshotSelectionToolbarWidget final : public QWidget {
     QLabel* m_xLabel = nullptr;
     QLabel* m_yLabel = nullptr;
     bool m_selectionResizable = true;
+    bool m_pointerInteractionEnabled = true;
     bool m_cornerRadiusApplicable = true;
     QLabel* m_widthLabel = nullptr;
     QLabel* m_sizeUnitLabel = nullptr;
+    QLabel* m_positionUnitLabel = nullptr;
+    ScreenshotSelectionDisplayValues m_displayValues;
     QList<QLabel*> m_canvasUnitLabels;
     bool m_canvasUsesPoints = false;
     QLabel* m_heightLabel = nullptr;
     QLabel* m_radiusLabel = nullptr;
     QLabel* m_shadowLabel = nullptr;
     QLabel* m_lockIconLabel = nullptr;
+    adqt::widgets::AdSelect* m_aspectRatioSelect = nullptr;
+    ScreenshotSelectionAspectRatioPreset m_aspectRatioPreset =
+        ScreenshotSelectionAspectRatioPreset::Free;
+    bool m_aspectRatioSelectHovered = false;
+    std::optional<bool> m_aspectRatioSelectHighlight;
+    QPointer<QWidget> m_focusBeforeAspectRatioPopup;
+    QPointer<QListView> m_aspectRatioPopupView;
+    QString m_aspectRatioValueBeforePopupActivation;
     QList<QWidget*> m_positionWidgets;
     QList<QWidget*> m_sizeWidgets;
     QList<QWidget*> m_editingWidgets;

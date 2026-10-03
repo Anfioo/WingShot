@@ -142,6 +142,20 @@ MutationResult duplicateSelected(SnowRuntime runtime, SnowViewport viewport, dou
     return result;
 }
 
+MutationResult insertDrawTemplate(SnowRuntime runtime, SnowViewport viewport,
+                                  const QByteArray& payload, double centerX, double centerY) {
+    MutationResult result;
+    if (!hasViewport(runtime, viewport) || payload.isEmpty()) {
+        return result;
+    }
+    result.success =
+        snow_viewport_insert_draw_template_ex(
+            runtime, viewport, reinterpret_cast<const std::uint8_t*>(payload.constData()),
+            static_cast<std::size_t>(payload.size()), centerX, centerY,
+            result.changedViewports.outParam()) == SNOW_OK;
+    return result;
+}
+
 MutationResult reorderSelected(SnowRuntime runtime, SnowViewport viewport, std::uint32_t action) {
     MutationResult result;
     if (!hasViewport(runtime, viewport)) {
@@ -336,16 +350,67 @@ MutationResult setFilterStyle(SnowRuntime runtime, SnowViewport viewport,
     return result;
 }
 
+MutationResult setFilterCreationStyle(SnowRuntime runtime, SnowViewport viewport,
+                                      const SnowFilterStyle& style, std::uint32_t properties,
+                                      SnowActiveTool tool) {
+    MutationResult result;
+    if (!hasViewport(runtime, viewport)) {
+        return result;
+    }
+    result.success =
+        snow_viewport_set_filter_creation_style_ex(runtime, viewport, &style, properties, tool,
+                                                   result.changedViewports.outParam()) == SNOW_OK;
+    return result;
+}
+
+MutationResult setBrushEraserCreationStyle(SnowRuntime runtime, SnowViewport viewport,
+                                           const SnowBrushEraserStyle& style,
+                                           std::uint32_t properties) {
+    MutationResult result;
+    if (!hasViewport(runtime, viewport)) {
+        return result;
+    }
+    result.success =
+        snow_viewport_set_brush_eraser_creation_style_ex(
+            runtime, viewport, &style, properties, result.changedViewports.outParam()) == SNOW_OK;
+    return result;
+}
+
 MutationResult setTextStyle(SnowRuntime runtime, SnowViewport viewport, const SnowTextStyle& style,
+                            std::uint32_t properties,
                             const std::vector<SnowTextLayoutOverride>& layouts) {
     MutationResult result;
     if (!hasViewport(runtime, viewport)) {
         return result;
     }
-    result.success = snow_viewport_set_text_style_ex(runtime, viewport, &style,
-                                                     layouts.empty() ? nullptr : layouts.data(),
-                                                     static_cast<std::uint32_t>(layouts.size()),
-                                                     result.changedViewports.outParam()) == SNOW_OK;
+    result.success =
+        snow_viewport_patch_text_style_ex(runtime, viewport, &style, properties,
+                                          layouts.empty() ? nullptr : layouts.data(),
+                                          static_cast<std::uint32_t>(layouts.size()),
+                                          result.changedViewports.outParam()) == SNOW_OK;
+    return result;
+}
+
+MutationResult setTextCreationStyle(SnowRuntime runtime, SnowViewport viewport,
+                                    const SnowTextStyle& style, std::uint32_t properties) {
+    MutationResult result;
+    if (!hasViewport(runtime, viewport))
+        return result;
+    result.success =
+        snow_viewport_set_text_creation_style_ex(runtime, viewport, &style, properties,
+                                                 result.changedViewports.outParam()) == SNOW_OK;
+    return result;
+}
+
+MutationResult setSerialNumberStylePatch(SnowRuntime runtime, SnowViewport viewport,
+                                         const SnowSerialNumberStyle& style,
+                                         std::uint32_t properties) {
+    MutationResult result;
+    if (!hasViewport(runtime, viewport))
+        return result;
+    result.success =
+        snow_viewport_set_serial_number_style_patch_ex(
+            runtime, viewport, &style, properties, result.changedViewports.outParam()) == SNOW_OK;
     return result;
 }
 
@@ -389,6 +454,19 @@ PairedMutationResult setSnapConfig(SnowRuntime runtime, SnowViewport viewport,
     }
 
     result.success = true;
+    return result;
+}
+
+MutationResult setSnapGuideTargets(SnowRuntime runtime, SnowViewport viewport,
+                                   const double* verticalXs, size_t verticalCount,
+                                   const double* horizontalYs, size_t horizontalCount) {
+    MutationResult result;
+    if (!hasViewport(runtime, viewport)) {
+        return result;
+    }
+    result.success = snow_viewport_set_snap_guide_targets_ex(
+                         runtime, viewport, verticalXs, verticalCount, horizontalYs,
+                         horizontalCount, result.changedViewports.outParam()) == SNOW_OK;
     return result;
 }
 

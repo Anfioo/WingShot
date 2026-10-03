@@ -1,4 +1,7 @@
+#include "snow_shot/storage/settingsadapters.h"
+#include "physical_key_test_support.h"
 #include "snow_shot/presentation/components/shortcutkeyrow.h"
+#include "snow_shot/presentation/components/formfields.h"
 #include "snow_shot/presentation/windowshortcutmanager.h"
 #include "snow_shot/shortcuts/shortcutdisplayservice.h"
 
@@ -8,6 +11,8 @@
 #include "snow_shot/presentation/styles/actionrowstyle.h"
 
 #include "widgets/button.h"
+#include "widgets/button_style.h"
+#include "theme/theme.h"
 #include "widgets/modal.h"
 #include "widgets/tooltip.h"
 
@@ -19,6 +24,7 @@
 #include <QEvent>
 #include <QEnterEvent>
 #include <QFontMetricsF>
+#include <QFocusEvent>
 #include <QHideEvent>
 #include <QKeyEvent>
 #include <QKeySequence>
@@ -26,6 +32,7 @@
 #include <QLabel>
 #include <QLayout>
 #include <QString>
+#include <QTranslator>
 #include <QWheelEvent>
 
 #include <algorithm>
@@ -43,6 +50,7 @@
 namespace shortcuts = snow_shot::presentation;
 namespace shortcut_domain = snow_shot::shortcuts;
 namespace styles = snow_shot::presentation::styles;
+namespace form_fields = snow_shot::presentation::components::form_fields;
 
 namespace {
 void require(bool condition, const char* message) {
@@ -71,6 +79,207 @@ QStringList portableText(const shortcut_domain::ShortcutBindingList& values) {
 
 QString displayText(const QString& portable) {
     return shortcut_domain::formatShortcutDisplayText(binding(portable));
+}
+
+void sharedShortcutFieldTracksDraftAndCommitsOnAcceptance() {
+    class ShortcutTranslator final : public QTranslator {
+      public:
+        bool isEmpty() const override {
+            return false;
+        }
+        QString translate(const char* context, const char* source, const char*,
+                          int) const override {
+            if (QByteArray(context) == QByteArrayLiteral("ShortcutKeyRow")) {
+                if (QByteArray(source) == QByteArrayLiteral("Key configuration for \"%1\"")) {
+                    return QStringLiteral("Translated shortcut configuration: %1");
+                }
+                if (QByteArray(source) == QByteArrayLiteral("OK")) {
+                    return QStringLiteral("Translated OK");
+                }
+                if (QByteArray(source) == QByteArrayLiteral("Cancel")) {
+                    return QStringLiteral("Translated Cancel");
+                }
+            }
+            if (QByteArray(context) != QByteArrayLiteral("QObject")) {
+                return {};
+            }
+            if (QByteArray(source) == QByteArrayLiteral("Add key config")) {
+                return QStringLiteral("Translated add key");
+            }
+            if (QByteArray(source) ==
+                QByteArrayLiteral("%1 cannot be used as a recording shortcut, try another key")) {
+                return QStringLiteral("Translated rejection: %1");
+            }
+            return {};
+        }
+    };
+    const auto scheme = styles::ThemeManager::instance().themeColorScheme();
+    ShortcutKeyRowConfig config;
+    config.title = QStringLiteral("Recording");
+    config.shortcuts = bindings({QStringLiteral("Ctrl+F1"), QStringLiteral("Ctrl+F4")});
+    config.maxShortcutCount = 2;
+    config.showRegistrationStatus = false;
+    config.validationScope = ShortcutKeyRowConfig::ValidationScope::RecordingShortcut;
+    int validationCalls = 0;
+    config.shortcutValidator =
+        [&validationCalls](const shortcut_domain::ShortcutBinding& shortcut) {
+            ++validationCalls;
+            const bool supported = shortcut.portableText != QStringLiteral("Ctrl+F9");
+            return shortcuts::GlobalShortcutValidationResult{
+                shortcut.portableText, supported,
+                supported ? shortcuts::GlobalShortcutFailureReason::None
+                          : shortcuts::GlobalShortcutFailureReason::InvalidShortcut,
+                shortcut};
+        };
+    ShortcutKeyRow row(config, scheme.metricAlias,
+                       styles::buildMainWindowComponentMetricToken(scheme));
+    int saves = 0;
+    shortcut_domain::ShortcutBindingList saved;
+    QObject::connect(&row, &ShortcutKeyRow::shortcutsChanged, &row,
+                     [&saves, &saved](const shortcut_domain::ShortcutBindingList& value) {
+                         ++saves;
+                         saved = value;
+                     });
+    row.show();
+    QApplication::processEvents();
+    auto* openButton = row.findChild<adqt::widgets::AdButton*>(QStringLiteral("shortcutKeyButton"));
+    require(openButton != nullptr, "the shortcut settings row must expose its editor");
+    const auto flush = [] {
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        QApplication::processEvents();
+    };
+    const auto sendKey = [](QWidget* content, int key) {
+        PhysicalKeyEvent event(QEvent::KeyPress, key, Qt::ControlModifier);
+        QCoreApplication::sendEvent(content, &event);
+    };
+
+    for (const bool accept : {false, true}) {
+        openButton->click();
+        flush();
+        auto* modal = row.findChild<adqt::widgets::AdModal*>();
+        auto* content = row.findChild<QWidget*>(QStringLiteral("shortcutConfigContent"));
+        auto* field =
+            modal ? modal->contentWidget()->findChild<form_fields::FormField*>() : nullptr;
+        auto* form = modal ? qobject_cast<adqt::widgets::AdForm*>(modal->contentWidget()) : nullptr;
+        require(modal != nullptr && content != nullptr && field != nullptr && form != nullptr,
+                "the shortcut editor must register its custom shared field in an AdForm");
+        require(field->value().value<shortcut_domain::ShortcutBindingList>() == config.shortcuts &&
+                    !field->item()->isTouched() && !field->item()->isDirty(),
+                "opening the shortcut dialog must retain typed bindings and establish a clean "
+                "baseline");
+        int edits = 0;
+        int commits = 0;
+        shortcut_domain::ShortcutBindingList lastEdit;
+        shortcut_domain::ShortcutBindingList committed;
+        QObject::connect(field, &form_fields::FormField::valueEdited, modal,
+                         [&edits, &lastEdit](const QVariant& value) {
+                             ++edits;
+                             lastEdit = value.value<shortcut_domain::ShortcutBindingList>();
+                         });
+        QObject::connect(field, &form_fields::FormField::valueCommitted, modal,
+                         [&commits, &committed](const QVariant& value) {
+                             ++commits;
+                             committed = value.value<shortcut_domain::ShortcutBindingList>();
+                         });
+        auto* keyButton =
+            content->findChild<adqt::widgets::AdButton*>(QStringLiteral("shortcutConfigKeyButton"));
+        require(keyButton != nullptr, "the recorded shortcut row must be editable");
+        keyButton->click();
+        flush();
+        require(edits == 1 && portableText(lastEdit) == QStringList{QStringLiteral("Ctrl+F4")} &&
+                    commits == 0 && saves == 0,
+                "starting a recording must report the changed local draft without saving");
+        sendKey(content, Qt::Key_F2);
+        flush();
+        const QStringList pending{QStringLiteral("Ctrl+F2"), QStringLiteral("Ctrl+F4")};
+        require(
+            edits == 2 && portableText(lastEdit) == pending &&
+                field->value().value<shortcut_domain::ShortcutBindingList>() == lastEdit &&
+                field->item()->isTouched() && field->item()->isDirty() && commits == 0,
+            "the shared draft must include a valid pending recording and previously accepted rows");
+        sendKey(content, Qt::Key_F2);
+        shortcut_domain::ShortcutDisplayService::instance().refresh();
+        QFocusEvent focusOut(QEvent::FocusOut);
+        QCoreApplication::sendEvent(content, &focusOut);
+        flush();
+        require(
+            edits == 2 && commits == 0 && saves == 0,
+            "repeated keys, display refresh, and focus changes must not duplicate edits or commit");
+
+        if (!accept) {
+            sendKey(content, Qt::Key_F9);
+            flush();
+            require(edits == 3 &&
+                        portableText(lastEdit) == QStringList{QStringLiteral("Ctrl+F4")} &&
+                        !field->item()->errorMessages().isEmpty() && commits == 0,
+                    "rejected recordings must leave the shared draft and show inline feedback");
+            const int validationsBeforeLanguageChange = validationCalls;
+            ShortcutTranslator translator;
+            QCoreApplication::installTranslator(&translator);
+            QEvent languageChange(QEvent::LanguageChange);
+            QCoreApplication::sendEvent(field->viewWidget(), &languageChange);
+            flush();
+            auto* addButton = content->findChild<adqt::widgets::AdButton*>(
+                QStringLiteral("shortcutConfigAddButton"));
+            require(addButton != nullptr &&
+                        addButton->text() == QStringLiteral("Translated add key") &&
+                        field->item()
+                            ->errorMessages()
+                            .join(QLatin1Char(' '))
+                            .contains(QStringLiteral("Translated rejection")) &&
+                        modal->windowTitle() ==
+                            QStringLiteral("Translated shortcut configuration: Recording") &&
+                        modal->acceptButton()->text() == QStringLiteral("Translated OK") &&
+                        modal->rejectButton()->text() == QStringLiteral("Translated Cancel") &&
+                        validationCalls == validationsBeforeLanguageChange && edits == 3 &&
+                        commits == 0,
+                    "language changes must refresh cached custom feedback without validating or "
+                    "editing");
+            QCoreApplication::removeTranslator(&translator);
+            flush();
+            sendKey(content, Qt::Key_F2);
+            flush();
+            auto* action = content->findChild<adqt::widgets::AdButton*>(
+                QStringLiteral("shortcutConfigActionButton"));
+            require(action != nullptr && action->isEnabled(),
+                    "a valid pending row must expose its local acceptance action");
+            action->click();
+            flush();
+            require(
+                edits == 4 && portableText(lastEdit) == pending && commits == 0 && saves == 0,
+                "accepting a recorder row must retain the same draft until the dialog is saved");
+            action = content->findChild<adqt::widgets::AdButton*>(
+                QStringLiteral("shortcutConfigActionButton"));
+            action->click();
+            flush();
+            require(edits == 5 &&
+                        portableText(lastEdit) == QStringList{QStringLiteral("Ctrl+F4")} &&
+                        commits == 0,
+                    "deleting a local recorder row must emit one shared edit");
+            form->resetFields();
+            flush();
+            require(
+                edits == 5 && commits == 0 &&
+                    field->value().value<shortcut_domain::ShortcutBindingList>() ==
+                        config.shortcuts &&
+                    !field->item()->isTouched() && !field->item()->isDirty(),
+                "reset must restore typed initial bindings without shared edit or commit events");
+            keyButton = content->findChild<adqt::widgets::AdButton*>(
+                QStringLiteral("shortcutConfigKeyButton"));
+            keyButton->click();
+            sendKey(content, Qt::Key_F2);
+            flush();
+            modal->reject();
+            require(commits == 0 && saves == 0,
+                    "cancelling with a valid pending shortcut must not commit or save the draft");
+        } else {
+            modal->acceptButton()->click();
+            require(commits == 1 && saves == 1 && portableText(committed) == pending &&
+                        committed == saved,
+                    "accepting the dialog must commit exactly the same typed draft that it saves");
+        }
+        flush();
+    }
 }
 
 void actionRowBordersRetainEqualThicknessAtFractionalScale() {
@@ -398,7 +607,8 @@ void recorderAcceptsOnlyBackendSupportedShortcuts() {
     config.shortcutValidator =
         [&lastValidatedShortcut](const shortcut_domain::ShortcutBinding& shortcut) {
             lastValidatedShortcut = shortcut.portableText;
-            const bool supported = !shortcut.portableText.contains(QStringLiteral("F25"));
+            const bool supported = !shortcut.portableText.contains(QStringLiteral("F25")) &&
+                                   !shortcut.portableText.contains(QStringLiteral("F9"));
             return shortcuts::GlobalShortcutValidationResult{
                 shortcut.portableText,
                 supported,
@@ -432,7 +642,7 @@ void recorderAcceptsOnlyBackendSupportedShortcuts() {
     require(modal != nullptr && modal->acceptButton() != nullptr,
             "the recorder modal should exist");
 
-    QKeyEvent unsupportedEvent(QEvent::KeyPress, Qt::Key_F25, Qt::ControlModifier);
+    PhysicalKeyEvent unsupportedEvent(QEvent::KeyPress, Qt::Key_F25, Qt::ControlModifier);
     QCoreApplication::sendEvent(configContent, &unsupportedEvent);
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
     QApplication::processEvents();
@@ -466,7 +676,51 @@ void recorderAcceptsOnlyBackendSupportedShortcuts() {
     require(keyButton->busy(),
             "a backend-rejected key must keep the busy recording indicator so editing continues");
 
-    QKeyEvent supportedNumpadEvent(QEvent::KeyPress, Qt::Key_1, Qt::KeypadModifier);
+    for (const auto modifiers : std::array<Qt::KeyboardModifiers, 3>{
+             Qt::NoModifier, Qt::ControlModifier, Qt::ControlModifier | Qt::ShiftModifier}) {
+        PhysicalKeyEvent rejectedEvent(QEvent::KeyPress, Qt::Key_F9, modifiers);
+        QCoreApplication::sendEvent(configContent, &rejectedEvent);
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        QApplication::processEvents();
+        keyButton =
+            row.findChild<adqt::widgets::AdButton*>(QStringLiteral("shortcutConfigKeyButton"));
+        validationInfo = row.findChild<InfoTooltipIcon*>(
+            QStringLiteral("shortcutConfigValidationTooltipTrigger"));
+        require(keyButton != nullptr && validationInfo != nullptr && keyButton->busy(),
+                "rejected shortcuts should retain both the spinner and error icon");
+        adqt::widgets::detail::ButtonStyleInput input;
+        input.buttonStyle = keyButton->buttonStyle();
+        input.accentRole = keyButton->accentRole();
+        input.sizeClass = keyButton->sizeClass();
+        input.baseFont = keyButton->font();
+        const auto metrics = adqt::widgets::detail::resolveButtonVisualStyle(
+                                 input, adqt::theme::ThemeManager::instance().resolve(keyButton))
+                                 .metrics;
+        const int inset = metrics.horizontalPadding + metrics.borderWidth;
+        const int spinnerWidth = std::max(10, metrics.font.pixelSize()) + metrics.iconGap;
+        const int gap = validationInfo->property("inlineGap").toInt();
+        const int availableWidth =
+            keyButton->width() - 2 * inset - spinnerWidth - gap - validationInfo->width();
+        const QFontMetricsF fontMetrics(metrics.font);
+        require(
+            fontMetrics.elidedText(keyButton->text(), Qt::ElideRight, availableWidth) ==
+                keyButton->text(),
+            "rejected shortcut text must fit beside the spinner and error icon without elision");
+        keyButton->grab();
+        const int textStart = inset + spinnerWidth;
+        require(validationInfo->x() >= textStart +
+                                           static_cast<int>(std::ceil(
+                                               fontMetrics.horizontalAdvance(keyButton->text()))) +
+                                           gap,
+                "the error icon must follow the entire rejected shortcut text");
+        keyButton->resize(keyButton->width() + 20, keyButton->height());
+        const QRect iconAfterResize = validationInfo->geometry();
+        keyButton->grab();
+        require(validationInfo->geometry() == iconAfterResize,
+                "resizing and painting must agree on the error icon position beside the spinner");
+    }
+
+    PhysicalKeyEvent supportedNumpadEvent(QEvent::KeyPress, Qt::Key_1, Qt::KeypadModifier);
     QCoreApplication::sendEvent(configContent, &supportedNumpadEvent);
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
     QApplication::processEvents();
@@ -496,7 +750,7 @@ void recorderAcceptsOnlyBackendSupportedShortcuts() {
     keyButton->click();
     QApplication::processEvents();
 
-    QKeyEvent numpadPlusEvent(QEvent::KeyPress, Qt::Key_Plus, Qt::KeypadModifier);
+    PhysicalKeyEvent numpadPlusEvent(QEvent::KeyPress, Qt::Key_Plus, Qt::KeypadModifier);
     QCoreApplication::sendEvent(configContent, &numpadPlusEvent);
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
     QApplication::processEvents();
@@ -511,7 +765,7 @@ void recorderAcceptsOnlyBackendSupportedShortcuts() {
     require(keyButton->text() == displayText(QStringLiteral("Num++")),
             "a keypad plus should not be displayed as two shortcut separators");
 
-    QKeyEvent shiftEvent(QEvent::KeyPress, Qt::Key_Shift, Qt::ShiftModifier);
+    PhysicalKeyEvent shiftEvent(QEvent::KeyPress, Qt::Key_Shift, Qt::ShiftModifier);
     QCoreApplication::sendEvent(configContent, &shiftEvent);
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
     QApplication::processEvents();
@@ -540,6 +794,56 @@ void recorderAcceptsOnlyBackendSupportedShortcuts() {
         "the outer shortcut control must display a committed bare Shift key without duplication");
 }
 
+void guideShortcutRecorderAcceptsStandaloneAlt() {
+    const auto scheme = styles::ThemeManager::instance().themeColorScheme();
+    ShortcutKeyRowConfig config;
+    config.title = QStringLiteral("Toggle Guides");
+    config.validationScope = ShortcutKeyRowConfig::ValidationScope::ScreenshotShortcut;
+    config.allowModifierOnlyAlt = true;
+    config.shortcutValidator = [](const auto& candidate) {
+        return shortcuts::GlobalShortcutValidationResult{
+            candidate.portableText, true, shortcuts::GlobalShortcutFailureReason::None, candidate};
+    };
+    ShortcutKeyRow row(config, scheme.metricAlias,
+                       styles::buildMainWindowComponentMetricToken(scheme));
+    shortcut_domain::ShortcutBindingList saved;
+    QObject::connect(&row, &ShortcutKeyRow::shortcutsChanged, &row,
+                     [&saved](const auto& bindings) { saved = bindings; });
+    row.show();
+    QApplication::processEvents();
+    auto* shortcutButton =
+        row.findChild<adqt::widgets::AdButton*>(QStringLiteral("shortcutKeyButton"));
+    require(shortcutButton != nullptr, "guide shortcut editor must be available");
+    shortcutButton->click();
+    QApplication::processEvents();
+    auto* content = row.findChild<QWidget*>(QStringLiteral("shortcutConfigContent"));
+    auto* modal = row.findChild<adqt::widgets::AdModal*>();
+    require(content != nullptr && modal != nullptr, "guide recorder must open");
+
+    PhysicalKeyEvent altPress(QEvent::KeyPress, Qt::Key_Alt, Qt::AltModifier);
+    QCoreApplication::sendEvent(content, &altPress);
+    auto* actionButton =
+        row.findChild<adqt::widgets::AdButton*>(QStringLiteral("shortcutConfigActionButton"));
+    require(actionButton != nullptr && !actionButton->isEnabled(),
+            "Alt press must wait for a standalone release before recording");
+    PhysicalKeyEvent altRelease(QEvent::KeyRelease, Qt::Key_Alt, Qt::NoModifier);
+    QCoreApplication::sendEvent(content, &altRelease);
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    QApplication::processEvents();
+    actionButton =
+        row.findChild<adqt::widgets::AdButton*>(QStringLiteral("shortcutConfigActionButton"));
+    require(actionButton != nullptr && actionButton->isEnabled(),
+            "standalone Alt release must become a valid guide shortcut");
+    actionButton->click();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    QApplication::processEvents();
+    modal->acceptButton()->click();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    QApplication::processEvents();
+    require(portableText(saved) == QStringList{QStringLiteral("Alt")},
+            "guide shortcut recorder must save standalone Alt");
+}
+
 void recorderCapturesMacPhysicalKeysAndRejectsPhysicalDuplicates() {
 #ifdef Q_OS_MACOS
     const styles::ThemeColorScheme scheme = styles::ThemeManager::instance().themeColorScheme();
@@ -548,6 +852,17 @@ void recorderCapturesMacPhysicalKeysAndRejectsPhysicalDuplicates() {
     config.maxShortcutCount = 2;
     shortcut_domain::ShortcutBinding existing{QStringLiteral("Ctrl+C")};
     existing.physicalKeys.insert(shortcut_domain::ShortcutPlatform::MacOS, 8);
+    auto reserved = existing;
+    reserved.portableText = QStringLiteral("Ctrl+Q");
+    require(snow_shot::storage::ScreenshotShortcutSettings::isReservedShortcut(reserved) &&
+                snow_shot::storage::ScreenshotShortcutSettings::isReservedShortcutAllowed(
+                    QStringLiteral("copy_to_clipboard"), reserved),
+            "physical C must remain reserved for copy regardless of its recorded legend");
+    reserved.portableText = QStringLiteral("Ctrl+C");
+    reserved.physicalKeys[shortcut_domain::ShortcutPlatform::MacOS] = 12;
+    require(!snow_shot::storage::ScreenshotShortcutSettings::isReservedShortcut(reserved),
+            "a C legend at physical Q must not reserve the copy position");
+
     config.shortcuts = {existing};
     int validations = 0;
     shortcut_domain::ShortcutBinding captured;
@@ -568,17 +883,20 @@ void recorderCapturesMacPhysicalKeysAndRejectsPhysicalDuplicates() {
     add->click();
     QApplication::processEvents();
 
-    QKeyEvent duplicate(QEvent::KeyPress, Qt::Key_Q, Qt::ControlModifier, 8, 8, 0);
+    PhysicalKeyEvent duplicate(QEvent::KeyPress, Qt::Key_Q, Qt::ControlModifier, 8, 8, 0);
     QCoreApplication::sendEvent(content, &duplicate);
     QApplication::processEvents();
-    auto* keyButton =
-        row.findChild<adqt::widgets::AdButton*>(QStringLiteral("shortcutConfigKeyButton"));
+    const auto keyButtons =
+        row.findChildren<adqt::widgets::AdButton*>(QStringLiteral("shortcutConfigKeyButton"));
+    const auto recording = std::find_if(keyButtons.cbegin(), keyButtons.cend(),
+                                        [](const auto* button) { return button->busy(); });
+    auto* keyButton = recording == keyButtons.cend() ? nullptr : *recording;
     require(validations == 0 && keyButton != nullptr && keyButton->busy() &&
                 keyButton->property("shortcutValidationState").toString() ==
                     QStringLiteral("invalid"),
             "runtime-identical physical positions must be rejected before backend validation");
 
-    QKeyEvent replacement(QEvent::KeyPress, Qt::Key_Q, Qt::ControlModifier, 12, 12, 0);
+    PhysicalKeyEvent replacement(QEvent::KeyPress, Qt::Key_Q, Qt::ControlModifier, 12, 12, 0);
     QCoreApplication::sendEvent(content, &replacement);
     QApplication::processEvents();
     require(validations == 1 &&
@@ -682,7 +1000,7 @@ void globalRecorderSuspensionSurvivesTransientModalHide() {
             "deferred cleanup after a transient hide must not resume a second time");
 }
 
-void printScreenReleaseRecordsModifiers() {
+void printScreenReleaseFollowsPlatformPolicy() {
     const styles::ThemeColorScheme scheme = styles::ThemeManager::instance().themeColorScheme();
     const auto mainWindowMetric = styles::buildMainWindowComponentMetricToken(scheme);
     QString lastValidatedShortcut;
@@ -705,9 +1023,10 @@ void printScreenReleaseRecordsModifiers() {
     auto* content = row.findChild<QWidget*>(QStringLiteral("shortcutConfigContent"));
     auto* modal = row.findChild<adqt::widgets::AdModal*>();
     require(content != nullptr && modal != nullptr, "the shortcut recorder must open");
-    QKeyEvent release(QEvent::KeyRelease, Qt::Key_Print, Qt::ControlModifier);
+    PhysicalKeyEvent release(QEvent::KeyRelease, Qt::Key_Print, Qt::ControlModifier);
     QCoreApplication::sendEvent(content, &release);
     QApplication::processEvents();
+#ifdef Q_OS_WIN
     require(lastValidatedShortcut == QStringLiteral("Ctrl+Print") &&
                 modal->acceptButton()->isEnabled() && savedShortcuts.isEmpty(),
             "a Print Screen release without a press must record its modifiers through validation");
@@ -716,6 +1035,17 @@ void printScreenReleaseRecordsModifiers() {
     QApplication::processEvents();
     require(portableText(savedShortcuts) == QStringList{QStringLiteral("Ctrl+Print")},
             "OK must persist the recorded Print Screen combination as portable text");
+#else
+    // Release-only Print Screen synthesis belongs to the Windows native
+    // recorder. macOS must not manufacture a binding from this release.
+    require(lastValidatedShortcut.isEmpty() && !modal->acceptButton()->isEnabled() &&
+                savedShortcuts.isEmpty(),
+            "non-Windows recorders must ignore a Print Screen release without a press");
+    modal->reject();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    QApplication::processEvents();
+    require(savedShortcuts.isEmpty(), "canceling an empty recording must not save a shortcut");
+#endif
 }
 
 class PrintScreenRecordingSession {
@@ -765,7 +1095,7 @@ class PrintScreenRecordingSession {
     }
 
     void key(QEvent::Type type, int key, Qt::KeyboardModifiers modifiers, bool repeat = false) {
-        QKeyEvent event(type, key, modifiers, {}, repeat);
+        PhysicalKeyEvent event(type, key, modifiers, {}, repeat);
         QCoreApplication::sendEvent(content, &event);
     }
 
@@ -779,6 +1109,7 @@ class PrintScreenRecordingSession {
 
 void printScreenRecordingPreservesEventOrderAndLifecycle() {
     PrintScreenRecordingSession session;
+#ifdef Q_OS_WIN
     session.key(QEvent::KeyPress, Qt::Key_Print, Qt::ControlModifier);
     session.key(QEvent::KeyPress, Qt::Key_Print, Qt::ControlModifier, true);
     session.key(QEvent::KeyRelease, Qt::Key_Print, Qt::NoModifier);
@@ -834,6 +1165,28 @@ void printScreenRecordingPreservesEventOrderAndLifecycle() {
     session.flush();
     require(portableText(session.saved) == QStringList{QStringLiteral("Meta+Shift+Print")},
             "a new recording session must preserve Windows-key combinations independently");
+#else
+    session.key(QEvent::KeyRelease, Qt::Key_Print, Qt::AltModifier);
+    session.flush();
+    require(session.validated.isEmpty(), "a release cannot start a native macOS recording");
+    session.key(QEvent::KeyPress, Qt::Key_A, Qt::ControlModifier);
+    session.key(QEvent::KeyRelease, Qt::Key_Print, Qt::AltModifier);
+    session.flush();
+    require(session.validated == QStringList{QStringLiteral("Ctrl+A")},
+            "an unrelated release must not replace the physical key being recorded");
+    session.modal->reject();
+    session.flush();
+    require(session.saved.isEmpty(), "Cancel must discard the physical binding");
+    session.open();
+    session.key(QEvent::KeyPress, Qt::Key_C, Qt::ControlModifier);
+    session.flush();
+    session.modal->acceptButton()->click();
+    session.flush();
+    require(portableText(session.saved) == QStringList{QStringLiteral("Ctrl+C")} &&
+                session.saved.first().physicalKeys.value(shortcut_domain::ShortcutPlatform::MacOS,
+                                                         128) == 8,
+            "a new recording session must save the new physical position");
+#endif
 }
 
 #ifdef Q_OS_WIN
@@ -971,18 +1324,18 @@ void nativePrintScreenRecordingPreservesModifiers() {
 
     sendNativeRecorderMessage(window, WM_KEYUP, Qt::ControlModifier | Qt::ShiftModifier,
                               VK_SNAPSHOT, 0, 100);
-    QKeyEvent queuedControl(QEvent::KeyPress, Qt::Key_Control, Qt::ControlModifier);
+    PhysicalKeyEvent queuedControl(QEvent::KeyPress, Qt::Key_Control, Qt::ControlModifier);
     queuedControl.setTimestamp(99);
     QCoreApplication::sendEvent(session.content, &queuedControl);
     session.flush();
-    QKeyEvent queuedShift(QEvent::KeyPress, Qt::Key_Shift, Qt::ShiftModifier);
+    PhysicalKeyEvent queuedShift(QEvent::KeyPress, Qt::Key_Shift, Qt::ShiftModifier);
     queuedShift.setTimestamp(100);
     QCoreApplication::sendEvent(session.content, &queuedShift);
     session.flush();
     require(session.validated.last() == QStringLiteral("Ctrl+Shift+Print") &&
                 session.modal->acceptButton()->isEnabled(),
             "older Qt modifier presses must not cancel or overwrite a native captured chord");
-    QKeyEvent newerKey(QEvent::KeyPress, Qt::Key_A, Qt::ControlModifier);
+    PhysicalKeyEvent newerKey(QEvent::KeyPress, Qt::Key_A, Qt::ControlModifier);
     newerKey.setTimestamp(101);
     QCoreApplication::sendEvent(session.content, &newerKey);
     session.flush();
@@ -1160,9 +1513,9 @@ void cancellingDuplicateScreenshotShortcutReleasesKeyboard() {
         };
         require(manager.addBinding(&screenshotWindow, std::move(binding)) != 0,
                 "screenshot shortcut bindings must register");
-        QKeyEvent press(QEvent::KeyPress, key, Qt::NoModifier);
+        PhysicalKeyEvent press(QEvent::KeyPress, key, Qt::NoModifier);
         QCoreApplication::sendEvent(&screenshotWindow, &press);
-        QKeyEvent release(QEvent::KeyRelease, key, Qt::NoModifier);
+        PhysicalKeyEvent release(QEvent::KeyRelease, key, Qt::NoModifier);
         QCoreApplication::sendEvent(&screenshotWindow, &release);
     }
     require(activations == 3,
@@ -1228,7 +1581,7 @@ void drawingRecorderUsesLocalValidationLanguage() {
 
     auto* configContent = row.findChild<QWidget*>(QStringLiteral("shortcutConfigContent"));
     require(configContent != nullptr, "drawing shortcut recorder should be created");
-    QKeyEvent duplicateEvent(QEvent::KeyPress, Qt::Key_S, Qt::NoModifier);
+    PhysicalKeyEvent duplicateEvent(QEvent::KeyPress, Qt::Key_S, Qt::NoModifier);
     QCoreApplication::sendEvent(configContent, &duplicateEvent);
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
     QApplication::processEvents();
@@ -1435,6 +1788,7 @@ int main(int argc, char** argv) {
 
     QApplication application(argc, argv);
     if (shortcutCancelOnly) {
+        sharedShortcutFieldTracksDraftAndCommitsOnAcceptance();
         cancellingDuplicateScreenshotShortcutReleasesKeyboard();
         closedShortcutEditorCannotReacquireKeyboard();
         return 0;
@@ -1449,14 +1803,16 @@ int main(int argc, char** argv) {
     }
 
     keyDisplayUsesCanonicalLabels();
+    sharedShortcutFieldTracksDraftAndCommitsOnAcceptance();
     displayRefreshUpdatesTheSettingsRowAndOpenEditor();
     actionRowBordersRetainEqualThicknessAtFractionalScale();
     statusPresentationUsesSemanticTokens();
     recorderAcceptsOnlyBackendSupportedShortcuts();
+    guideShortcutRecorderAcceptsStandaloneAlt();
     recorderCapturesMacPhysicalKeysAndRejectsPhysicalDuplicates();
     globalRecorderRestoresRegistrationOnEveryExitPath();
     globalRecorderSuspensionSurvivesTransientModalHide();
-    printScreenReleaseRecordsModifiers();
+    printScreenReleaseFollowsPlatformPolicy();
     printScreenRecordingPreservesEventOrderAndLifecycle();
     localShortcutRecordersUseOnlyNormalKeyEvents();
     recordingShortcutRecorderAcceptsControlKeysAndEscape();

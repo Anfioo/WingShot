@@ -117,7 +117,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ runner.tool_cache }}\snow-qt\6.11.1\msvc2026_64-static-system-codecs
-          key: snow-qt-static-system-codecs-v2-6.11.1-msvc2026-x64-${{ runner.os }}-${{ hashFiles('scripts/build-static-qt.ps1', 'scripts/bootstrap.ps1', 'vcpkg.json', 'cmake/vcpkg-overlay-triplets/x64-windows-static.cmake', 'cmake/vcpkg-overlay-ports/zlib/**') }}
+          key: snow-qt-static-system-codecs-v3-6.11.1-msvc2026-x64-${{ runner.os }}-${{ hashFiles('scripts/build-static-qt.ps1', 'scripts/snow-build-environment.ps1', 'scripts/static-qt-features.json', 'scripts/qtbase-timezone-without-cldr.patch', 'scripts/bootstrap.ps1', 'vcpkg.json', 'cmake/vcpkg-overlay-triplets/x64-windows-static.cmake', 'cmake/vcpkg-overlay-ports/zlib/**') }}
 
       - name: Prepare Qt 6.11.1 static kit
         shell: pwsh
@@ -133,6 +133,18 @@ jobs:
           "SNOW_QT_STATIC_DIR=$qtDir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "Qt6_DIR=$qtDir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
+      - name: Verify native Qt timezone behavior
+        shell: pwsh
+        run: |
+          . scripts/snow-build-environment.ps1
+          Add-SnowMsvcToolsToPath | Out-Null
+          cmake -S test-support/qt-timezone -B build/qt-timezone-size -G Ninja -DCMAKE_BUILD_TYPE=Release "-DQt6_DIR=$env:Qt6_DIR" "-DCMAKE_PREFIX_PATH=$env:GITHUB_WORKSPACE/.tools/vcpkg/installed/static/x64-windows-static"
+          if ($LASTEXITCODE -ne 0) { throw "Qt timezone test configuration failed." }
+          cmake --build build/qt-timezone-size --parallel 2
+          if ($LASTEXITCODE -ne 0) { throw "Qt timezone test build failed." }
+          ctest --test-dir build/qt-timezone-size -R '^snow-qt-timezone-tests$' --output-on-failure
+          if ($LASTEXITCODE -ne 0) { throw "Qt timezone behavior tests failed." }
+
       - name: Build, audit, and package statically
         shell: pwsh
         run: .\scripts\stage-snow-shot-release.ps1
@@ -140,19 +152,41 @@ jobs:
       - name: Verify focused updater and installer behavior
         shell: pwsh
         run: |
-          python scripts/test-snow-shot-publisher.py
-          if ($LASTEXITCODE -ne 0) { throw "Publisher tests failed." }
-          & scripts/test-snow-shot-ocr-release-runtime.ps1
-          & scripts/test-snow-shot-release-symbols.ps1 -ReleaseHelperPath build/snow-shot-msvc-release/snow_shot/Release/snow-shot-updater.exe
-          & scripts/test-snow-shot-installer.ps1
-          & scripts/test-snow-shot-installer-i18n.ps1
           . scripts/snow-build-environment.ps1
           $null = Set-SnowBuildEnvironment -Preset 'snow-shot-msvc-release'
+          python scripts/test-release-optimization.py
+          if ($LASTEXITCODE -ne 0) { throw "Release optimization policy tests failed." }
+          python scripts/test-release-optimization-pch.py
+          if ($LASTEXITCODE -ne 0) { throw "Mixed optimization precompiled-header tests failed." }
+          python scripts/test-snow-shot-mini-package.py
+          if ($LASTEXITCODE -ne 0) { throw "Full/Mini compression configuration tests failed." }
+          python -m unittest discover -s ant_design_qt/tools/tests -p test_generate_icon_pack.py
+          if ($LASTEXITCODE -ne 0) { throw "Icon pack generator tests failed." }
+          & scripts/test-static-qt-features.ps1
+          & scripts/test-snow-shot-package-compression.ps1
+          python scripts/test-snow-shot-gitee-release.py
+          if ($LASTEXITCODE -ne 0) { throw "Gitee mirror tests failed." }
+          node scripts/test-macos-installer-parser.js
+          if ($LASTEXITCODE -ne 0) { throw "macOS installer parser tests failed." }
+          & scripts/test-snow-shot-github-release.ps1
+          cargo test --manifest-path snow_shot/rust/snow-shot-updater/Cargo.toml --lib service::tests
+          if ($LASTEXITCODE -ne 0) { throw "Updater fallback tests failed." }
+          cargo test --manifest-path snow_shot/rust/snow-shot-updater/Cargo.toml --lib github::tests
+          if ($LASTEXITCODE -ne 0) { throw "GitHub transport tests failed." }
+          cargo test --manifest-path snow_shot/rust/snow-shot-updater/Cargo.toml --lib gitee::tests
+          if ($LASTEXITCODE -ne 0) { throw "Gitee transport tests failed." }
+          & scripts/test-snow-shot-ocr-release-runtime.ps1
+          & scripts/test-snow-shot-release-symbols.ps1 -ReleaseHelperPath build/snow-shot-msvc-release/snow_shot/Release/snow-shot-updater.exe
+          & scripts/test-snow-shot-release-symbols.ps1 -Edition Mini -ReleaseHelperPath build/snow-shot-msvc-release/snow_shot_mini/Release/snow-shot-mini-updater.exe
+          & scripts/test-snow-shot-installer.ps1
+          & scripts/test-snow-shot-installer-i18n.ps1
+          & scripts/test-snow-shot-installer-i18n.ps1 -Edition Mini
+          & scripts/test-snow-shot-mini-release.ps1
           cmake --preset snow-shot-msvc-release -DSNOW_SHOT_BUILD_UPDATE_TESTS=ON
           if ($LASTEXITCODE -ne 0) { throw "Updater test configuration failed." }
-          cmake --build --preset build-snow-shot-msvc-release --target snow-shot-update-adapter-tests snow-shot-update-about-tests snow-shot-update-settings-tests --parallel 4
+          cmake --build --preset build-snow-shot-msvc-release --target snow-shot-update-adapter-tests snow-shot-macos-update-tests snow-shot-update-about-tests snow-shot-update-settings-tests --parallel 4
           if ($LASTEXITCODE -ne 0) { throw "Updater test build failed." }
-          ctest --test-dir build/snow-shot-msvc-release/snow_shot -C Release -R '^snow-shot-update-(adapter-tests|about-tests|settings-tests)$' --output-on-failure
+          ctest --test-dir build/snow-shot-msvc-release/snow_shot -C Release -R '^snow-shot-(update-(adapter-tests|about-tests|settings-tests)|macos-update-tests)$' --output-on-failure
           if ($LASTEXITCODE -ne 0) { throw "Updater tests failed." }
           & scripts/test-snow-shot-update-helper.ps1
 
@@ -164,13 +198,16 @@ jobs:
           # 不要求 Release 标签与该版本一致；标签仅用于命名草稿。
           $version = [regex]::Match((Get-Content -Raw CMakeLists.txt), 'set\(SNOW_SHOT_VERSION "([^"]+)"\)').Groups[1].Value
           $names = @()
-          foreach ($variant in @('online', 'offline')) {
-            $base = "snow-shot-$version-windows-x64-$variant"
-            $names += @("$base.exe", "$base.exe.sha256", "$base.manifest.json",
-              "$base-update.zip", "$base-update.zip.sha256", "$base-update.manifest.json")
+          foreach ($prefix in @('snow-shot', 'snow-shot-mini')) {
+            $variants = if ($prefix -eq 'snow-shot-mini') { @('online') } else { @('online', 'offline') }
+            foreach ($variant in $variants) {
+              $base = "$prefix-$version-windows-x64-$variant"
+              $names += @("$base.exe", "$base.exe.sha256", "$base.manifest.json",
+                "$base-update.zip", "$base-update.zip.sha256", "$base-update.manifest.json")
+            }
+            $base = "$prefix-$version-windows-x64-portable"
+            $names += @("$base.zip", "$base.zip.sha256", "$base.manifest.json")
           }
-          $base = "snow-shot-$version-windows-x64-portable"
-          $names += @("$base.zip", "$base.zip.sha256", "$base.manifest.json")
           $runtime = (Get-Content -Raw snow_shot/packaging/snow-shot-ocr-asset-manifest.json | ConvertFrom-Json).runtime.version
           $base = "snow-ocr-runtime-$runtime-windows-x64"
           $names += @("$base.zip", "$base.zip.sha256", "$base.manifest.json")
@@ -188,10 +225,14 @@ jobs:
           path: |
             build/snow-shot-msvc-release/snow-shot-symbols-windows-x64.zip
             build/snow-shot-msvc-release/snow-shot-symbols-windows-x64.zip.sha256
+            build/snow-shot-msvc-release/snow-shot-mini-symbols-windows-x64.zip
+            build/snow-shot-msvc-release/snow-shot-mini-symbols-windows-x64.zip.sha256
           if-no-files-found: error
           retention-days: 90
 
-      - name: Create draft prerelease with generated changelog
+      # Local publisher signs latest-version.json, verifies all assets, and publishes the draft.
+      # CI never receives the private release signing key.
+      - name: Create draft release for local signing and finalization
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
@@ -209,4 +250,4 @@ jobs:
             @releaseFlags `
             @targetFlags `
             --generate-notes `
-            --title "Snow Shot $env:RELEASE_TAG"
+            --title "Snow Shot and Snow Shot Mini $env:GITHUB_REF_NAME"

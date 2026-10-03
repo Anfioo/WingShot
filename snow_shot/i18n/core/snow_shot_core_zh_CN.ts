@@ -4,16 +4,28 @@
     <context>
         <name>AboutPageWidget</name>
         <message>
+            <source>%1 logo</source>
+            <translation>%1 标志</translation>
+        </message>
+        <message>
             <source>%1 · %2</source>
             <translation>%1 · %2</translation>
+        </message>
+        <message>
+            <source>%1 · Make expression clearer</source>
+            <translation>%1 · 让表达更清晰</translation>
         </message>
         <message>
             <source>, excellent work.</source>
             <translation>，出色工作。</translation>
         </message>
         <message>
-            <source>About WingShot</source>
-            <translation>关于 WingShot</translation>
+            <source>About %1</source>
+            <translation>关于 %1</translation>
+        </message>
+        <message>
+            <source>About Snow Shot</source>
+            <translation>关于 Snow Shot</translation>
         </message>
         <message>
             <source>Automatic updates are unavailable for this copy.</source>
@@ -28,16 +40,22 @@
             <translation>取消下载</translation>
         </message>
         <message>
-            <source>Capture, annotate, recognize text, and record your screen.</source>
-            <translation>截图、标注、文字识别与录屏，让每一刻清晰表达。</translation>
+            <source>Capture, annotate, recognize text, and record your screen,
+so every moment on screen can be expressed clearly and shared easily.</source>
+            <translation>截图、标注、文字识别和录屏，
+让屏幕上的每一刻都能清晰表达、轻松分享。</translation>
         </message>
         <message>
             <source>Changelog</source>
             <translation>更新日志</translation>
         </message>
         <message>
-            <source>Check for a newer version of WingShot.</source>
-            <translation>检查是否有新版 WingShot。</translation>
+            <source>Check for a newer version of %1.</source>
+            <translation>检查 %1 是否有新版本。</translation>
+        </message>
+        <message>
+            <source>Check for a newer version of Snow Shot.</source>
+            <translation>检查是否有新版 Snow Shot。</translation>
         </message>
         <message>
             <source>Check for updates</source>
@@ -80,8 +98,16 @@
             <translation>发现更多功能与使用方式</translation>
         </message>
         <message>
-            <source>Download from website</source>
-            <translation>前往官网下载</translation>
+            <source>Discussion and support · Group No. %1</source>
+            <translation>交流与答疑 · 群号 %1</translation>
+        </message>
+        <message>
+            <source>Download from GitHub</source>
+            <translation>从 GitHub 下载</translation>
+        </message>
+        <message>
+            <source>Download from Gitee</source>
+            <translation>从 Gitee 下载</translation>
         </message>
         <message>
             <source>Download update</source>
@@ -108,12 +134,8 @@
             <translation>反馈与建议</translation>
         </message>
         <message>
-            <source>Fork of %1 by mg-chao · %2</source>
-            <translation>基于 mg-chao 的 %1 二次开发 · %2</translation>
-        </message>
-        <message>
-            <source>Free software, without warranty.</source>
-            <translation>自由软件，不提供任何担保。</translation>
+            <source>Free and open-source software. Distributed without any warranty.</source>
+            <translation>自由开源软件，不提供任何担保。</translation>
         </message>
         <message>
             <source>Free · Open source</source>
@@ -152,6 +174,14 @@
             <translation>预览版</translation>
         </message>
         <message>
+            <source>QQ Group 2</source>
+            <translation>QQ 交流群 2</translation>
+        </message>
+        <message>
+            <source>QQ Group 3</source>
+            <translation>QQ 交流群 3</translation>
+        </message>
+        <message>
             <source>Ready to install %1</source>
             <translation>已准备好安装 %1</translation>
         </message>
@@ -174,6 +204,18 @@
         <message>
             <source>Screenshot selection, annotation tools, and recognized text</source>
             <translation>截图选区、标注工具与识别文字</translation>
+        </message>
+        <message>
+            <source>Snow Shot</source>
+            <translation>Snow Shot</translation>
+        </message>
+        <message>
+            <source>Snow Shot logo</source>
+            <translation>Snow Shot 标志</translation>
+        </message>
+        <message>
+            <source>Snow Shot · Make expression clearer</source>
+            <translation>Snow Shot · 让表达更清晰</translation>
         </message>
         <message>
             <source>Text recognition</source>
@@ -206,22 +248,6 @@
         <message>
             <source>View the source and improve it together</source>
             <translation>查看源码，一起改进</translation>
-        </message>
-        <message>
-            <source>WingShot</source>
-            <translation>WingShot</translation>
-        </message>
-        <message>
-            <source>WingShot is a fork of Snow Shot (https://github.com/mg-chao/snow-apps) by mg-chao. The earlier Tauri version is at https://github.com/xiaofeiTM233/snow-shot. In https://github.com/Anfioo/WingShot the main branch keeps the original project and the new branch carries the WingShot changes.</source>
-            <translation>WingShot 是基于 Snow Shot（https://github.com/mg-chao/snow-apps）二次开发的衍生项目，原作者 mg-chao。更早的 Tauri 版本见 https://github.com/xiaofeiTM233/snow-shot。在 https://github.com/Anfioo/WingShot 中，main 分支保留原项目代码，new 分支为 WingShot 的改动。</translation>
-        </message>
-        <message>
-            <source>WingShot logo</source>
-            <translation>WingShot 标志</translation>
-        </message>
-        <message>
-            <source>WingShot · Make expression clearer</source>
-            <translation>WingShot · 让表达更清晰</translation>
         </message>
         <message>
             <source>You are up to date.</source>
@@ -331,6 +357,68 @@
         </message>
     </context>
     <context>
+        <name>EditionMetadata</name>
+        <message>
+            <source>Snow Shot</source>
+            <translation>Snow Shot</translation>
+        </message>
+        <message>
+            <source>Snow Shot Mini</source>
+            <translation>Snow Shot Mini</translation>
+        </message>
+    </context>
+    <context>
+        <name>FloatingToolbar</name>
+        <message>
+            <source>Close</source>
+            <translation>关闭</translation>
+        </message>
+        <message>
+            <source>Customize toolbar</source>
+            <translation>自定义工具栏</translation>
+        </message>
+        <message>
+            <source>Delay %1 seconds to execute</source>
+            <translation>延迟 %1 秒执行</translation>
+        </message>
+        <message>
+            <source>Formula recognition</source>
+            <translation>公式识别</translation>
+        </message>
+        <message>
+            <source>Hide during screenshots</source>
+            <translation>截图时隐藏</translation>
+        </message>
+        <message>
+            <source>Hide in fullscreen</source>
+            <translation>全屏时隐藏</translation>
+        </message>
+        <message>
+            <source>Icon mode</source>
+            <translation>图标模式</translation>
+        </message>
+        <message>
+            <source>More tools</source>
+            <translation>更多工具</translation>
+        </message>
+        <message>
+            <source>QR code recognition</source>
+            <translation>二维码识别</translation>
+        </message>
+        <message>
+            <source>Screen recording</source>
+            <translation>屏幕录制</translation>
+        </message>
+        <message>
+            <source>Screenshot</source>
+            <translation>截图</translation>
+        </message>
+        <message>
+            <source>Toolbar mode</source>
+            <translation>工具栏模式</translation>
+        </message>
+    </context>
+    <context>
         <name>LanguageCatalog</name>
         <message>
             <source>Language name</source>
@@ -353,6 +441,13 @@
         <message>
             <source>Grant the required permission to continue</source>
             <translation>请授予所需权限以继续</translation>
+        </message>
+    </context>
+    <context>
+        <name>McpDocumentService</name>
+        <message>
+            <source>Document request failed (%1).</source>
+            <translation>文档请求失败（%1）。</translation>
         </message>
     </context>
     <context>
@@ -511,6 +606,10 @@
             <translation>图像转换超时，请尝试较小的区域。</translation>
         </message>
         <message>
+            <source>Invalid LaTeX recognition response</source>
+            <translation>无效的 LaTeX 识别响应</translation>
+        </message>
+        <message>
             <source>Invalid model stream response</source>
             <translation>模型流式响应无效</translation>
         </message>
@@ -525,6 +624,22 @@
         <message>
             <source>Invalid translation stream response</source>
             <translation>无效的翻译流响应</translation>
+        </message>
+        <message>
+            <source>LaTeX recognition failed</source>
+            <translation>LaTeX 识别失败</translation>
+        </message>
+        <message>
+            <source>LaTeX recognition request timed out</source>
+            <translation>LaTeX 识别请求超时</translation>
+        </message>
+        <message>
+            <source>LaTeX recognition response is too large</source>
+            <translation>LaTeX 识别响应过大</translation>
+        </message>
+        <message>
+            <source>LaTeX recognition returned no formula</source>
+            <translation>LaTeX 识别未返回公式</translation>
         </message>
         <message>
             <source>No translation services are available</source>
@@ -563,8 +678,28 @@
             <translation>模型未返回内容</translation>
         </message>
         <message>
+            <source>The text is too large to translate.</source>
+            <translation>文本过长，无法翻译。</translation>
+        </message>
+        <message>
+            <source>The translation response is too large.</source>
+            <translation>翻译响应过大。</translation>
+        </message>
+        <message>
+            <source>This service does not support the selected language combination.</source>
+            <translation>此服务不支持所选语言组合。</translation>
+        </message>
+        <message>
             <source>Translation failed</source>
             <translation>翻译失败</translation>
+        </message>
+        <message>
+            <source>Translation request timed out.</source>
+            <translation>翻译请求超时。</translation>
+        </message>
+        <message>
+            <source>Translation service request failed (HTTP %1, code %2).</source>
+            <translation>翻译服务请求失败（HTTP %1，代码 %2）。</translation>
         </message>
         <message>
             <source>Translation service response is too large</source>
@@ -616,8 +751,24 @@
     <context>
         <name>snow_shot::app::ApplicationController</name>
         <message>
-            <source>An update is ready. Open About to restart and update WingShot.</source>
-            <translation>更新已准备就绪。请打开“关于”页面，重启并更新 WingShot。</translation>
+            <source>%1 %2 is available. Open About for update options.</source>
+            <translation>%1 %2 已发布。请打开“关于”查看更新选项。</translation>
+        </message>
+        <message>
+            <source>%1 will close and restart to install the update. Continue?</source>
+            <translation>%1 将关闭并重新启动以安装更新。是否继续？</translation>
+        </message>
+        <message>
+            <source>An update is ready. Open About to restart and update %1.</source>
+            <translation>更新已就绪。请打开“关于”重新启动并更新 %1。</translation>
+        </message>
+        <message>
+            <source>An update is ready. Open About to restart and update Snow Shot.</source>
+            <translation>更新已准备就绪。请打开“关于”页面，重启并更新 Snow Shot。</translation>
+        </message>
+        <message>
+            <source>Cancel</source>
+            <translation>取消</translation>
         </message>
         <message>
             <source>Could not pin selected files</source>
@@ -626,6 +777,10 @@
         <message>
             <source>Feature unavailable</source>
             <translation>功能暂不可用</translation>
+        </message>
+        <message>
+            <source>Finish capturing, recording, exporting, recognizing text, or updating before changing storage.</source>
+            <translation>请先完成截图、录制、导出、文字识别或更新，再更改存储目录。</translation>
         </message>
         <message>
             <source>Finish capturing, recording, or exporting before updating.</source>
@@ -640,12 +795,12 @@
             <translation>重启失败</translation>
         </message>
         <message>
-            <source>WingShot %1 is available. Open About for update options.</source>
-            <translation>WingShot %1 已推出。打开“关于”查看更新选项。</translation>
+            <source>Snow Shot %1 is available. Open About for update options.</source>
+            <translation>Snow Shot %1 已推出。打开“关于”查看更新选项。</translation>
         </message>
         <message>
-            <source>WingShot will close and restart to install the update. Continue?</source>
-            <translation>WingShot 将关闭并重启以安装更新。是否继续？</translation>
+            <source>Snow Shot will close and restart to install the update. Continue?</source>
+            <translation>Snow Shot 将关闭并重启以安装更新。是否继续？</translation>
         </message>
         <message>
             <source>Your settings could not be saved. Please retry before updating.</source>

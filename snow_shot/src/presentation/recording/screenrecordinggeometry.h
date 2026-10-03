@@ -26,6 +26,12 @@ struct ScreenRecordingAreaBorderGeometry {
 
 inline constexpr int screenRecordingPhysicalFrameInset = 3;
 
+[[nodiscard]] int screenRecordingMinimumExtent(qreal physicalScale = 1.0);
+[[nodiscard]] QRect screenRecordingNormalizedRegion(const QRect& region, const QRect& bounds,
+                                                    qreal physicalScale = 1.0);
+// Selects bounds and units using the application's platform coordinate contract.
+[[nodiscard]] QRect screenRecordingNormalizedRegion(const QRect& region);
+
 struct ScreenRecordingObservedGeometry {
     QRect recordingRegion;
     QRectF frameRect;

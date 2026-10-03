@@ -56,13 +56,16 @@ QList<QKeyCombination> normalizedCombinations(const QList<QKeyCombination>& comb
     return result;
 }
 
-shortcuts::ShortcutBindingList normalizedBindings(const shortcuts::ShortcutBindingList& bindings) {
+shortcuts::ShortcutBindingList normalizedBindings(const shortcuts::ShortcutBindingList& bindings,
+                                                  bool allowModifierOnlyControl = false) {
     shortcuts::ShortcutBindingList result;
     for (const shortcuts::ShortcutBinding& candidate : bindings) {
         const bool modifierOnlyShift =
             candidate.portableText.compare(QStringLiteral("Shift"), Qt::CaseInsensitive) == 0;
-        const shortcuts::ShortcutBinding binding =
-            shortcuts::canonicalBinding(candidate, modifierOnlyShift);
+        const bool modifierOnlyAlt =
+            candidate.portableText.compare(QStringLiteral("Alt"), Qt::CaseInsensitive) == 0;
+        const shortcuts::ShortcutBinding binding = shortcuts::canonicalBinding(
+            candidate, modifierOnlyShift, modifierOnlyAlt, allowModifierOnlyControl);
         if (binding.portableText.isEmpty()) {
             continue;
         }
@@ -80,6 +83,11 @@ shortcuts::ShortcutBindingList normalizedBindings(const shortcuts::ShortcutBindi
 } // namespace
 
 struct WindowShortcutManager::Impl {
+    struct RegisteredScope {
+        QPointer<QWidget> window;
+        QMetaObject::Connection destroyedConnection;
+    };
+
     struct PendingActivation {
         BindingHandle handle = 0;
         QPointer<QWidget> scope;
@@ -91,6 +99,7 @@ struct WindowShortcutManager::Impl {
         QPointer<QObject> owner;
         Binding binding;
         shortcuts::ShortcutBindingList activeReleaseBindings;
+        QMetaObject::Connection destroyedConnection;
     };
 
     struct Candidate {
@@ -115,12 +124,13 @@ struct WindowShortcutManager::Impl {
     // dispatch them as the fresh presses they physically are.
     [[nodiscard]] bool isStaleAutoRepeat(const QKeyEvent& event) const {
         const quint64 token = shortcuts::eventKeyToken(event);
-        return event.isAutoRepeat() && event.key() != Qt::Key_unknown &&
+        return event.isAutoRepeat() &&
+               shortcuts::eventKeyToken(event) != static_cast<quint64>(Qt::Key_unknown) &&
                !m_heldKeys.contains(token) && m_unreleasedKeys.contains(token);
     }
 
     void noteKeyPress(const QKeyEvent& event) {
-        if (event.key() == Qt::Key_unknown) {
+        if (shortcuts::eventKeyToken(event) == static_cast<quint64>(Qt::Key_unknown)) {
             return;
         }
         const quint64 token = shortcuts::eventKeyToken(event);
@@ -132,7 +142,8 @@ struct WindowShortcutManager::Impl {
     void noteKeyRelease(const QKeyEvent& event) {
         // Auto-repeat sequences include synthetic repeat releases that must not
         // end the held state; only a real release clears the records.
-        if (!event.isAutoRepeat() && event.key() != Qt::Key_unknown) {
+        if (!event.isAutoRepeat() &&
+            shortcuts::eventKeyToken(event) != static_cast<quint64>(Qt::Key_unknown)) {
             const quint64 token = shortcuts::eventKeyToken(event);
             ++m_keyStateRevisions[token];
             m_heldKeys.remove(token);
@@ -151,23 +162,22 @@ struct WindowShortcutManager::Impl {
             return;
         }
         QWidget* eventWindow = widget->window();
-        const bool isScopeWindow = std::any_of(m_scopeWindows.cbegin(), m_scopeWindows.cend(),
-                                               [eventWindow](const QPointer<QWidget>& scopeWindow) {
-                                                   return scopeWindow == eventWindow;
-                                               });
+        const bool isScopeWindow = std::any_of(
+            m_scopeWindows.cbegin(), m_scopeWindows.cend(),
+            [eventWindow](const RegisteredScope& scope) { return scope.window == eventWindow; });
         // Every manager observes application-wide key presses, including those
         // handled by another window. That window can lose the release when it
         // closes, so invalidate inactive scopes even when the event is outside
         // this manager. Hiding an ordinary child must not end a held key.
         if (type == QEvent::Hide && isScopeWindow) {
-            for (const QPointer<QWidget>& scopeWindow : m_scopeWindows) {
-                if (scopeWindow != nullptr && scopeWindow->isVisible()) {
+            for (const RegisteredScope& scope : m_scopeWindows) {
+                if (scope.window != nullptr && scope.window->isVisible()) {
                     return;
                 }
             }
         } else {
-            for (const QPointer<QWidget>& scopeWindow : m_scopeWindows) {
-                if (scopeWindow != nullptr && scopeWindow->isActiveWindow()) {
+            for (const RegisteredScope& scope : m_scopeWindows) {
+                if (scope.window != nullptr && scope.window->isActiveWindow()) {
                     return;
                 }
             }
@@ -186,11 +196,20 @@ struct WindowShortcutManager::Impl {
             Qt::QueuedConnection);
     }
 
+    void removeScopes(QWidget* root = nullptr) {
+        m_scopeWindows.erase(std::remove_if(m_scopeWindows.begin(), m_scopeWindows.end(),
+                                            [root](const RegisteredScope& scope) {
+                                                if (scope.window.isNull() || scope.window == root) {
+                                                    QObject::disconnect(scope.destroyedConnection);
+                                                    return true;
+                                                }
+                                                return false;
+                                            }),
+                             m_scopeWindows.end());
+    }
+
     [[nodiscard]] QWidget* scopeForReceiver(QObject* receiver) {
-        m_scopeWindows.erase(
-            std::remove_if(m_scopeWindows.begin(), m_scopeWindows.end(),
-                           [](const QPointer<QWidget>& window) { return window.isNull(); }),
-            m_scopeWindows.end());
+        removeScopes();
 
         auto* widget = qobject_cast<QWidget*>(receiver);
         if (widget == nullptr) {
@@ -205,9 +224,9 @@ struct WindowShortcutManager::Impl {
         // The common case is a child widget of the registered top-level
         // window. Keep the comparison on window() so ordinary child widgets
         // do not require a native handle.
-        for (const QPointer<QWidget>& scopeWindow : m_scopeWindows) {
-            if (scopeWindow != nullptr && scopeWindow->window() == receiverWindow) {
-                return scopeWindow.data();
+        for (const RegisteredScope& scope : m_scopeWindows) {
+            if (scope.window != nullptr && scope.window->window() == receiverWindow) {
+                return scope.window.data();
             }
         }
 
@@ -219,13 +238,13 @@ struct WindowShortcutManager::Impl {
         QSet<QWindow*> visited;
         while (candidate != nullptr && !visited.contains(candidate)) {
             visited.insert(candidate);
-            for (const QPointer<QWidget>& scopeWindow : m_scopeWindows) {
-                if (scopeWindow == nullptr) {
+            for (const RegisteredScope& scope : m_scopeWindows) {
+                if (scope.window == nullptr) {
                     continue;
                 }
-                QWindow* scopeHandle = scopeWindow->windowHandle();
+                QWindow* scopeHandle = scope.window->windowHandle();
                 if (scopeHandle != nullptr && scopeHandle == candidate) {
-                    return scopeWindow.data();
+                    return scope.window.data();
                 }
             }
             candidate = candidate->transientParent();
@@ -236,9 +255,9 @@ struct WindowShortcutManager::Impl {
         // established by setParent(owner, Qt::Tool), so use it as a fallback.
         for (QWidget* parent = receiverWindow->parentWidget(); parent != nullptr;
              parent = parent->parentWidget()) {
-            for (const QPointer<QWidget>& scopeWindow : m_scopeWindows) {
-                if (scopeWindow != nullptr && scopeWindow->window() == parent->window()) {
-                    return scopeWindow.data();
+            for (const RegisteredScope& scope : m_scopeWindows) {
+                if (scope.window != nullptr && scope.window->window() == parent->window()) {
+                    return scope.window.data();
                 }
             }
         }
@@ -292,6 +311,19 @@ struct WindowShortcutManager::Impl {
                 // Still drain this sequence if its release reaches us. A fresh
                 // physical press after interruption may replace the reservation.
                 pending.handle = 0;
+            }
+        }
+    }
+
+    void cancelPendingTaps(quint64 continuingKey = 0) {
+        for (auto it = m_releaseActivations.begin(); it != m_releaseActivations.end(); ++it) {
+            if (continuingKey != 0 && it.key() == continuingKey) {
+                continue;
+            }
+            const RegisteredBinding* registered = findBinding(it->handle);
+            if (registered != nullptr &&
+                registered->binding.activationTrigger == Binding::ActivationTrigger::Tap) {
+                it->handle = 0;
             }
         }
     }
@@ -364,7 +396,7 @@ struct WindowShortcutManager::Impl {
     }
 
     WindowShortcutManager& q;
-    QList<QPointer<QWidget>> m_scopeWindows;
+    QList<RegisteredScope> m_scopeWindows;
     QVector<RegisteredBinding> m_bindings;
     QHash<quint64, PendingActivation> m_releaseActivations;
     QSet<quint64> m_heldKeys;
@@ -384,6 +416,12 @@ WindowShortcutManager::WindowShortcutManager(QObject* parent)
 }
 
 WindowShortcutManager::~WindowShortcutManager() {
+    for (const auto& scope : m_impl->m_scopeWindows) {
+        disconnect(scope.destroyedConnection);
+    }
+    for (const auto& binding : m_impl->m_bindings) {
+        disconnect(binding.destroyedConnection);
+    }
     auto& owners = applicationKeyState().releaseOwners;
     for (auto it = owners.begin(); it != owners.end();) {
         it = it.value() == this ? owners.erase(it) : std::next(it);
@@ -398,35 +436,27 @@ void WindowShortcutManager::addScopeWindow(QWidget* window) {
         return;
     }
     QWidget* root = window->window();
-    const bool alreadyRegistered =
-        std::any_of(m_impl->m_scopeWindows.cbegin(), m_impl->m_scopeWindows.cend(),
-                    [root](const QPointer<QWidget>& existing) { return existing == root; });
+    const bool alreadyRegistered = std::any_of(
+        m_impl->m_scopeWindows.cbegin(), m_impl->m_scopeWindows.cend(),
+        [root](const Impl::RegisteredScope& existing) { return existing.window == root; });
     if (alreadyRegistered) {
         return;
     }
-    m_impl->m_scopeWindows.push_back(root);
-    connect(root, &QObject::destroyed, this, [this]() {
+    const auto connection = connect(root, &QObject::destroyed, this, [this]() {
         for (auto& pending : m_impl->m_releaseActivations) {
             if (!pending.scope) {
                 pending.handle = 0;
             }
         }
-        m_impl->m_scopeWindows.erase(
-            std::remove_if(m_impl->m_scopeWindows.begin(), m_impl->m_scopeWindows.end(),
-                           [](const QPointer<QWidget>& item) { return item.isNull(); }),
-            m_impl->m_scopeWindows.end());
+        m_impl->removeScopes();
     });
+    m_impl->m_scopeWindows.push_back({root, connection});
 }
 
 void WindowShortcutManager::removeScopeWindow(QWidget* window) {
     QWidget* root = window != nullptr ? window->window() : nullptr;
     m_impl->cancelReleaseActivations(0, root);
-    m_impl->m_scopeWindows.erase(std::remove_if(m_impl->m_scopeWindows.begin(),
-                                                m_impl->m_scopeWindows.end(),
-                                                [root](const QPointer<QWidget>& item) {
-                                                    return item.isNull() || item == root;
-                                                }),
-                                 m_impl->m_scopeWindows.end());
+    m_impl->removeScopes(root);
 }
 
 WindowShortcutManager::InputSuspensionHandle WindowShortcutManager::suspendInput() {
@@ -450,23 +480,25 @@ void WindowShortcutManager::resumeInput(InputSuspensionHandle handle) {
 WindowShortcutManager::BindingHandle WindowShortcutManager::addBinding(QObject* owner,
                                                                        Binding binding) {
     if (owner == nullptr || !binding.activate ||
-        (binding.activationTrigger == Binding::ActivationTrigger::Release &&
+        (binding.activationTrigger != Binding::ActivationTrigger::Press &&
          (binding.release || binding.cancel || binding.autoRepeat)) ||
         static_cast<bool>(binding.release) != static_cast<bool>(binding.cancel)) {
         return 0;
     }
     if (binding.shortcutBindings.isEmpty()) {
-        binding.shortcutBindings = shortcutBindingsFromKeyCombinations(binding.keyCombinations);
+        binding.shortcutBindings = shortcutBindingsFromKeyCombinations(
+            binding.keyCombinations, binding.allowModifierOnlyControl);
     } else {
-        binding.shortcutBindings = normalizedBindings(binding.shortcutBindings);
+        binding.shortcutBindings =
+            normalizedBindings(binding.shortcutBindings, binding.allowModifierOnlyControl);
     }
     binding.keyCombinations.clear();
 
     const BindingHandle handle = m_impl->m_nextHandle++;
-    m_impl->m_bindings.push_back(
-        Impl::RegisteredBinding{handle, m_impl->m_nextOrder++, owner, std::move(binding), {}});
-    connect(owner, &QObject::destroyed, this,
-            [this, handle]() { static_cast<void>(removeBinding(handle)); });
+    const auto connection = connect(owner, &QObject::destroyed, this,
+                                    [this, handle]() { static_cast<void>(removeBinding(handle)); });
+    m_impl->m_bindings.push_back(Impl::RegisteredBinding{
+        handle, m_impl->m_nextOrder++, owner, std::move(binding), {}, connection});
     return handle;
 }
 
@@ -478,14 +510,18 @@ bool WindowShortcutManager::setShortcuts(BindingHandle handle,
     if (binding == m_impl->m_bindings.end()) {
         return false;
     }
-    binding->binding.shortcutBindings = normalizedBindings(shortcuts);
+    binding->binding.shortcutBindings =
+        normalizedBindings(shortcuts, binding->binding.allowModifierOnlyControl);
     m_impl->cancelReleaseActivations(handle);
     return true;
 }
 
 bool WindowShortcutManager::setKeyCombinations(BindingHandle handle,
                                                const QList<QKeyCombination>& keyCombinations) {
-    return setShortcuts(handle, shortcutBindingsFromKeyCombinations(keyCombinations));
+    const auto* binding = m_impl->findBinding(handle);
+    return binding != nullptr &&
+           setShortcuts(handle, shortcutBindingsFromKeyCombinations(
+                                    keyCombinations, binding->binding.allowModifierOnlyControl));
 }
 
 bool WindowShortcutManager::removeBinding(BindingHandle handle) {
@@ -494,6 +530,7 @@ bool WindowShortcutManager::removeBinding(BindingHandle handle) {
         for (const auto& binding : registered->activeReleaseBindings) {
             applicationKeyState().releaseOwners.remove(shortcuts::shortcutKeyToken(binding));
         }
+        disconnect(registered->destroyedConnection);
     }
     const auto previousSize = m_impl->m_bindings.size();
     m_impl->m_bindings.erase(std::remove_if(m_impl->m_bindings.begin(), m_impl->m_bindings.end(),
@@ -505,12 +542,22 @@ bool WindowShortcutManager::removeBinding(BindingHandle handle) {
 }
 
 shortcuts::ShortcutBindingList WindowShortcutManager::shortcutBindingsFromKeyCombinations(
-    const QList<QKeyCombination>& keyCombinations) {
+    const QList<QKeyCombination>& keyCombinations, bool allowModifierOnlyControl) {
     shortcuts::ShortcutBindingList bindings;
     for (const QKeyCombination combination : normalizedCombinations(keyCombinations)) {
         if (combination.key() == Qt::Key_Shift &&
             combination.keyboardModifiers() == Qt::ShiftModifier) {
             bindings.push_back(shortcuts::ShortcutBinding{QStringLiteral("Shift")});
+            continue;
+        }
+        if (combination.key() == Qt::Key_Alt &&
+            combination.keyboardModifiers() == Qt::AltModifier) {
+            bindings.push_back(shortcuts::ShortcutBinding{QStringLiteral("Alt")});
+            continue;
+        }
+        if (allowModifierOnlyControl && combination.key() == Qt::Key_Control &&
+            combination.keyboardModifiers() == Qt::ControlModifier) {
+            bindings.push_back(shortcuts::ShortcutBinding{QStringLiteral("Ctrl")});
             continue;
         }
         const QString portable = QKeySequence(combination).toString(QKeySequence::PortableText);
@@ -519,7 +566,7 @@ shortcuts::ShortcutBindingList WindowShortcutManager::shortcutBindingsFromKeyCom
             bindings.push_back(binding);
         }
     }
-    return normalizedBindings(bindings);
+    return normalizedBindings(bindings, allowModifierOnlyControl);
 }
 
 QList<QKeyCombination> WindowShortcutManager::keyCombinationsFromBindings(
@@ -529,6 +576,10 @@ QList<QKeyCombination> WindowShortcutManager::keyCombinationsFromBindings(
     for (const shortcuts::ShortcutBinding& binding : shortcuts) {
         if (binding.portableText.compare(QStringLiteral("Shift"), Qt::CaseInsensitive) == 0) {
             combinations.push_back(QKeyCombination(Qt::ShiftModifier, Qt::Key_Shift));
+            continue;
+        }
+        if (binding.portableText.compare(QStringLiteral("Alt"), Qt::CaseInsensitive) == 0) {
+            combinations.push_back(QKeyCombination(Qt::AltModifier, Qt::Key_Alt));
             continue;
         }
         const QKeySequence sequence =
@@ -563,6 +614,9 @@ bool WindowShortcutManager::eventFilter(QObject* watched, QEvent* event) {
         return QObject::eventFilter(watched, event);
     }
     if (event->type() == QEvent::Hide || event->type() == QEvent::WindowDeactivate) {
+        if (event->type() == QEvent::WindowDeactivate) {
+            m_impl->cancelPendingTaps();
+        }
         if (event->type() == QEvent::Hide) {
             if (auto* widget = qobject_cast<QWidget*>(watched); widget && widget->isWindow()) {
                 m_impl->cancelReleaseActivations(0, widget);
@@ -575,6 +629,10 @@ bool WindowShortcutManager::eventFilter(QObject* watched, QEvent* event) {
         m_impl->invalidateHeldKeys();
         m_impl->cancelHeldBindings();
         return false;
+    }
+    if (event->type() == QEvent::MouseButtonPress || event->type() == QEvent::MouseButtonDblClick ||
+        event->type() == QEvent::Wheel) {
+        m_impl->cancelPendingTaps();
     }
     if (event->type() != QEvent::ShortcutOverride && event->type() != QEvent::KeyPress &&
         event->type() != QEvent::KeyRelease) {
@@ -589,6 +647,9 @@ bool WindowShortcutManager::eventFilter(QObject* watched, QEvent* event) {
     auto* keyEvent = static_cast<QKeyEvent*>(event);
     const quint64 keyToken = shortcuts::eventKeyToken(*keyEvent);
     const bool keyRelease = event->type() == QEvent::KeyRelease;
+    if (event->type() == QEvent::KeyPress) {
+        m_impl->cancelPendingTaps(keyToken);
+    }
     auto& releaseOwners = applicationKeyState().releaseOwners;
     if (const auto owner = releaseOwners.value(keyToken); owner && owner != this) {
         const auto pending = owner->m_impl->m_releaseActivations.constFind(keyToken);
@@ -761,7 +822,7 @@ bool WindowShortcutManager::eventFilter(QObject* watched, QEvent* event) {
         if (activate && keyEvent->isAutoRepeat()) {
             m_impl->noteKeyPress(*keyEvent);
         }
-        if (registered->binding.activationTrigger == Binding::ActivationTrigger::Release) {
+        if (registered->binding.activationTrigger != Binding::ActivationTrigger::Press) {
             m_impl->m_releaseActivations.insert(keyToken, {candidate.handle, scopeWindow});
             releaseOwners.insert(keyToken, this);
             event->accept();

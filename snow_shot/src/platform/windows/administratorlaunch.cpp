@@ -1,3 +1,4 @@
+#include "snow_shot/app/edition.h"
 #include "snow_shot/platform/windows/administratorlaunch.h"
 #include "snow_shot/platform/windows/autostartregistration.h"
 
@@ -62,6 +63,9 @@ void check(HRESULT result) {
         throw std::runtime_error(QStringLiteral("Windows error 0x%1")
                                      .arg(static_cast<quint32>(result), 8, 16, QLatin1Char('0'))
                                      .toStdString());
+}
+void checkRegistry(LSTATUS status) {
+    check(HRESULT_FROM_WIN32(static_cast<DWORD>(status)));
 }
 QString executablePath() {
     return QDir::toNativeSeparators(QCoreApplication::applicationFilePath());
@@ -131,7 +135,7 @@ bool peerMatches(QLocalSocket& socket, DWORD expected, bool serverPeer) {
 QString taskName(const QString& executable, const QString& sid) {
     const QByteArray identity =
         QDir::cleanPath(QDir::fromNativeSeparators(executable)).toCaseFolded().toUtf8();
-    return QStringLiteral("WingShot-%1-%2")
+    return (app::edition::registryName() + QStringLiteral("-%1-%2"))
         .arg(sid,
              QString::fromLatin1(
                  QCryptographicHash::hash(identity, QCryptographicHash::Sha256).toHex().left(24)));
@@ -369,9 +373,9 @@ struct RegistryHandle {
             RegCloseKey(value);
     }
 };
-// Reconciles the WingShot auto-start value under base\subKey for uninstall and migration.
+// Reconciles the Snow Shot auto-start value under base\subKey for uninstall and migration.
 // Returns whether an accessible matching registration was removed or rewritten.
-// A key that cannot be opened for reading cannot contain a verifiable WingShot
+// A key that cannot be opened for reading cannot contain a verifiable Snow Shot
 // registration: machine hives (.DEFAULT, service accounts S-1-5-19/S-1-5-20) deny access
 // to filtered tokens, and the service hives are readable only by SYSTEM, so probing must
 // skip them instead of failing the whole uninstall. Only a registration that was verified
@@ -387,7 +391,8 @@ bool reconcileStartupRunValue(HKEY base, const QString& subKey, const QString& e
     wchar_t command[32768];
     DWORD bytes = sizeof(command);
     const LSTATUS read =
-        RegGetValueW(run, nullptr, L"WingShot", RRF_RT_REG_SZ, nullptr, command, &bytes);
+        RegGetValueW(run, nullptr, app::edition::registryName().toStdWString().c_str(),
+                     RRF_RT_REG_SZ, nullptr, command, &bytes);
     if (read != ERROR_SUCCESS ||
         QString::fromWCharArray(command).compare(expectedCommand, Qt::CaseInsensitive) != 0) {
         return false;
@@ -398,15 +403,15 @@ bool reconcileStartupRunValue(HKEY base, const QString& subKey, const QString& e
     if (opened == ERROR_FILE_NOT_FOUND) {
         return false;
     }
-    check(HRESULT_FROM_WIN32(opened));
+    checkRegistry(opened);
     RegistryHandle writeGuard{write};
     if (replacementCommand.isEmpty()) {
-        check(HRESULT_FROM_WIN32(RegDeleteValueW(write, L"WingShot")));
+        checkRegistry(RegDeleteValueW(write, app::edition::registryName().toStdWString().c_str()));
     } else {
         const std::wstring value = replacementCommand.toStdWString();
-        check(HRESULT_FROM_WIN32(RegSetValueExW(
-            write, L"WingShot", 0, REG_SZ, reinterpret_cast<const BYTE*>(value.c_str()),
-            static_cast<DWORD>((value.size() + 1) * sizeof(wchar_t)))));
+        checkRegistry(RegSetValueExW(write, app::edition::registryName().toStdWString().c_str(), 0,
+                                     REG_SZ, reinterpret_cast<const BYTE*>(value.c_str()),
+                                     static_cast<DWORD>((value.size() + 1) * sizeof(wchar_t))));
     }
     return true;
 }
@@ -834,7 +839,8 @@ static AdministratorResult updateInstallationStartup(const QString& root,
 #ifdef Q_OS_WIN
     try {
         Tasks tasks;
-        tasks.executable = QDir(root).filePath(QStringLiteral("bin/WingShot.exe"));
+        tasks.executable =
+            QDir(root).filePath((QStringLiteral("bin/") + app::edition::executableName()));
         ComPtr<IRegisteredTaskCollection> collection;
         check(tasks.folder->GetTasks(TASK_ENUM_HIDDEN, &collection));
         LONG count = 0;
@@ -859,11 +865,11 @@ static AdministratorResult updateInstallationStartup(const QString& root,
                 SysFreeString(user);
             } catch (...) {
                 // A task that cannot be inspected (for example a third-party task with a
-                // restrictive security descriptor) is not a verifiable WingShot
+                // restrictive security descriptor) is not a verifiable Snow Shot
                 // registration; skipping it must not abort the uninstall.
                 continue;
             }
-            if (!candidate.startsWith(u"WingShot-"))
+            if (!candidate.startsWith(app::edition::registryName() + QStringLiteral("-")))
                 continue;
             tasks.sid = canonicalAccountSid(owner);
             if (tasks.sid.isEmpty() || candidate != taskName(tasks.executable, tasks.sid))
@@ -875,7 +881,8 @@ static AdministratorResult updateInstallationStartup(const QString& root,
             const QString previousExecutable = tasks.executable;
             if (!replacementRoot.isEmpty()) {
                 tasks.executable =
-                    QDir(replacementRoot).filePath(QStringLiteral("bin/WingShot.exe"));
+                    QDir(replacementRoot)
+                        .filePath((QStringLiteral("bin/") + app::edition::executableName()));
                 tasks.name = taskName(tasks.executable, tasks.sid);
                 if (tasks.current())
                     throw std::runtime_error(QT_TRANSLATE_NOOP(
@@ -887,7 +894,8 @@ static AdministratorResult updateInstallationStartup(const QString& root,
             if (!replacementRoot.isEmpty()) {
                 try {
                     tasks.executable =
-                        QDir(replacementRoot).filePath(QStringLiteral("bin/WingShot.exe"));
+                        QDir(replacementRoot)
+                            .filePath((QStringLiteral("bin/") + app::edition::executableName()));
                     tasks.name = taskName(tasks.executable, tasks.sid);
                     tasks.create();
                 } catch (...) {
@@ -906,11 +914,12 @@ static AdministratorResult updateInstallationStartup(const QString& root,
         const QString startupCommand =
             QStringLiteral("\"%1\" --autostart").arg(QDir::toNativeSeparators(tasks.executable));
         const QString migratedCommand =
-            replacementRoot.isEmpty()
-                ? QString()
-                : QStringLiteral("\"%1\" --autostart")
-                      .arg(QDir::toNativeSeparators(
-                          QDir(replacementRoot).filePath(QStringLiteral("bin/WingShot.exe"))));
+            replacementRoot.isEmpty() ? QString()
+                                      : QStringLiteral("\"%1\" --autostart")
+                                            .arg(QDir::toNativeSeparators(
+                                                QDir(replacementRoot)
+                                                    .filePath((QStringLiteral("bin/") +
+                                                               app::edition::executableName()))));
         // Enumerate loaded user hives, never confuse the installer account with the app owner.
         for (DWORD index = 0;; ++index) {
             wchar_t sid[256];
@@ -920,7 +929,7 @@ static AdministratorResult updateInstallationStartup(const QString& root,
             if (status == ERROR_NO_MORE_ITEMS)
                 break;
             if (status != ERROR_SUCCESS)
-                check(HRESULT_FROM_WIN32(status));
+                checkRegistry(status);
             reconcileStartupRunValue(
                 QString::fromWCharArray(sid, size) +
                     QStringLiteral("\\Software\\Microsoft\\Windows\\CurrentVersion\\Run"),
@@ -929,9 +938,9 @@ static AdministratorResult updateInstallationStartup(const QString& root,
         // Users who are signed out have no HKEY_USERS hive. Open their application hive
         // privately rather than mounting it globally or writing the installer's HKCU.
         HKEY profiles = nullptr;
-        check(HRESULT_FROM_WIN32(RegOpenKeyExW(
-            HKEY_LOCAL_MACHINE, L"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\ProfileList", 0,
-            KEY_READ, &profiles)));
+        checkRegistry(RegOpenKeyExW(HKEY_LOCAL_MACHINE,
+                                    L"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\ProfileList",
+                                    0, KEY_READ, &profiles));
         RegistryHandle profilesGuard{profiles};
         for (DWORD index = 0;; ++index) {
             wchar_t sid[256];
@@ -940,7 +949,7 @@ static AdministratorResult updateInstallationStartup(const QString& root,
                 RegEnumKeyExW(profiles, index, sid, &length, nullptr, nullptr, nullptr, nullptr);
             if (status == ERROR_NO_MORE_ITEMS)
                 break;
-            check(HRESULT_FROM_WIN32(status));
+            checkRegistry(status);
             const QString owner = QString::fromWCharArray(sid, length);
             if (!owner.startsWith(u"S-1-5-21-") && !owner.startsWith(u"S-1-12-1-"))
                 continue;
@@ -951,9 +960,9 @@ static AdministratorResult updateInstallationStartup(const QString& root,
             }
             wchar_t directory[32768];
             DWORD bytes = sizeof(directory);
-            check(HRESULT_FROM_WIN32(RegGetValueW(profiles, sid, L"ProfileImagePath",
-                                                  RRF_RT_REG_SZ | RRF_RT_REG_EXPAND_SZ, nullptr,
-                                                  directory, &bytes)));
+            checkRegistry(RegGetValueW(profiles, sid, L"ProfileImagePath",
+                                       RRF_RT_REG_SZ | RRF_RT_REG_EXPAND_SZ, nullptr, directory,
+                                       &bytes));
             const QString hivePath =
                 QDir(QString::fromWCharArray(directory)).filePath(QStringLiteral("NTUSER.DAT"));
             if (!QFileInfo::exists(hivePath))
@@ -969,7 +978,7 @@ static AdministratorResult updateInstallationStartup(const QString& root,
             if (reconcileStartupRunValue(
                     hive, QStringLiteral("Software\\Microsoft\\Windows\\CurrentVersion\\Run"),
                     startupCommand, migratedCommand)) {
-                check(HRESULT_FROM_WIN32(RegFlushKey(hive)));
+                checkRegistry(RegFlushKey(hive));
             }
         }
         return {true, false, {}};

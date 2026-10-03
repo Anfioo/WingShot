@@ -34,6 +34,13 @@ bool SnowCanvasTextEditorSession::begin(const SnowTextElementInfo& info,
             preview = *existingSceneItem;
         }
         snow_canvas_text::copyTextToSceneItem(preview, initialText);
+        // Older saved drafts could commit the resized wrap rectangle together
+        // with pre-resize ink bounds. Resolve the ink from the current font and
+        // wrap width when opening an edit, without changing the stored frame.
+        const auto measured = snow_canvas_text_layout::measureWrappedTextLayout(
+            initialText, baseFont, preview, preview.width);
+        preview.content_width = measured.content.width();
+        preview.content_height = measured.content.height();
     } else {
         if (newTextStyle != nullptr) {
             snow_canvas_text::applyTextStyleToSceneItem(preview, *newTextStyle);
@@ -155,6 +162,8 @@ bool SnowCanvasTextEditorSession::applyActiveDraftPresentation(const SnowTextEle
     m_previewItem.center_y = info.center_y;
     m_previewItem.width = qMax(1.0, info.width);
     m_previewItem.height = qMax(1.0, info.height);
+    m_previewItem.content_width = info.content_width;
+    m_previewItem.content_height = info.content_height;
     m_previewItem.rotation = info.rotation;
     snow_canvas_text::applyTextStyleToSceneItem(m_previewItem, style);
     snow_canvas_text::copyTextToSceneItem(m_previewItem, m_draft.displayText());
@@ -305,9 +314,6 @@ SnowCanvasTextEditorSession::handleKeyPress(QKeyEvent* event, const QFont& baseF
     case snow_canvas_text_editor_input::EventCommand::DeleteElement:
         result.command = EventCommand::DeleteElement;
         break;
-    case snow_canvas_text_editor_input::EventCommand::Cancel:
-        result.command = EventCommand::Cancel;
-        break;
     case snow_canvas_text_editor_input::EventCommand::None:
     default:
         break;
@@ -385,6 +391,11 @@ void SnowCanvasTextEditorSession::resetState() {
     m_previewAutoResize = false;
     m_styleChanged = false;
     m_draft.reset();
+}
+
+void SnowCanvasTextEditorSession::releaseRetainedState() {
+    resetState();
+    m_draft.releaseRetainedState();
 }
 
 void SnowCanvasTextEditorSession::updatePreviewLayout(const QFont& baseFont, bool forceLayout) {

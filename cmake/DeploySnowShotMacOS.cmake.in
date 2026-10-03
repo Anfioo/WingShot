@@ -1,12 +1,24 @@
 set(_app "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/WingShot.app")
 # Remove the obsolete helper from reused install/package staging directories.
 file(REMOVE "${_app}/Contents/MacOS/snow-shot-updater")
+if(@SNOW_SHOT_ENABLE_MCP@ AND NOT EXISTS "${_app}/Contents/MacOS/snow-shot-mcp")
+    message(FATAL_ERROR "The packaged Snow Shot MCP bridge is missing")
+endif()
+set(_snow_mcp_deploy_arguments)
+if(@SNOW_SHOT_ENABLE_MCP@)
+    list(APPEND _snow_mcp_deploy_arguments "-executable=${_app}/Contents/MacOS/snow-shot-mcp")
+endif()
 set(_snow_codesign_identity [==[@SNOW_MACOS_CODESIGN_IDENTITY@]==])
 if(_snow_codesign_identity STREQUAL "-")
     message(WARNING "Snow Shot is ad-hoc signed. Rebuilds can invalidate macOS privacy grants even when System Settings shows them enabled. Use SNOW_MACOS_CODESIGN_IDENTITY with a persistent certificate to retain the signing identity.")
 endif()
 string(TOLOWER "${CMAKE_INSTALL_CONFIG_NAME}" _snow_install_config)
 set(_snow_ocr_runtime_arguments)
+set(_snow_ocr_model_arguments)
+if(@SNOW_MACOS_OCR_RUNTIME_ONLY@)
+    list(APPEND _snow_ocr_model_arguments --runtime-only)
+    list(APPEND _snow_ocr_runtime_arguments --runtime-only)
+endif()
 if(@SNOW_SHOT_OCR_STATIC_ONNXRUNTIME@)
     list(APPEND _snow_ocr_runtime_arguments --static-runtime)
 endif()
@@ -18,10 +30,11 @@ endif()
 if(@SNOW_MACOS_OCR_ASSETS_ENABLED@ AND NOT @SNOW_SHOT_OCR_STATIC_ONNXRUNTIME@)
     execute_process(COMMAND "@Python3_EXECUTABLE@" "@SNOW_MACOS_OCR_TOOL@" prepare-bundle
         --app "${_app}" --library-dir "${_snow_vcpkg_library_dir}"
+        ${_snow_ocr_model_arguments}
         COMMAND_ERROR_IS_FATAL ANY)
 else()
     execute_process(COMMAND "@Python3_EXECUTABLE@" "@SNOW_MACOS_OCR_TOOL@" prepare-bundle
-        --app "${_app}" COMMAND_ERROR_IS_FATAL ANY)
+        --app "${_app}" ${_snow_ocr_model_arguments} COMMAND_ERROR_IS_FATAL ANY)
 endif()
 if(NOT @SNOW_SHOT_QT_STATIC@)
     # This dlopen-only library is deliberately renamed to ORT's stable lookup name.
@@ -33,6 +46,7 @@ if(NOT @SNOW_SHOT_QT_STATIC@)
     endif()
     execute_process(COMMAND "@SNOW_MACDEPLOYQT@" "${_app}"
         "-executable=${_app}/Contents/MacOS/snow-ocr-process"
+        ${_snow_mcp_deploy_arguments}
         "-executable=${_app}/Contents/MacOS/crashpad_handler"
         "-executable=${_app}/Contents/MacOS/libonnxruntime.dylib"
         "-executable=${_app}/Contents/PlugIns/platforms/libqoffscreen.dylib"
@@ -68,6 +82,14 @@ elseif(@SNOW_SHOT_QT_STATIC@)
                     "Static package contains a non-system dependency: ${_snow_bundle_file}: ${_snow_dependency}")
             endif()
         endforeach()
+        if(@SNOW_SHOT_RELEASE_STATIC@ AND _snow_install_config STREQUAL "release")
+            # The packaging entry point archives UUID-matched dSYMs first. Strip
+            # only deployment copies, retaining external symbols and the build
+            # binaries for diagnostics and development. OCR hashes must describe
+            # the stripped, re-signed worker rather than its build-tree bytes.
+            execute_process(COMMAND /usr/bin/strip -S -x "${_snow_bundle_file}"
+                COMMAND_ERROR_IS_FATAL ANY)
+        endif()
         execute_process(COMMAND /usr/bin/codesign --force --sign "${_snow_codesign_identity}"
             "${_snow_bundle_file}" COMMAND_ERROR_IS_FATAL ANY)
     endforeach()

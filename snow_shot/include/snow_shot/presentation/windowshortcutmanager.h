@@ -38,7 +38,7 @@ class WindowShortcutManager final : public QObject {
     };
 
     struct Binding {
-        enum class ActivationTrigger { Press, Release };
+        enum class ActivationTrigger { Press, Release, Tap };
 
         QString id;
         shortcuts::ShortcutBindingList shortcutBindings;
@@ -47,12 +47,15 @@ class WindowShortcutManager final : public QObject {
         QList<QKeyCombination> keyCombinations;
         int priority = 0;
         bool autoRepeat = false;
-        // Release actions reserve the initial press and execute only after its
-        // physical release. They cannot also define held-control callbacks.
+        // Release actions execute on physical release. Tap actions also cancel
+        // when another key or mouse action occurs during the hold.
+        // Neither can define held-control callbacks.
         ActivationTrigger activationTrigger = ActivationTrigger::Press;
         // Held contextual shortcuts may tolerate a narrowly scoped extra
         // modifier (for example Shift followed by Space during a resize).
         Qt::KeyboardModifiers allowedAdditionalModifiers = Qt::NoModifier;
+        // Fixed commands may opt into a standalone Ctrl/Command hold.
+        bool allowModifierOnlyControl = false;
         std::function<bool(const ActivationContext&)> canActivate = [](const ActivationContext&) {
             return true;
         };
@@ -90,7 +93,8 @@ class WindowShortcutManager final : public QObject {
     [[nodiscard]] static QList<QKeyCombination>
     keyCombinationsFromBindings(const shortcuts::ShortcutBindingList& shortcuts);
     [[nodiscard]] static shortcuts::ShortcutBindingList
-    shortcutBindingsFromKeyCombinations(const QList<QKeyCombination>& keyCombinations);
+    shortcutBindingsFromKeyCombinations(const QList<QKeyCombination>& keyCombinations,
+                                        bool allowModifierOnlyControl = false);
 
     // Returns whether keyboard focus belongs to an editable text control.
     // Read-only text surfaces remain eligible for window command shortcuts.

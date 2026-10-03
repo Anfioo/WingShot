@@ -357,6 +357,7 @@ pub(crate) fn scene_item_from_serial_number(
         diameter: serial.diameter,
         rotation: serial.rotation,
         number: serial.number.max(0),
+        label: snow_draw_engine_document::format_serial_number(serial.number, serial.numeric_type),
         serial_number_type: match serial.serial_number_type {
             SerialNumberType::OutlinedCircle => DisplaySerialNumberType::OutlinedCircle,
             SerialNumberType::SolidCircle => DisplaySerialNumberType::SolidCircle,
@@ -1327,6 +1328,8 @@ pub(crate) fn scene_item_from_filter(id: ElementId, filter: FilterData) -> Scene
                 CanvasFilterType::Grayscale => DisplayFilterType::Grayscale,
                 CanvasFilterType::Inversion => DisplayFilterType::Inversion,
                 CanvasFilterType::Emboss => DisplayFilterType::Emboss,
+                CanvasFilterType::Brightness => DisplayFilterType::Brightness,
+                CanvasFilterType::RestoreBackground => DisplayFilterType::RestoreBackground,
                 CanvasFilterType::SmartErase => DisplayFilterType::SmartErase,
             },
             FilterData::normalized_strength(filter.strength),
@@ -1358,6 +1361,8 @@ pub(crate) fn scene_item_from_pen_filter(id: ElementId, filter: PenFilterData) -
                 CanvasFilterType::Grayscale => DisplayFilterType::Grayscale,
                 CanvasFilterType::Inversion => DisplayFilterType::Inversion,
                 CanvasFilterType::Emboss => DisplayFilterType::Emboss,
+                CanvasFilterType::Brightness => DisplayFilterType::Brightness,
+                CanvasFilterType::RestoreBackground => DisplayFilterType::RestoreBackground,
                 CanvasFilterType::SmartErase => DisplayFilterType::SmartErase,
             },
             FilterData::normalized_strength(filter.strength),
@@ -1371,7 +1376,11 @@ pub(crate) fn scene_item_from_pen_filter_preview(
     preview: &PenFilterPreview,
 ) -> Option<(SceneDisplayItem, DrawRect)> {
     if preview.global_points.is_empty()
-        || (preview.global_points.len() < 2 && preview.filter_type != CanvasFilterType::SmartErase)
+        || (preview.global_points.len() < 2
+            && !matches!(
+                preview.filter_type,
+                CanvasFilterType::SmartErase | CanvasFilterType::RestoreBackground
+            ))
         || !preview.stroke_width.is_finite()
         || preview.stroke_width <= 0.0
         || !preview.opacity.is_finite()
@@ -1425,6 +1434,8 @@ pub(crate) fn scene_item_from_pen_filter_preview(
                     CanvasFilterType::Grayscale => DisplayFilterType::Grayscale,
                     CanvasFilterType::Inversion => DisplayFilterType::Inversion,
                     CanvasFilterType::Emboss => DisplayFilterType::Emboss,
+                    CanvasFilterType::Brightness => DisplayFilterType::Brightness,
+                    CanvasFilterType::RestoreBackground => DisplayFilterType::RestoreBackground,
                     CanvasFilterType::SmartErase => DisplayFilterType::SmartErase,
                 },
                 FilterData::normalized_strength(preview.strength),

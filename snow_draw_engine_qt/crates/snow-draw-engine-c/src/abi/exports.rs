@@ -1,4 +1,4 @@
-use snow_draw_engine::{Point, Runtime, ViewportConfig};
+use snow_draw_engine::{Point, Runtime, SnapGuideTargets, ViewportConfig};
 
 use crate::abi::convert::*;
 use crate::abi::handles::*;
@@ -114,6 +114,64 @@ pub unsafe extern "C" fn snow_runtime_serialize_document_session(
         unsafe {
             std::ptr::copy_nonoverlapping(bytes.as_ptr(), buffer, bytes.len());
         }
+        SnowError::Ok
+    })
+}
+
+/// Serializes the selected editable elements as a versioned draw template.
+/// A null buffer with zero capacity queries the required byte count.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_runtime_serialize_selected_draw_template(
+    runtime: SnowRuntime,
+    buffer: *mut u8,
+    buffer_capacity: usize,
+    out_size: *mut usize,
+) -> SnowError {
+    ffi_error(|| {
+        if runtime.is_null() || out_size.is_null() || (buffer.is_null() && buffer_capacity != 0) {
+            return SnowError::InvalidArgument;
+        }
+        let runtime = unsafe { &*runtime };
+        let bytes = match runtime.runtime.serialize_selected_draw_template() {
+            Ok(bytes) => bytes,
+            Err(error) => return SnowError::from(error),
+        };
+        write_out(out_size, bytes.len());
+        if buffer.is_null() {
+            return SnowError::Ok;
+        }
+        if buffer_capacity < bytes.len() {
+            return SnowError::BufferTooSmall;
+        }
+        unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), buffer, bytes.len()) };
+        SnowError::Ok
+    })
+}
+
+/// Serializes only selected element identifiers, without document or image payloads.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_runtime_serialize_selected_element_ids(
+    runtime: SnowRuntime,
+    buffer: *mut u8,
+    buffer_capacity: usize,
+    out_size: *mut usize,
+) -> SnowError {
+    ffi_error(|| {
+        if runtime.is_null() || out_size.is_null() || (buffer.is_null() && buffer_capacity != 0) {
+            return SnowError::InvalidArgument;
+        }
+        let runtime = unsafe { &*runtime };
+        let Ok(bytes) = runtime.runtime.serialize_selected_element_ids() else {
+            return SnowError::InvalidArgument;
+        };
+        write_out(out_size, bytes.len());
+        if buffer.is_null() {
+            return SnowError::Ok;
+        }
+        if buffer_capacity < bytes.len() {
+            return SnowError::BufferTooSmall;
+        }
+        unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), buffer, bytes.len()) };
         SnowError::Ok
     })
 }
@@ -505,6 +563,48 @@ pub unsafe extern "C" fn snow_viewport_set_snap_config_ex(
 }
 
 /// # Safety
+/// Non-null arrays must be readable for their supplied lengths; the output must be writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_viewport_set_snap_guide_targets_ex(
+    runtime: SnowRuntime,
+    viewport: SnowViewport,
+    vertical_xs: *const f64,
+    vertical_count: usize,
+    horizontal_ys: *const f64,
+    horizontal_count: usize,
+    out_changed_viewports: *mut SnowChangedViewportList,
+) -> SnowError {
+    ffi_error(|| {
+        if out_changed_viewports.is_null()
+            || vertical_count > 2
+            || horizontal_count > 2
+            || (vertical_count > 0 && vertical_xs.is_null())
+            || (horizontal_count > 0 && horizontal_ys.is_null())
+        {
+            return SnowError::InvalidArgument;
+        }
+        let mut targets = SnapGuideTargets::default();
+        for index in 0..vertical_count {
+            targets.vertical_xs[index] = Some(unsafe { *vertical_xs.add(index) });
+        }
+        for index in 0..horizontal_count {
+            targets.horizontal_ys[index] = Some(unsafe { *horizontal_ys.add(index) });
+        }
+        ffi_status(with_runtime_viewport_mut(
+            runtime,
+            viewport,
+            |runtime, id| {
+                let result = runtime
+                    .set_viewport_snap_guide_targets(id, targets)
+                    .map_err(SnowError::from)?;
+                write_changed_viewports(out_changed_viewports, result.changed_viewports);
+                Ok(())
+            },
+        ))
+    })
+}
+
+/// # Safety
 /// If `runtime` and `viewport` are non-null, they must be live handles created by this library.
 /// `out_config` must be valid for writes of one `SnowGridConfig` value.
 #[unsafe(no_mangle)]
@@ -619,6 +719,55 @@ pub unsafe extern "C" fn snow_changed_viewports_get(
 mod session_tests {
     use super::*;
     use snow_draw_engine::ActiveTool;
+
+    #[test]
+    fn selected_element_ids_abi_is_bounded_and_handles_empty_selection() {
+        unsafe {
+            let mut runtime = std::ptr::null_mut();
+            assert_eq!(snow_runtime_create(&mut runtime), SnowError::Ok);
+            let mut required = 0;
+            assert_eq!(
+                snow_runtime_serialize_selected_element_ids(
+                    runtime,
+                    std::ptr::null_mut(),
+                    0,
+                    &mut required
+                ),
+                SnowError::Ok
+            );
+            assert_eq!(required, 2);
+            let mut bytes = [0u8; 2];
+            assert_eq!(
+                snow_runtime_serialize_selected_element_ids(
+                    runtime,
+                    bytes.as_mut_ptr(),
+                    1,
+                    &mut required
+                ),
+                SnowError::BufferTooSmall
+            );
+            assert_eq!(
+                snow_runtime_serialize_selected_element_ids(
+                    runtime,
+                    bytes.as_mut_ptr(),
+                    bytes.len(),
+                    &mut required
+                ),
+                SnowError::Ok
+            );
+            assert_eq!(&bytes, b"[]");
+            assert_eq!(
+                snow_runtime_serialize_selected_element_ids(
+                    std::ptr::null_mut(),
+                    std::ptr::null_mut(),
+                    0,
+                    &mut required
+                ),
+                SnowError::InvalidArgument
+            );
+            snow_runtime_destroy(runtime);
+        }
+    }
 
     #[test]
     fn session_abi_is_two_pass_and_rejects_bad_input() {

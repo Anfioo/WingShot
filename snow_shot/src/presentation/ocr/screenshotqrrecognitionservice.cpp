@@ -1,3 +1,4 @@
+#include "snow_shot/platform/applicationqos.h"
 #include "snow_shot/presentation/screenshotqrrecognitionservice.h"
 
 #include <opencv2/core.hpp>
@@ -116,8 +117,10 @@ const BarcodeDecoders& threadDecoders(const QString& modelsDirectoryPath) {
 }
 
 ScreenshotQrRecognitionResult recognizeImage(QImage source, const std::atomic_bool& cancellation,
-                                             const QString& modelsDirectoryPath) {
+                                             const QString& modelsDirectoryPath,
+                                             ScreenshotQrRecognitionMode mode) {
     try {
+        const QSize originalSize = source.size();
         const QSize detectorSize = boundedDetectorSize(source.size());
         if (detectorSize.isEmpty() || cancellation.load(std::memory_order_relaxed)) {
             return {};
@@ -137,7 +140,7 @@ ScreenshotQrRecognitionResult recognizeImage(QImage source, const std::atomic_bo
 
         const BarcodeDecoders& decoders = threadDecoders(modelsDirectoryPath);
         if (decoders.qr.empty()) {
-            return {{}, decoders.loadError};
+            return {{}, decoders.loadError, {}};
         }
 
         const cv::Mat view(source.height(), source.width(), CV_8UC1,
@@ -151,13 +154,33 @@ ScreenshotQrRecognitionResult recognizeImage(QImage source, const std::atomic_bo
         const std::vector<std::string> qrTexts = decoders.qr->detectAndDecode(view, qrPoints);
 
         ScreenshotQrRecognitionResult result;
-        for (const std::string& value : qrTexts) {
-            if (!value.empty()) {
-                result.contents.push_back(
-                    QString::fromUtf8(value.data(), static_cast<qsizetype>(value.size())));
+        for (std::size_t index = 0; index < qrTexts.size(); ++index) {
+            const auto& value = qrTexts[index];
+            if (value.empty())
+                continue;
+            const QString text =
+                QString::fromUtf8(value.data(), static_cast<qsizetype>(value.size()));
+            result.contents.push_back(text);
+            if (index >= qrPoints.size() || qrPoints[index].total() != 8 ||
+                qrPoints[index].type() != CV_32FC1)
+                continue;
+            const cv::Mat points = qrPoints[index].reshape(1, 4);
+            QPolygonF corners;
+            bool valid = true;
+            for (int corner = 0; corner < 4; ++corner) {
+                const double x = double(points.at<float>(corner, 0)) * originalSize.width() /
+                                 detectorSize.width();
+                const double y = double(points.at<float>(corner, 1)) * originalSize.height() /
+                                 detectorSize.height();
+                valid = valid && std::isfinite(x) && std::isfinite(y) && x >= 0 && y >= 0 &&
+                        x <= originalSize.width() && y <= originalSize.height();
+                corners.append(QPointF(x, y));
             }
+            if (valid && !corners.boundingRect().isEmpty())
+                result.detections.append({text, std::move(corners)});
         }
-        if (!result.contents.isEmpty() || cancellation.load(std::memory_order_relaxed)) {
+        if (mode == ScreenshotQrRecognitionMode::QrOnly || !result.contents.isEmpty() ||
+            cancellation.load(std::memory_order_relaxed)) {
             return result;
         }
 
@@ -184,7 +207,7 @@ ScreenshotQrRecognitionResult recognizeImage(QImage source, const std::atomic_bo
     } catch (...) {
         qWarning() << "Barcode recognition failed with an unknown error";
     }
-    return {{}, recognitionFailedMessage()};
+    return {{}, recognitionFailedMessage(), {}};
 }
 } // namespace
 
@@ -197,10 +220,11 @@ class ScreenshotQrRecognitionService::Impl final {
         shutdown();
     }
 
-    RequestToken enqueue(RequestToken token, QImage image, QObject* receiver,
-                         Completion completion) {
+    RequestToken enqueue(RequestToken token, QImage image, QObject* receiver, Completion completion,
+                         ScreenshotQrRecognitionMode mode) {
         auto request = std::make_shared<Request>();
         request->token = token;
+        request->mode = mode;
         request->image = std::move(image);
         request->receiver = receiver;
         request->completion = std::move(completion);
@@ -246,6 +270,7 @@ class ScreenshotQrRecognitionService::Impl final {
 
     struct Request {
         RequestToken token = 0;
+        ScreenshotQrRecognitionMode mode = ScreenshotQrRecognitionMode::QrAndBarcode;
         QImage image;
         QPointer<QObject> receiver;
         Completion completion;
@@ -276,7 +301,7 @@ class ScreenshotQrRecognitionService::Impl final {
         QThread* const thread = QThread::create([request, modelsDirectory = m_modelsDirectory]() {
             if (!request->cancellation->load(std::memory_order_acquire)) {
                 request->result = recognizeImage(std::move(request->image), *request->cancellation,
-                                                 modelsDirectory);
+                                                 modelsDirectory, request->mode);
             }
         });
         thread->setObjectName(QStringLiteral("ScreenshotQrWorker"));
@@ -292,6 +317,7 @@ class ScreenshotQrRecognitionService::Impl final {
                 }
             },
             Qt::QueuedConnection);
+        snow_shot::platform::configureApplicationQoSThread(thread);
         thread->start();
     }
 
@@ -363,14 +389,15 @@ ScreenshotQrRecognitionService::ScreenshotQrRecognitionService(QObject* parent,
 ScreenshotQrRecognitionService::~ScreenshotQrRecognitionService() = default;
 
 ScreenshotQrRecognitionPort::RequestToken
-ScreenshotQrRecognitionService::recognize(QImage image, QObject* receiver, Completion completion) {
+ScreenshotQrRecognitionService::recognize(QImage image, QObject* receiver, Completion completion,
+                                          ScreenshotQrRecognitionMode mode) {
     if (image.isNull() || receiver == nullptr || !completion || m_impl == nullptr) {
         return 0;
     }
     do {
         ++m_nextToken;
     } while (m_nextToken == 0);
-    return m_impl->enqueue(m_nextToken, std::move(image), receiver, std::move(completion));
+    return m_impl->enqueue(m_nextToken, std::move(image), receiver, std::move(completion), mode);
 }
 
 void ScreenshotQrRecognitionService::cancel(RequestToken token) {

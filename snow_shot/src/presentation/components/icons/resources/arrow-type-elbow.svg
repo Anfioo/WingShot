@@ -1,1 +1,4 @@
-<svg aria-hidden="true" focusable="false" role="img" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><g><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M4,19L10,19C11.097,19 12,18.097 12,17L12,9C12,7.903 12.903,7 14,7L21,7"/><path d="M18 4l3 3l-3 3"/></g></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" fill="none" stroke="currentColor" stroke-width="80.64" stroke-linecap="round" stroke-linejoin="round" data-adqt-slot="primary">
+  <path d="M135.68 798.72H395.52A80.64 80.64 0 0 0 476.16 718.08V413.44A80.64 80.64 0 0 1 556.8 332.8H888.32"/>
+  <path d="M673.28 117.76L888.32 332.8L673.28 547.84"/>
+</svg>

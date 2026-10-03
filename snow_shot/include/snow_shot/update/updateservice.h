@@ -27,10 +27,11 @@ struct UpdateStatus {
     QString error;
     qint64 received = 0;
     qint64 total = 0;
+    QUrl downloadUrl = {};
 };
 
-// Windows delegates installation to the updater helper. macOS checks versions over HTTPS
-// and leaves package downloads and installation to the official website.
+// Windows delegates installation to the updater helper. macOS checks releases over HTTPS
+// and leaves package downloads and installation to the selected release host.
 class UpdateService final : public QObject {
     Q_OBJECT
   public:
@@ -38,18 +39,23 @@ class UpdateService final : public QObject {
         QString applicationDirectory;
         QString root;
         QString cacheDirectory;
-        QUrl baseUrl;
         bool allowLocalHttp = false;
         std::chrono::milliseconds startupCheckDelay = std::chrono::seconds(30);
         std::chrono::milliseconds automaticCheckInterval = std::chrono::hours(24);
         // macOS check transport; overrides also support deterministic local-server tests.
         QString installedVersion;
+        // Production discovery endpoint; loopback overrides require allowLocalHttp.
+        QUrl githubApiUrl =
+            QUrl(QStringLiteral("https://api.github.com/repos/mg-chao/snow-apps/releases"));
+        QUrl giteeApiUrl =
+            QUrl(QStringLiteral("https://gitee.com/api/v5/repos/mg-chao/snow-apps/releases"));
         std::chrono::milliseconds requestTimeout = std::chrono::seconds(30);
     };
 
     explicit UpdateService(Options options, QObject* parent = nullptr);
     ~UpdateService() override;
     const UpdateStatus& status() const;
+    bool busy() const;
     void start();
     void setMode(const QString& mode);
     void setSystemProxy(bool enabled);
@@ -62,6 +68,7 @@ class UpdateService final : public QObject {
 
   signals:
     void statusChanged();
+    void operationFinished(const QString& operation, const QString& outcome);
     void updateReady();
     void automaticUpdateAvailable(const QString& version);
     void restartRequested();

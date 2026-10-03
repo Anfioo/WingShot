@@ -14,9 +14,9 @@
 #include <QEvent>
 #include <QFocusEvent>
 #include <QKeyEvent>
-#include <QLayout>
 #include <QMouseEvent>
 #include <QScreen>
+#include <QScopedValueRollback>
 #include <QScrollBar>
 #include <QSet>
 #include <QWidget>
@@ -200,53 +200,14 @@ void applyPopupVisibility(QWidget* popup, bool shouldShow, bool raiseWhenShowing
     return;
   }
 
-  if (!popup->isVisible()) {
+  const bool wasVisible = popup->isVisible();
+  if (!wasVisible) {
     qCDebug(popupLog) << "surface.show" << popup->objectName() << popup->geometry();
     popup->show();
   }
-  if (raiseWhenShowing) {
+  if (raiseWhenShowing && !wasVisible) {
     popup->raise();
   }
-}
-
-template <typename Callback>
-void traverseObjectTree(QObject* root, Callback&& callback) {
-  if (!root) {
-    return;
-  }
-
-  callback(root);
-  const QObjectList children = root->children();
-  for (QObject* child : children) {
-    traverseObjectTree(child, callback);
-  }
-}
-
-void preparePopupForGeometrySync(QWidget* popup) {
-  if (!popup) {
-    return;
-  }
-
-  QCoreApplication::sendPostedEvents(nullptr, QEvent::PolishRequest);
-  QCoreApplication::sendPostedEvents(nullptr, QEvent::LayoutRequest);
-
-  traverseObjectTree(popup, [](QObject* object) {
-    auto* widget = qobject_cast<QWidget*>(object);
-    if (!widget) {
-      return;
-    }
-    widget->ensurePolished();
-    QCoreApplication::sendPostedEvents(widget, QEvent::PolishRequest);
-    QCoreApplication::sendPostedEvents(widget, QEvent::LayoutRequest);
-    if (QLayout* layout = widget->layout()) {
-      layout->activate();
-    }
-    widget->updateGeometry();
-  });
-
-  QCoreApplication::sendPostedEvents(nullptr, QEvent::PolishRequest);
-  QCoreApplication::sendPostedEvents(nullptr, QEvent::LayoutRequest);
-  popup->adjustSize();
 }
 
 QMargins popupShadowMarginsForGeometry(const QWidget* popup) {
@@ -469,6 +430,15 @@ void OverlayPopupController::refreshVisiblePopup() {
 }
 
 void OverlayPopupController::invalidatePopupGeometry() { resetGeometrySyncSnapshot(); }
+
+void OverlayPopupController::nativeSurfaceChanged() {
+  resetGeometrySyncSnapshot();
+  if (!popupVisible_ || !delegate_ || !delegate_->popupHasSurfaceShowGuard()) {
+    return;
+  }
+  applySurfaceVisibility(delegate_->popupSurfaceWidget(), false, false);
+  schedulePopupRelayout(true);
+}
 bool OverlayPopupController::eventFilter(QObject* watched, QEvent* event) {
   if (!watched || !event) {
     return QObject::eventFilter(watched, event);
@@ -587,20 +557,7 @@ bool OverlayPopupController::eventFilter(QObject* watched, QEvent* event) {
     switch (eventType) {
       case QEvent::LayoutRequest:
         if (popupVisible_ && watched == (delegate_ ? delegate_->popupSurfaceWidget() : nullptr)) {
-          auto* popupWidget = qobject_cast<QWidget*>(watched);
-          if (popupWidget && geometrySyncSnapshotValid_ &&
-              popupWidget->parentWidget() == geometrySyncParent_) {
-            QSize requestedSize = popupWidget->sizeHint();
-            requestedSize.setWidth(std::max(1, requestedSize.width()));
-            requestedSize.setHeight(std::max(1, requestedSize.height()));
-            if (requestedSize == geometrySyncPopupSize_ &&
-                popupWidget->size() == geometrySyncPopupSize_) {
-              break;
-            }
-          }
-          if (!shouldSkipQueuedRelayoutSync()) {
-            schedulePopupRelayout(false);
-          }
+          schedulePopupRelayout(false);
         }
         break;
       case QEvent::FocusIn:
@@ -624,7 +581,9 @@ bool OverlayPopupController::eventFilter(QObject* watched, QEvent* event) {
         break;
       }
       case QEvent::Hide:
-        if (popupVisible_ && delegate_ && watched == delegate_->popupSurfaceWidget()) {
+        if (popupVisible_ && delegate_ &&
+            (!applyingSurfaceVisibility_ || !delegate_->popupHasSurfaceShowGuard()) &&
+            watched == delegate_->popupSurfaceWidget()) {
           clearAllOpenReasons();
           setPopupVisibleInternal(false, true);
         }
@@ -768,6 +727,27 @@ bool OverlayPopupController::hoverRegionContainsGlobalPos(const QPoint& globalPo
          popupDescendantContainsPointer(this, target, globalPos);
 }
 
+const QWidget* OverlayPopupController::resolvedHoverTarget(const QPoint& globalPos,
+                                                           const QWidget* target) const {
+  // The event receiver is the input target Qt actually delivered to. A later
+  // widgetAt() can return a tooltip or a sibling popup's rectangular shadow,
+  // even though native hit testing delivered input to the button underneath.
+  // Reuse that delivered target only while the pointer remains unchanged and
+  // the queried window does not accept input at this position.
+  const QWidget* targetWindow = target ? target->window() : nullptr;
+  const auto* surface = dynamic_cast<const OverlayPopupSurface*>(targetWindow);
+  const bool transparentTarget =
+      targetWindow && (targetWindow->windowFlags().testFlag(Qt::WindowTransparentForInput) ||
+                       (surface && !surface->containsInteractiveGlobalPos(globalPos)));
+  if ((target && !transparentTarget) || QWidget::mouseGrabber() || !lastHoverEventWindow_ ||
+      lastHoverEventPosition_ != globalPos) {
+    return target;
+  }
+  QWidget* scope = lastHoverEventWindow_;
+  if (!scope || !pointerRegionContains(scope, scope->rect(), globalPos)) return target;
+  return pointerTargetWithin(scope, globalPos);
+}
+
 void OverlayPopupController::handleHoverEvent(QObject* watched, QEvent* event) {
   if (!hasTrigger(Trigger::Hover) || disabled_ || !delegate_) return;
   auto* widget = qobject_cast<QWidget*>(watched);
@@ -791,9 +771,17 @@ void OverlayPopupController::handleHoverEvent(QObject* watched, QEvent* event) {
     case QEvent::HoverMove:
       if (active || inTrigger || inPopup) {
         if (const auto position = pointerEventGlobalPosition(widget, event)) {
-          const QWidget* target = QWidget::mouseGrabber() ? pointerTargetProvider_(*position)
-                                                          : pointerTargetWithin(widget, *position);
-          transitionHover(hoverRegionContainsGlobalPos(*position, target));
+          QWidget* target = QWidget::mouseGrabber() ? pointerTargetProvider_(*position)
+                                                    : pointerTargetWithin(widget, *position);
+          if (pointerInWidgetTree(target, trigger) || pointerInWidgetTree(target, popup)) {
+            lastHoverEventWindow_ = target->window();
+            lastHoverEventPosition_ = *position;
+          } else if (target &&
+                     !target->window()->windowFlags().testFlag(Qt::WindowTransparentForInput)) {
+            lastHoverEventWindow_.clear();
+          }
+          transitionHover(
+              hoverRegionContainsGlobalPos(*position, resolvedHoverTarget(*position, target)));
         }
       }
       break;
@@ -842,7 +830,8 @@ void OverlayPopupController::scheduleHoverReconcile() {
 void OverlayPopupController::reconcileHoverFromCursor() {
   if (!hasTrigger(Trigger::Hover) || disabled_ || !delegate_) return;
   const QPoint position = cursorGlobalPos();
-  transitionHover(hoverRegionContainsGlobalPos(position, pointerTargetProvider_(position)));
+  transitionHover(hoverRegionContainsGlobalPos(
+      position, resolvedHoverTarget(position, pointerTargetProvider_(position))));
 }
 
 void OverlayPopupController::transitionHover(bool inside) {
@@ -895,7 +884,8 @@ void OverlayPopupController::finishHoverOpen(bool recheck) {
   }
   if (recheck) {
     const QPoint position = cursorGlobalPos();
-    if (!hoverRegionContainsGlobalPos(position, pointerTargetProvider_(position))) {
+    if (!hoverRegionContainsGlobalPos(
+            position, resolvedHoverTarget(position, pointerTargetProvider_(position)))) {
       hoverState_ = HoverState::Outside;
       return;
     }
@@ -912,7 +902,8 @@ void OverlayPopupController::finishHoverClose(bool recheck) {
   }
   if (recheck) {
     const QPoint position = cursorGlobalPos();
-    if (hoverRegionContainsGlobalPos(position, pointerTargetProvider_(position))) {
+    if (hoverRegionContainsGlobalPos(
+            position, resolvedHoverTarget(position, pointerTargetProvider_(position)))) {
       transitionHover(true);
       return;
     }
@@ -928,6 +919,7 @@ void OverlayPopupController::resetHoverInteraction() {
   cancelTimingTask(this, QString::fromLatin1(kHoverTransitionTaskKey));
   cancelTimingTask(this, QString::fromLatin1(kHoverReconcileTaskKey));
   hoverState_ = HoverState::Outside;
+  lastHoverEventWindow_.clear();
   setReasonOpen(InternalOpenReason::Hover, false);
 }
 
@@ -951,9 +943,6 @@ void OverlayPopupController::schedulePopupRelayout(bool extendFrameTail) {
     return;
   }
   if (popupRelayoutQueued_) {
-    return;
-  }
-  if (!extendFrameTail && shouldSkipQueuedRelayoutSync()) {
     return;
   }
   if (extendFrameTail) {
@@ -1040,80 +1029,6 @@ void OverlayPopupController::refreshGeometryFrameSync() {
                          }
                        });
 }
-bool OverlayPopupController::shouldSkipQueuedRelayoutSync() const {
-  QWidget* popup = delegate_ ? delegate_->popupSurfaceWidget() : nullptr;
-  if (!popupVisible_ || !popup || !geometrySyncSnapshotValid_ || !delegate_) {
-    return false;
-  }
-  if (popupUsesTopLevelToolLayer()) {
-    return false;
-  }
-
-  QWidget* popupParent = popup->parentWidget();
-  if (!popupParent || geometrySyncParent_ != popupParent) {
-    return false;
-  }
-
-  QWidget* anchor = popupAnchorWidget();
-  QWidget* scope = popupScopeWindow();
-  const qint64 now = timingNowMs();
-  if (anchorScrollWatchersDirty_ || watchedScrollAnchor_ != anchor ||
-      watchedScrollScope_ != scope || now >= nextAnchorScrollWatchersRefreshMs_) {
-    return false;
-  }
-
-  const QRect anchorRect = resolvedAnchorRect(popupParent);
-  if (!anchorRect.isValid()) {
-    return false;
-  }
-
-  QSize popupSize = popupVisualSizeHintForGeometry(popup);
-  popupSize.setWidth(std::max(1, popupSize.width()));
-  popupSize.setHeight(std::max(1, popupSize.height()));
-
-  OverlayPopupPlacementInput currentInput;
-  currentInput.anchorRect = anchorRect;
-  currentInput.popupSize = popupSize;
-  currentInput.bounds = QRect(QPoint(0, 0), popupParent->size());
-  currentInput.preferredPlacement = delegate_->popupPlacement();
-  currentInput.popupOffset = std::max(0, delegate_->popupOffset());
-  currentInput.allowFallback = delegate_->popupAutoAdjustOverflow();
-  currentInput.pointAtCenter = delegate_->popupArrowPointAtCenter();
-  currentInput.arrowOffsetHorizontal = delegate_->popupArrowOffsetHorizontal();
-  currentInput.arrowOffsetVertical = delegate_->popupArrowOffsetVertical();
-
-  OverlayPopupPlacementInput previousInput;
-  previousInput.anchorRect = geometrySyncAnchorRect_;
-  previousInput.popupSize = geometrySyncPopupSize_;
-  previousInput.bounds = geometrySyncBounds_;
-  previousInput.preferredPlacement = geometrySyncPlacement_;
-  previousInput.popupOffset = geometrySyncPopupOffset_;
-  previousInput.allowFallback = geometrySyncAutoAdjustOverflow_;
-  previousInput.pointAtCenter = geometrySyncArrowPointAtCenter_;
-  previousInput.arrowOffsetHorizontal = geometrySyncArrowOffsetHorizontal_;
-  previousInput.arrowOffsetVertical = geometrySyncArrowOffsetVertical_;
-
-  const OverlayPopupPlacementOutput currentPlacement = resolveOverlayPopupPlacement(currentInput);
-  const OverlayPopupPlacementOutput previousPlacement = resolveOverlayPopupPlacement(previousInput);
-
-  const bool placementUnchanged = currentPlacement.placement == previousPlacement.placement;
-  const bool topLeftUnchanged = currentPlacement.topLeft == previousPlacement.topLeft;
-  const bool arrowUnchanged = qFuzzyCompare(currentPlacement.arrowCenterCoord + 1.0,
-                                            previousPlacement.arrowCenterCoord + 1.0);
-  if (!placementUnchanged || !topLeftUnchanged || !arrowUnchanged) {
-    return false;
-  }
-
-  const QPoint expectedPopupPos = currentPlacement.topLeft;
-  if (popup->pos() != expectedPopupPos) {
-    return false;
-  }
-  if (popup->size() != popupSize) {
-    return false;
-  }
-  return true;
-}
-
 void OverlayPopupController::resetGeometrySyncSnapshot() {
   geometrySyncParent_.clear();
   geometrySyncAnchorRect_ = QRect();
@@ -1290,7 +1205,7 @@ void OverlayPopupController::setPopupVisibleInternal(bool visible, bool emitSign
     resetGeometrySyncSnapshot();
     clearAnchorScrollBarWatchers();
     resetHoverInteraction();
-    applyPopupVisibility(delegate_->popupSurfaceWidget(), false, false);
+    applySurfaceVisibility(delegate_->popupSurfaceWidget(), false, false);
     if (delegate_->popupReleaseOnHide()) {
       delegate_->popupReleaseSurface();
     } else if (popupUsesTopLevelToolLayer()) {
@@ -1328,15 +1243,15 @@ void OverlayPopupController::syncPreparedPopupVisibility() {
   // popupPrepareToShow() has already polished and activated the popup's
   // content chain. Repeating a recursive polish/layout pass here makes every
   // open pay for the same tree twice.
-  const bool canShowPopup = syncPopupGeometry(false);
-  applyPopupVisibility(popup, canShowPopup, true);
+  const bool canShowPopup = syncPopupGeometry();
+  applySurfaceVisibility(popup, canShowPopup, true);
   if (!canShowPopup || !popup->isVisible()) {
     return;
   }
 
   // Showing can change the size hint, but the tree was fully prepared by the first pass.
-  const bool updatedCanShowPopup = syncPopupGeometry(false);
-  applyPopupVisibility(popup, updatedCanShowPopup, true);
+  const bool updatedCanShowPopup = syncPopupGeometry();
+  applySurfaceVisibility(popup, updatedCanShowPopup, true);
   if (updatedCanShowPopup && popup->isVisible()) {
     if (popupUsesInWindowLayer()) {
       popup->update();
@@ -1346,16 +1261,26 @@ void OverlayPopupController::syncPreparedPopupVisibility() {
   }
 }
 
-bool OverlayPopupController::syncPopupGeometry(bool prepareLayout) {
+void OverlayPopupController::applySurfaceVisibility(QWidget* popup, bool shouldShow,
+                                                    bool raiseWhenShowing) {
+  const QPointer<QWidget> guardedPopup(popup);
+  if (shouldShow && delegate_) {
+    shouldShow = delegate_->popupSurfaceCanShow();
+    if (!guardedPopup || !popupVisible_) return;
+  }
+  const QScopedValueRollback<bool> applying(applyingSurfaceVisibility_, true);
+  applyPopupVisibility(guardedPopup, shouldShow, raiseWhenShowing);
+}
+
+bool OverlayPopupController::syncPopupGeometry() {
   recordSyncPopupGeometryCallForTesting();
   QWidget* popup = delegate_ ? delegate_->popupSurfaceWidget() : nullptr;
   if (!popupVisible_ || !popup || !delegate_) {
     return false;
   }
 
-  if (prepareLayout) {
-    preparePopupForGeometrySync(popup);
-  }
+  // Layout preparation belongs to opening/content changes. Invalidating child
+  // geometry here would post another LayoutRequest and perpetuate this relayout.
 
   refreshAnchorScrollBarWatchers();
 
@@ -1367,14 +1292,14 @@ bool OverlayPopupController::syncPopupGeometry(bool prepareLayout) {
     popup->setParent(nullptr, popup->windowFlags());
     popupParent = nullptr;
     setPopupInteractionHostOpen(this, true);
-    applyPopupVisibility(popup, wasVisible, true);
+    applySurfaceVisibility(popup, wasVisible && !delegate_->popupHasSurfaceShowGuard(), true);
   }
   if (!useTopLevelToolLayer && expectedPopupParent && popupParent != expectedPopupParent) {
     const bool wasVisible = popup->isVisible();
     popup->setParent(expectedPopupParent, popup->windowFlags());
     popupParent = expectedPopupParent;
     setPopupInteractionHostOpen(this, true);
-    applyPopupVisibility(popup, wasVisible, true);
+    applySurfaceVisibility(popup, wasVisible && !delegate_->popupHasSurfaceShowGuard(), true);
   }
   const auto rejectGeometry = [this](int reason) {
     if (geometryRejection_ != reason) {
@@ -1384,7 +1309,7 @@ bool OverlayPopupController::syncPopupGeometry(bool prepareLayout) {
   };
   if (!useTopLevelToolLayer && !popupParent) {
     rejectGeometry(1);  // Missing in-window parent.
-    applyPopupVisibility(popup, false, false);
+    applySurfaceVisibility(popup, false, false);
     resetGeometrySyncSnapshot();
     return false;
   }
@@ -1396,7 +1321,7 @@ bool OverlayPopupController::syncPopupGeometry(bool prepareLayout) {
       resolvedAnchorRect(useTopLevelToolLayer ? nullptr : popupParent, &toolScreen);
   if (!anchorRect.isValid()) {
     rejectGeometry(2);  // Anchor is hidden or clipped out.
-    applyPopupVisibility(popup, false, false);
+    applySurfaceVisibility(popup, false, false);
     resetGeometrySyncSnapshot();
     return false;
   }
@@ -1409,7 +1334,15 @@ bool OverlayPopupController::syncPopupGeometry(bool prepareLayout) {
 
   if (useTopLevelToolLayer) {
     if (toolScreen && popup->isWindow() && popup->screen() != toolScreen) {
+      if (delegate_->popupHasSurfaceShowGuard()) {
+        applySurfaceVisibility(popup, false, false);
+      }
       popup->setScreen(toolScreen);
+    }
+    if (delegate_->popupHasSurfaceShowGuard() && anchorVisibilityScope &&
+        popup->windowFlags().testFlag(Qt::WindowStaysOnTopHint) !=
+            anchorVisibilityScope->windowFlags().testFlag(Qt::WindowStaysOnTopHint)) {
+      applySurfaceVisibility(popup, false, false);
     }
     syncTopLevelToolTransientParent(popup, anchorVisibilityScope);
   }
@@ -1422,7 +1355,7 @@ bool OverlayPopupController::syncPopupGeometry(bool prepareLayout) {
 
   if (!delegate_->popupAcceptsGeometry(anchorRect, popupSize, bounds)) {
     rejectGeometry(3);  // Component-specific bounds policy.
-    applyPopupVisibility(popup, false, false);
+    applySurfaceVisibility(popup, false, false);
     resetGeometrySyncSnapshot();
     return false;
   }
@@ -1815,11 +1748,8 @@ void OverlayPopupController::popupRelayoutFromHost() {
   if (!popupVisible_ || !delegate_) {
     return;
   }
-  if (shouldSkipQueuedRelayoutSync()) {
-    return;
-  }
   const bool canShowPopup = syncPopupGeometry();
-  applyPopupVisibility(delegate_->popupSurfaceWidget(), canShowPopup, true);
+  applySurfaceVisibility(delegate_->popupSurfaceWidget(), canShowPopup, true);
 }
 
 }  // namespace adqt::widgets::detail

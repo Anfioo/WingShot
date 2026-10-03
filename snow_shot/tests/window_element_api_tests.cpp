@@ -6,6 +6,7 @@
 #include "snow_shot/storage/settingsadapters.h"
 
 #include "snow_ui_selector.h"
+#include "../src/presentation/selector/screenshotselectorserviceclient.h"
 
 #include <QApplication>
 #include <QFile>
@@ -70,7 +71,7 @@ void settingsPersistAndResetToUia(const QString& configurationPath) {
     snow_shot::presentation::GlobalShortcutManager shortcuts;
     settings::BuiltInSettingsBackend backend(shortcuts);
     constexpr auto binding = settings::SettingsSelectBinding::WindowElementApi;
-    constexpr auto cursorBinding = settings::SettingsSwitchBinding::ScreenshotCaptureCursor;
+    constexpr auto cursorBinding = settings::SettingsSwitchBinding::ScreenshotShowCursor;
     require(backend.selectValue(binding) == QStringLiteral("uia"),
             "Window Element API must initially select UIA");
     require(!backend.switchValue(cursorBinding) && backend.applySwitchValue(cursorBinding, true) &&
@@ -163,6 +164,66 @@ void shortcutExitConfirmationSettingsPersistAndReset(const QString& configuratio
     require(!invalid.valid, "shortcut exit confirmation preference must reject nonboolean values");
 }
 
+void autoRecognizeQrCodeSettingsPersistAndReset(const QString& configurationPath) {
+    snow_shot::presentation::GlobalShortcutManager shortcuts;
+    settings::BuiltInSettingsBackend backend(shortcuts);
+    constexpr auto binding = settings::SettingsSwitchBinding::ScreenshotAutoRecognizeQrCode;
+    require(backend.switchValue(binding), "automatic QR recognition must default to enabled");
+    require(backend.applySwitchValue(binding, false) && !backend.switchValue(binding) &&
+                !storage::ScreenshotSettings().autoRecognizeQrCode(),
+            "automatic QR recognition must be disabled through the settings backend");
+    require(storage::ApplicationStorage::instance().configuration().flushNow().success,
+            "automatic QR recognition preference must be flushable");
+    storage::ConfigurationStore reloaded(configurationPath, true, true, 60000);
+    require(!reloaded.value(QStringLiteral("screenshot/auto_recognize_qr_code")).toBool(),
+            "disabled automatic QR recognition must survive a configuration reload");
+    require(backend.resetSection(settings::SettingsSectionReset::ScreenshotCapture) &&
+                !backend.switchValue(binding),
+            "system screenshot reset must preserve automatic QR recognition");
+    require(backend.resetSection(settings::SettingsSectionReset::ScreenshotSettings) &&
+                backend.switchValue(binding),
+            "function screenshot reset must enable automatic QR recognition");
+    const auto invalid = storage::ConfigurationSchema::normalize(
+        QStringLiteral("screenshot/auto_recognize_qr_code"), QStringLiteral("enabled"));
+    require(!invalid.valid, "automatic QR recognition preference must reject nonboolean values");
+}
+
+void recordingApiModePersistsAndResets(const QString& configurationPath) {
+    snow_shot::presentation::GlobalShortcutManager shortcuts;
+    settings::BuiltInSettingsBackend backend(shortcuts);
+    constexpr auto binding = settings::SettingsSelectBinding::ScreenRecordingApiMode;
+    require(backend.selectValue(binding) == QStringLiteral("dxgi"),
+            "recording API must default to DXGI");
+    const QString screenshotApi = storage::ScreenshotSettings().apiMode();
+    for (const auto& mode :
+         {QStringLiteral("dxgi"), QStringLiteral("wgc"), QStringLiteral("gdi")}) {
+        require(backend.applySelectValue(binding, mode) && backend.selectValue(binding) == mode &&
+                    storage::RecordingSettings().apiMode() == mode,
+                "recording API selection must update storage");
+        require(storage::ApplicationStorage::instance().configuration().flushNow().success,
+                "recording API must be flushable");
+        storage::ConfigurationStore reloaded(configurationPath, true, true, 60000);
+        require(reloaded.value(QStringLiteral("screen_recording/api_mode")) == mode,
+                "recording API must survive a configuration reload");
+    }
+    for (const auto& invalid : {QString(), QStringLiteral("auto"), QStringLiteral("unknown")}) {
+        require(!backend.applySelectValue(binding, invalid) &&
+                    backend.selectValue(binding) == QStringLiteral("gdi"),
+                "invalid recording API values must be rejected without changing the setting");
+    }
+    require(storage::ScreenshotSettings().apiMode() == screenshotApi,
+            "recording API selection must not change screenshot API");
+    require(backend.resetSection(settings::SettingsSectionReset::ScreenRecording) &&
+                backend.selectValue(binding) == QStringLiteral("gdi"),
+            "function recording settings reset must preserve system recording API");
+    require(backend.resetSection(settings::SettingsSectionReset::ScreenshotCapture) &&
+                backend.selectValue(binding) == QStringLiteral("gdi"),
+            "screenshot settings reset must preserve recording API");
+    require(backend.resetSection(settings::SettingsSectionReset::ScreenRecordingCapture) &&
+                backend.selectValue(binding) == QStringLiteral("dxgi"),
+            "system recording settings reset must restore DXGI");
+}
+
 void ownUiCapturePreferencesPersistAndReset() {
     snow_shot::presentation::GlobalShortcutManager shortcuts;
     settings::BuiltInSettingsBackend backend(shortcuts);
@@ -197,7 +258,8 @@ void toolbarLayoutSectionResetsRemainIndependent() {
         backend.toolbarLayout(storage::ScreenshotToolbarLayoutKind::ActionTools);
     const storage::ScreenshotToolbarLayout expectedDefaultActionLayout{
         {{QStringLiteral("convert-to-html"), QStringLiteral("convert-to-markdown"),
-          QStringLiteral("barcode-recognition"), QStringLiteral("table-recognition")},
+          QStringLiteral("latex-recognition"), QStringLiteral("barcode-recognition"),
+          QStringLiteral("table-recognition")},
          {QStringLiteral("record-screen")},
          {QStringLiteral("pin-to-screen")},
          {QStringLiteral("text-recognition")},
@@ -220,22 +282,24 @@ void toolbarLayoutSectionResetsRemainIndependent() {
     const storage::ScreenshotToolbarLayout actionLayout{
         {{QStringLiteral("quick-save"), QStringLiteral("save-as-file")}},
         {QStringLiteral("convert-to-html"), QStringLiteral("convert-to-markdown"),
-         QStringLiteral("barcode-recognition"), QStringLiteral("table-recognition"),
-         QStringLiteral("record-screen"), QStringLiteral("pin-to-screen"),
-         QStringLiteral("text-recognition"), QStringLiteral("text-translation"),
-         QStringLiteral("scrolling-screenshot")},
+         QStringLiteral("latex-recognition"), QStringLiteral("barcode-recognition"),
+         QStringLiteral("table-recognition"), QStringLiteral("record-screen"),
+         QStringLiteral("pin-to-screen"), QStringLiteral("text-recognition"),
+         QStringLiteral("text-translation"), QStringLiteral("scrolling-screenshot")},
     };
     require(backend.applyToolbarLayout(storage::ScreenshotToolbarLayoutKind::DrawingTools,
                                        drawingLayout) &&
                 backend.applyToolbarLayout(storage::ScreenshotToolbarLayoutKind::ActionTools,
                                            actionLayout),
             "toolbar reset fixture must persist independent layouts");
+    const auto savedDrawingLayout =
+        backend.toolbarLayout(storage::ScreenshotToolbarLayoutKind::DrawingTools);
     const auto savedActionLayout =
         backend.toolbarLayout(storage::ScreenshotToolbarLayoutKind::ActionTools);
 
     require(backend.resetSection(settings::SettingsSectionReset::ScreenshotInterfaceSettings) &&
                 backend.toolbarLayout(storage::ScreenshotToolbarLayoutKind::DrawingTools) ==
-                    drawingLayout &&
+                    savedDrawingLayout &&
                 backend.toolbarLayout(storage::ScreenshotToolbarLayoutKind::ActionTools) ==
                     defaultActionLayout,
             "Screenshot Interface reset must restore only the screenshot action layout");
@@ -248,6 +312,36 @@ void toolbarLayoutSectionResetsRemainIndependent() {
                 backend.toolbarLayout(storage::ScreenshotToolbarLayoutKind::DrawingTools) ==
                     defaultDrawingLayout,
             "Drawing reset must restore only the drawing toolbar layout");
+}
+
+void screenshotGuideSettingsPersistAndReset() {
+    snow_shot::presentation::GlobalShortcutManager shortcuts;
+    settings::BuiltInSettingsBackend backend(shortcuts);
+    const storage::ScreenshotUiSettings ui;
+    const storage::ScreenshotShortcutSettings shortcutSettings;
+    require(ui.setShowGuidesByDefault(true) && ui.setCursorGuideLineColor(QColor(12, 34, 56, 78)) &&
+                ui.setSelectionCenterGuideLineColor(QColor(22, 33, 44, 55)) &&
+                ui.setMonitorCenterGuideLineColor(QColor(90, 80, 70, 60)) &&
+                shortcutSettings.setShortcuts(QStringLiteral("toggle_guides"),
+                                              {QStringLiteral("Ctrl+G")}),
+            "guide settings must accept saved preferences and a remapped shortcut");
+    require(ui.showGuidesByDefault() && ui.cursorGuideLineColor() == QColor(12, 34, 56, 78) &&
+                ui.selectionCenterGuideLineColor() == QColor(22, 33, 44, 55) &&
+                ui.monitorCenterGuideLineColor() == QColor(90, 80, 70, 60) &&
+                shortcutSettings.toggleGuides().size() == 1 &&
+                shortcutSettings.toggleGuides().first().portableText == QStringLiteral("Ctrl+G"),
+            "saved guide preferences and shortcut must remain intact before reset");
+
+    require(backend.resetSection(settings::SettingsSectionReset::ScreenshotInterfaceSettings) &&
+                !ui.showGuidesByDefault() && ui.cursorGuideLineColor() == QColor(0, 0, 0) &&
+                ui.selectionCenterGuideLineColor() == QColor(0x40, 0x96, 0xff) &&
+                ui.monitorCenterGuideLineColor() == QColor(255, 0, 0) &&
+                shortcutSettings.toggleGuides().first().portableText == QStringLiteral("Ctrl+G"),
+            "screenshot interface reset must restore guide defaults without resetting shortcuts");
+    require(backend.resetSection(settings::SettingsSectionReset::ScreenshotEditorShortcuts) &&
+                shortcutSettings.toggleGuides().size() == 1 &&
+                shortcutSettings.toggleGuides().first().portableText == QStringLiteral("Alt"),
+            "screenshot shortcut reset must restore the standalone Alt guide shortcut");
 }
 
 #ifndef Q_OS_MACOS
@@ -590,6 +684,35 @@ void diagnosticEnvironmentOverridesRemainAvailable() {
     qunsetenv("SNOW_SHOT_UI_SELECTOR_BACKEND");
 #endif
 }
+
+void nativeWindowIdentitySurvivesClientCallbacksAndRefinement() {
+    automaticReply = false;
+    setApi(QStringLiteral("uia"));
+    ScreenshotSelectorResult received;
+    ScreenshotSelectorServiceClient client(
+        {{}, [&](const ScreenshotSelectorResult& result) { received = result; }});
+    require(client.startRefresh(1, {}), "native identity fixture refresh failed");
+    QCoreApplication::sendPostedEvents();
+    for (const auto hit : {std::optional<std::uintptr_t>(7), std::optional<std::uintptr_t>(0),
+                           std::optional<std::uintptr_t>()}) {
+        require(client.startHitTest(1, 1, 1, QPoint(10, 20),
+                                    ScreenshotSelectorHitTestMode::WindowSubElement),
+                "native identity fixture query failed");
+        Submission reply = submissions.last();
+        reply.query.mode = SNOW_UI_SELECTOR_HIT_TEST_MODE_UI_ELEMENT;
+        reply.query.window_id = hit.value_or(0);
+        reply.query.window_hit_tested = static_cast<uint8_t>(hit.has_value());
+        deliver(reply);
+        QCoreApplication::sendPostedEvents();
+        require(received.nativeWindowId == hit, "client must copy native window identity");
+        require(client.startRefinement(received), "native identity refinement rejected");
+        const auto& query = refinements.last().query;
+        require(query.window_id == hit.value_or(0) &&
+                    (query.window_hit_tested != 0) == hit.has_value(),
+                "refinement must preserve desktop, window, and unresolved native hits");
+    }
+    automaticReply = true;
+}
 } // namespace
 
 extern "C" {
@@ -659,6 +782,16 @@ int main(int argc, char** argv) {
     static_cast<void>(
         applicationStorage.initialize({temporary.filePath(QStringLiteral("bin")),
                                        temporary.filePath(QStringLiteral("data")), 60000}));
+    if (application.arguments().contains(QStringLiteral("--toolbar-layout-only"))) {
+        toolbarLayoutSectionResetsRemainIndependent();
+        applicationStorage.shutdown();
+        return 0;
+    }
+    if (application.arguments().contains(QStringLiteral("--guide-settings-only"))) {
+        screenshotGuideSettingsPersistAndReset();
+        applicationStorage.shutdown();
+        return 0;
+    }
     const bool selectorOnly = application.arguments().contains(QStringLiteral("--selector-only"));
     if (application.arguments().contains(
             QStringLiteral("--shortcut-exit-confirmation-settings-only"))) {
@@ -667,13 +800,23 @@ int main(int argc, char** argv) {
         applicationStorage.shutdown();
         return 0;
     }
+    if (application.arguments().contains(QStringLiteral("--auto-qr-settings-only"))) {
+        autoRecognizeQrCodeSettingsPersistAndReset(
+            temporary.filePath(QStringLiteral("data/config.json")));
+        applicationStorage.shutdown();
+        return 0;
+    }
     if (!selectorOnly) {
+        recordingApiModePersistsAndResets(temporary.filePath(QStringLiteral("data/config.json")));
         settingsPersistAndResetToUia(temporary.filePath(QStringLiteral("data/config.json")));
         shutterSoundSettingsPersistAndReset(temporary.filePath(QStringLiteral("data/config.json")));
         shortcutExitConfirmationSettingsPersistAndReset(
             temporary.filePath(QStringLiteral("data/config.json")));
+        autoRecognizeQrCodeSettingsPersistAndReset(
+            temporary.filePath(QStringLiteral("data/config.json")));
         ownUiCapturePreferencesPersistAndReset();
         toolbarLayoutSectionResetsRemainIndependent();
+        screenshotGuideSettingsPersistAndReset();
     }
 #ifndef Q_OS_MACOS
     changedApiRefreshesServiceAndRejectsOldResults();
@@ -684,6 +827,7 @@ int main(int argc, char** argv) {
     permissionFallbackIsAppliedAndWarningIsThrottled();
     permissionRevocationDuringRefinementAppliesFallback();
     accessibilityInitializationRefinesAndCancelsWithCapture();
+    nativeWindowIdentitySurvivesClientCallbacksAndRefinement();
     require(created == destroyed, "selector leaked a native service");
     applicationStorage.shutdown();
     return 0;

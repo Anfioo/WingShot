@@ -25,6 +25,8 @@ pub enum SnowActiveTool {
     PenFilter = 12,
     Spotlight = 13,
     AutoFilter = 14,
+    RectangleEraser = 15,
+    BrushEraser = 16,
 }
 
 impl SnowActiveTool {
@@ -59,6 +61,8 @@ pub enum SnowStyleToolbarSource {
     SelectedPenFilter = 21,
     DefaultSpotlight = 22,
     SelectedSpotlight = 23,
+    DefaultRectangleEraser = 24,
+    DefaultBrushEraser = 25,
 }
 
 impl SnowStyleToolbarSource {
@@ -78,6 +82,8 @@ snow_c_enum! {
         Inversion = 3,
         Emboss = 4,
         SmartErase = 5,
+        Brightness = 6,
+        RestoreBackground = 7,
     }
 }
 
@@ -90,6 +96,18 @@ snow_c_enum! {
         OutlinedSquare = 2,
         SolidSquare = 3,
     Circle = 4,
+    }
+}
+
+snow_c_enum! {
+    #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+    pub enum SnowSerialNumberNumericType {
+        #[default]
+        Arabic = 0,
+        Roman = 1,
+        LowercaseLetters = 2,
+        UppercaseLetters = 3,
+        Chinese = 4,
     }
 }
 
@@ -298,6 +316,12 @@ mod spotlight_abi_tests {
         assert_eq!(std::mem::size_of::<SnowSerialNumberStyle>(), 200);
         assert_eq!(std::mem::align_of::<SnowSerialNumberStyle>(), 8);
         assert_eq!(
+            std::mem::offset_of!(SnowSerialNumberStyle, numeric_type),
+            196
+        );
+        assert_eq!(SnowSerialNumberNumericType::Arabic as i32, 0);
+        assert_eq!(SnowSerialNumberNumericType::Chinese as i32, 4);
+        assert_eq!(
             std::mem::offset_of!(SnowSerialNumberStyle, serial_number_type),
             56
         );
@@ -320,6 +344,7 @@ pub struct SnowSerialNumberStyle {
     pub font_family_truncated: u8,
     pub reserved1: [u8; 3],
     pub font_family_utf8: [std::ffi::c_char; SNOW_FONT_FAMILY_UTF8_CAPACITY],
+    pub numeric_type: SnowSerialNumberNumericType,
 }
 
 #[repr(C)]
@@ -335,6 +360,7 @@ pub struct SnowStyleToolbarState {
     pub shape_style_mixed: u32,
     pub filter_style: SnowFilterStyle,
     pub filter_style_mixed: u32,
+    pub brush_eraser_style: SnowBrushEraserStyle,
 }
 
 #[repr(C)]
@@ -352,6 +378,7 @@ pub struct SnowStyleDefaults {
     pub serial_number: SnowSerialNumberStyle,
     pub watermark: SnowWatermarkConfig,
     pub spotlight: SnowSpotlightConfig,
+    pub brush_eraser: SnowBrushEraserStyle,
 }
 
 #[repr(C)]
@@ -546,6 +573,7 @@ impl Default for SnowSerialNumberStyle {
             stroke_style: SnowStrokeStyle::Solid,
             opacity: 1.0,
             serial_number_type: SnowSerialNumberType::OutlinedCircle,
+            numeric_type: SnowSerialNumberNumericType::Arabic,
             font_family_utf8_len: 0,
             font_family_truncated: 0,
             reserved1: [0; 3],
@@ -563,3 +591,17 @@ impl Default for SnowGridConfig {
         }
     }
 }
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SnowBrushEraserStyle {
+    pub stroke_width: f64,
+}
+
+impl Default for SnowBrushEraserStyle {
+    fn default() -> Self {
+        Self { stroke_width: 30.0 }
+    }
+}
+
+pub const SNOW_BRUSH_ERASER_STYLE_PROPERTY_STROKE_WIDTH: u32 = 1 << 0;

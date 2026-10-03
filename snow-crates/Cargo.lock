@@ -2684,6 +2684,7 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "sha2",
+ "tempfile",
  "thiserror 2.0.20",
  "turbojpeg",
  "unicode-bidi",
@@ -3201,8 +3202,10 @@ name = "snow-capture-c"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "objc2",
  "snow-capture",
  "snow-core",
+ "snow-cursor",
  "snow-macos",
  "snow-media",
  "windows",
@@ -3214,6 +3217,7 @@ version = "0.1.0"
 dependencies = [
  "crossbeam-channel",
  "proptest",
+ "rayon",
  "smallvec",
  "snow-media",
  "windows",
@@ -3286,7 +3290,7 @@ dependencies = [
 
 [[package]]
 name = "snow-ocr-process"
-version = "1.0.7"
+version = "1.0.8"
 dependencies = [
  "memmap2",
  "num_cpus",
@@ -3330,6 +3334,7 @@ dependencies = [
  "crossbeam-channel",
  "snow-core",
  "snow-macos",
+ "snow-recording-model",
  "windows",
 ]
 
@@ -3345,8 +3350,10 @@ name = "snow-recording-export"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bincode",
  "crossbeam-channel",
  "ffmpeg-next",
+ "gif",
  "num_cpus",
  "proptest",
  "rayon",
@@ -3356,6 +3363,7 @@ dependencies = [
  "snow-d3d11",
  "snow-macos",
  "snow-media",
+ "snow-recording-effects",
  "snow-recording-model",
  "symphonia",
  "tempfile",
@@ -3431,6 +3439,7 @@ dependencies = [
  "objc2-core-foundation",
  "objc2-core-graphics",
  "objc2-foundation",
+ "snow-core",
  "windows",
 ]
 
@@ -3460,6 +3469,7 @@ name = "snow-stitch-images-c"
 version = "0.1.0"
 dependencies = [
  "png",
+ "snow-core",
  "snow-stitch-images",
  "tempfile",
 ]
@@ -3480,6 +3490,7 @@ dependencies = [
 name = "snow-ui-selector-c"
 version = "0.1.0"
 dependencies = [
+ "snow-core",
  "snow-ui-selector",
  "windows",
 ]
@@ -4016,6 +4027,7 @@ dependencies = [
  "opencv",
  "serde",
  "serde_json",
+ "snow-core",
 ]
 
 [[package]]

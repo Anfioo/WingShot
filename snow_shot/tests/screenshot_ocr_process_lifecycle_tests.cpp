@@ -78,7 +78,7 @@ int runOcrLifecycleChild() {
         QByteArray frame;
         QDataStream stream(&frame, QIODevice::WriteOnly);
         stream.setByteOrder(QDataStream::LittleEndian);
-        stream << quint32(0x52434f53) << quint16(3) << kind << token << quint32(payload.size());
+        stream << quint32(0x52434f53) << quint16(4) << kind << token << quint32(payload.size());
         frame.append(payload);
         std::fwrite(frame.constData(), 1, static_cast<std::size_t>(frame.size()), stdout);
         std::fflush(stdout);
@@ -106,7 +106,7 @@ int runOcrLifecycleChild() {
         quint16 version = 0, kind = 0;
         quint64 token = 0;
         input >> magic >> version >> kind >> token >> size;
-        if (magic != 0x52434f53 || version != 3 || size > 1024 * 1024)
+        if (magic != 0x52434f53 || version != 4 || size > 1024 * 1024)
             return 2;
         QByteArray payload(size, '\0');
         if (std::fread(payload.data(), 1, size, stdin) != size)
@@ -131,8 +131,8 @@ int runOcrLifecycleChild() {
             QDataStream output(&ready, QIODevice::WriteOnly);
             output.setByteOrder(QDataStream::LittleEndian);
             output << quint8(1) << quint8(0) << quint32(0) << quint32(5);
-            output.writeRawData("1.0.7", 5);
-            output << quint32(3);
+            output.writeRawData("1.0.8", 5);
+            output << quint32(4);
             reply(2, 0, ready);
         } else if (kind == 8) {
             event("prepare " + payload.toHex());
@@ -277,6 +277,10 @@ void ocrProcessLifecycleTests() {
                 "recognize must return before asynchronous process startup is delivered");
         require(first != 0 && waitUntil([&] { return submitted(first); }),
                 "first inference must reach the controlled child");
+        const auto transports =
+            service.findChildren<QThread*>(QStringLiteral("snow-ocr-transport"));
+        require(transports.size() == 1 && transports.front()->isRunning(),
+                "an active OCR child must own exactly one running transport thread");
         require(
             waitUntil([&] { return !recordsFor(QStringLiteral("ocr.engine_ready")).isEmpty(); }),
             "worker stage events must be relayed as structured records");
@@ -422,6 +426,21 @@ void ocrProcessLifecycleTests() {
                                 .toObject();
         require(fields.value(QStringLiteral("shared_memory_bytes")).toInteger() == 32 * 32 * 4 + 32,
                 "replacement mapping must fit the largest queued image exactly");
+        require(waitUntil([&] {
+                    return service.findChildren<QThread*>(QStringLiteral("snow-ocr-transport"))
+                        .isEmpty();
+                }),
+                "nonresident idle OCR must release its transport thread");
+        submitImage(8);
+        require(waitUntil([&] { return completed.size() == 4 && service.processId() == 0; }),
+                "OCR must restart after its transport thread has retired");
+        require(recordsFor(QStringLiteral("ocr.process_started")).size() == initialStarts + 2,
+                "recognition after idle must create exactly one replacement child");
+        require(waitUntil([&] {
+                    return service.findChildren<QThread*>(QStringLiteral("snow-ocr-transport"))
+                        .isEmpty();
+                }),
+                "a restarted nonresident transport must also retire at idle");
     }
     const auto events = [&]() {
         QFile file(markerPath + QStringLiteral(".events"));
@@ -498,11 +517,24 @@ void ocrProcessLifecycleTests() {
         }
         require(releaseIndex >= 0 && releaseIndex < lastPrepare,
                 "the old engine must be released before the next warm session is created");
+        require(before.at(lastPrepare).startsWith("prepare 0000"),
+                "default warm session must request the max-side detector policy");
         configuration.backend = ScreenshotOcrBackendPreference::DirectMl;
         service.setRuntimeConfiguration(configuration);
         require(waitUntil([&] { return countEvent("prepare ") == initialLoads + 3; }),
                 "backend change must rebuild idle warm-up");
         require(service.processId() == warmedPid, "backend changes must not restart the process");
+        configuration.detectorResizePolicy = ScreenshotOcrDetectorResizePolicy::Min;
+        service.setRuntimeConfiguration(configuration);
+        require(waitUntil([&] { return countEvent("prepare ") == initialLoads + 4; }),
+                "detector scaling change must rebuild idle warm-up");
+        QByteArray latestPrepare;
+        for (const auto& event : events()) {
+            if (event.startsWith("prepare "))
+                latestPrepare = event;
+        }
+        require(latestPrepare.startsWith("prepare 0101") && service.processId() == warmedPid,
+                "the min-side detector policy must reach the existing worker process");
         configuration.modelHotStart = false;
         const int released = countEvent("release");
         service.setRuntimeConfiguration(configuration);

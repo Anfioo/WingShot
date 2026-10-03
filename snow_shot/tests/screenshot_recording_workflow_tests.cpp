@@ -14,10 +14,10 @@ void require(bool condition, const char* message) {
     }
 }
 
-void recordingHandoffStopsCaptureBeforeOpening(bool scrolling) {
+void recordingHandoffStopsCaptureBeforeOpening(bool scrolling, QSize size = QSize(320, 240)) {
     QObject owner;
     QStringList events;
-    QRect selected(40, 60, 320, 240);
+    QRect selected(QPoint(40, 60), size);
     QRect recorded;
     snow_shot::presentation::recording::startScreenshotRecording(
         selected, QPoint(-1920, 100),
@@ -41,7 +41,7 @@ void recordingHandoffStopsCaptureBeforeOpening(bool scrolling) {
     require(!scrolling, "Screen Recording must leave active scrolling capture");
     require(recorded.isEmpty(), "recording should open after screenshot cleanup returns");
     QCoreApplication::processEvents();
-    require(recorded == QRect(-1880, 160, 320, 240),
+    require(recorded == QRect(QPoint(-1880, 160), size),
             "recording must retain the original physical selection after capture cleanup");
     require(events == QStringList{QStringLiteral("stop scrolling"), QStringLiteral("reset editing"),
                                   QStringLiteral("invalidate recognition"),
@@ -82,8 +82,9 @@ int main(int argc, char** argv) {
     recordingHandoffStopsCaptureBeforeOpening(true);
     recordingHandoffStopsCaptureBeforeOpening(false);
     rejectedRecordingPreservesCapture(QRect(), true);
-    rejectedRecordingPreservesCapture(QRect(0, 0, 1, 240), true);
-    rejectedRecordingPreservesCapture(QRect(0, 0, 320, 1), true);
+    recordingHandoffStopsCaptureBeforeOpening(false, QSize(1, 240));
+    recordingHandoffStopsCaptureBeforeOpening(false, QSize(320, 1));
+    recordingHandoffStopsCaptureBeforeOpening(false, QSize(1, 1));
     rejectedRecordingPreservesCapture(QRect(0, 0, 320, 240), false);
     destroyedOwnerCancelsPendingRecording();
     return 0;

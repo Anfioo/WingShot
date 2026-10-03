@@ -1,6 +1,8 @@
 #ifndef SNOW_SHOT_PRESENTATION_SCREENSHOTUIPREFERENCES_H
 #define SNOW_SHOT_PRESENTATION_SCREENSHOTUIPREFERENCES_H
 
+#include "snow_shot/presentation/screenshotselectiondisplayunit.h"
+
 #include <QColor>
 #include <QString>
 #include <QtGlobal>
@@ -14,6 +16,7 @@ enum class ScreenshotColorPickerDisplayMode {
 };
 
 struct ScreenshotUiPreferences {
+    ScreenshotSelectionDisplayUnit selectionDisplayUnit = kDefaultScreenshotSelectionDisplayUnit;
     bool selectionTransitionAnimationEnabled = true;
     ScreenshotColorPickerDisplayMode colorPickerDisplayMode =
         ScreenshotColorPickerDisplayMode::HideOutsideSelection;
@@ -21,8 +24,10 @@ struct ScreenshotUiPreferences {
     QColor selectionMaskColor = QColor(0, 0, 0, 128);
     qreal shortcutHintOpacity = 1.0;
     bool screenshotAreaTypeHintEnabled = true;
-    QColor cursorGuideLineColor = QColor(0, 0, 0, 0);
-    QColor monitorCenterGuideLineColor = QColor(0, 0, 0, 0);
+    bool showGuidesByDefault = false;
+    QColor cursorGuideLineColor = QColor(0, 0, 0);
+    QColor selectionCenterGuideLineColor = QColor(0x40, 0x96, 0xff);
+    QColor monitorCenterGuideLineColor = QColor(255, 0, 0);
     QColor colorPickerCenterGuideLineColor = QColor(0, 0, 0, 0);
 
     [[nodiscard]] ScreenshotUiPreferences normalized() const {
@@ -35,16 +40,37 @@ struct ScreenshotUiPreferences {
         }
         result.shortcutHintOpacity = std::clamp<qreal>(result.shortcutHintOpacity, 0.0, 1.0);
         if (!result.cursorGuideLineColor.isValid()) {
-            result.cursorGuideLineColor = QColor(0, 0, 0, 0);
+            result.cursorGuideLineColor = QColor(0, 0, 0);
+        }
+        if (!result.selectionCenterGuideLineColor.isValid()) {
+            result.selectionCenterGuideLineColor = QColor(0x40, 0x96, 0xff);
         }
         if (!result.monitorCenterGuideLineColor.isValid()) {
-            result.monitorCenterGuideLineColor = QColor(0, 0, 0, 0);
+            result.monitorCenterGuideLineColor = QColor(255, 0, 0);
         }
         if (!result.colorPickerCenterGuideLineColor.isValid()) {
             result.colorPickerCenterGuideLineColor = QColor(0, 0, 0, 0);
         }
         return result;
     }
+};
+
+class ScreenshotGuideVisibilityState {
+  public:
+    void beginSession(const ScreenshotUiPreferences& preferences) {
+        m_visible = preferences.showGuidesByDefault;
+    }
+
+    void toggle() {
+        m_visible = !m_visible;
+    }
+
+    [[nodiscard]] bool visible() const {
+        return m_visible;
+    }
+
+  private:
+    bool m_visible = false;
 };
 
 [[nodiscard]] inline ScreenshotColorPickerDisplayMode
@@ -84,7 +110,7 @@ screenshotColorPickerOpacity(ScreenshotColorPickerDisplayMode mode,
         return state.intelligentSelecting || state.manualSelecting ? 1.0 : 0.0;
     }
     if (mode == ScreenshotColorPickerDisplayMode::HideOutsideSelection &&
-        !state.pointInsideSelection) {
+        !state.intelligentSelecting && !state.pointInsideSelection) {
         return 0.0;
     }
     if (state.manualSelecting || state.movingSelection) {

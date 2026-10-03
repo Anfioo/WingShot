@@ -14,6 +14,7 @@
 namespace snow_shot::shortcuts {
 namespace {
 
+#ifdef Q_OS_MACOS
 QString fallbackKeyText(const ShortcutBinding& binding) {
     const QKeySequence sequence =
         QKeySequence::fromString(binding.portableText, QKeySequence::PortableText);
@@ -24,7 +25,6 @@ QString fallbackKeyText(const ShortcutBinding& binding) {
         .toString(QKeySequence::NativeText);
 }
 
-#ifdef Q_OS_MACOS
 QString specialMacKeyLegend(quint32 keyCode) {
     switch (keyCode) {
     case 36:
@@ -132,8 +132,8 @@ QString nativeKeypadPrefix() {
 
 #ifndef Q_OS_MACOS
 QString portableDisplayText(const QString& portableText) {
-    if (portableText == QStringLiteral("Shift")) {
-        return QStringLiteral("Shift");
+    if (portableText == QStringLiteral("Shift") || portableText == QStringLiteral("Alt")) {
+        return portableText;
     }
     const QKeySequence sequence =
         QKeySequence::fromString(portableText, QKeySequence::PortableText);
@@ -220,13 +220,16 @@ QString ShortcutDisplayService::modifierText(Qt::KeyboardModifiers modifiers) co
 }
 
 QString ShortcutDisplayService::text(const ShortcutBinding& binding) const {
-    const ShortcutBinding canonical = canonicalBinding(binding, true);
+    const ShortcutBinding canonical = canonicalBinding(binding, true, true);
     if (canonical.portableText.isEmpty()) {
         return {};
     }
 #ifdef Q_OS_MACOS
     if (canonical.portableText == QStringLiteral("Shift")) {
         return modifierText(Qt::ShiftModifier);
+    }
+    if (canonical.portableText == QStringLiteral("Alt")) {
+        return modifierText(Qt::AltModifier);
     }
     const ShortcutIdentity identity = effectiveIdentity(canonical);
     QString keyText;

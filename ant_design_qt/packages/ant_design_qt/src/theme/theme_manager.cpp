@@ -4,6 +4,7 @@
 #include <QStyleFactory>
 
 #include <algorithm>
+#include <cmath>
 
 namespace adqt::theme {
 
@@ -173,14 +174,14 @@ void ThemeManager::applyApplicationTypography() {
   // geometry this design system draws everywhere else. Unresolved font properties merge
   // with the application font (QFont::resolve), so parentless top-level windows, popup
   // surfaces, and partially-configured widget fonts all inherit this preference.
-  QFont applicationFont =
-      resolved_.config.appFont != QFont() ? resolved_.theme.appFont : originalAppFont_;
+  QFont applicationFont = resolved_.config.appFont.resolve(originalAppFont_);
   applicationFont.setHintingPreference(QFont::PreferNoHinting);
   QApplication::setFont(applicationFont);
 
   for (const char* className : kSmoothOutlineFontClasses) {
     const QString classNameText = QString::fromLatin1(className);
     QFont popupFont = originalPopupClassFonts_.value(classNameText, QApplication::font());
+    popupFont = resolved_.config.appFont.resolve(popupFont);
     popupFont.setHintingPreference(QFont::PreferNoHinting);
     QApplication::setFont(popupFont, className);
   }
@@ -268,8 +269,9 @@ void ThemeManager::setScopeOverride(QObject* scope, const ThemeOverride& overrid
       state.originalFont = widget->font();
     }
     it = scopeStates_.insert(scope, state);
-    connect(scope, &QObject::destroyed, this,
-            [this](QObject* destroyedScope) { scopeStates_.remove(destroyedScope); });
+    it->destroyedConnection =
+        connect(scope, &QObject::destroyed, this,
+                [this](QObject* destroyedScope) { scopeStates_.remove(destroyedScope); });
   }
 
   applyScopeState(scope);
@@ -301,6 +303,9 @@ const ResolvedTheme& ThemeManager::resolvedTheme() const { return resolved_; }
 
 ThemeConfig ThemeManager::resolvedConfigFor(const QWidget* widget,
                                             const QWidget* logicalOwner) const {
+  if (scopeStates_.isEmpty()) {
+    return config_;
+  }
   ThemeConfig merged = config_;
   const QObject* cursor = logicalOwner ? static_cast<const QObject*>(logicalOwner)
                                        : static_cast<const QObject*>(widget);
@@ -315,7 +320,16 @@ ThemeConfig ThemeManager::resolvedConfigFor(const QWidget* widget,
   for (const QObject* scope : orderedScopes) {
     const auto it = scopeStates_.constFind(const_cast<QObject*>(scope));
     if (it != scopeStates_.cend()) {
-      merged = mergeThemeConfig(merged, it->overrideValue);
+      ThemeOverride overrideValue = it->overrideValue;
+      const QWidget* surface = widget ? widget : logicalOwner;
+      const auto* scopeWidget = qobject_cast<const QWidget*>(scope);
+      // A background belongs to the surface that supplies its backdrop. Owned
+      // dialogs and popup windows inherit typography and accents, but cannot
+      // expose a skin painted in a different top-level window.
+      if (surface && scopeWidget && surface->window() != scopeWidget->window()) {
+        overrideValue.backgroundOpacity.reset();
+      }
+      merged = mergeThemeConfig(merged, overrideValue);
     }
   }
 
@@ -339,7 +353,7 @@ void ThemeManager::applyScopeState(QObject* scope) {
   localResolved.palette = buildPalette(localResolved.theme, basePalette);
 
   widget->setPalette(localResolved.palette);
-  if (localResolved.config.appFont != QFont()) {
+  if (localResolved.config.appFont.resolveMask() != 0) {
     widget->setFont(localResolved.theme.appFont);
   } else if (it->hadExplicitFont) {
     widget->setFont(it->originalFont);
@@ -398,9 +412,11 @@ void ThemeManager::cleanupScope(QObject* scope) {
     return;
   }
 
-  const ScopeState& state = it.value();
-  restoreScopeState(scope, state);
+  const ScopeState state = it.value();
   scopeStates_.erase(it);
+  QObject::disconnect(state.destroyedConnection);
+  // Font and palette restoration can synchronously change scope registrations.
+  restoreScopeState(scope, state);
   ++revision_;
   emit themeChanged();
 }
@@ -424,6 +440,12 @@ ResolvedTheme ThemeManager::resolve(const QWidget* widget, const QWidget* logica
 
 ThemeMapToken ThemeManager::resolveTheme(const QWidget* widget, const QWidget* logicalOwner) const {
   return resolve(widget, logicalOwner).values;
+}
+
+qreal ThemeManager::backgroundOpacity(const QWidget* widget) const {
+  const double opacity = scopeStates_.isEmpty() ? config_.backgroundOpacity
+                                                : resolvedConfigFor(widget).backgroundOpacity;
+  return std::isfinite(opacity) ? std::clamp(opacity, 0.0, 1.0) : 1.0;
 }
 
 const QPalette& ThemeManager::globalPalette() const { return palette_; }

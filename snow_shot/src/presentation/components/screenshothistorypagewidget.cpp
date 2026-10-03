@@ -1,3 +1,4 @@
+#include "snow_shot/platform/applicationqos.h"
 #include "snow_shot/presentation/components/screenshothistorypagewidget.h"
 
 #include "snowimageqtcodec.h"
@@ -11,13 +12,17 @@
 #include "snow_shot/presentation/components/pagecontainerwidget.h"
 #include "snow_shot/presentation/components/themedheadericonbutton.h"
 #include "snow_shot/presentation/screenshotclipboardservice.h"
+#include "snow_shot/presentation/historypinplacement.h"
+#include "../pinned/screenshotclipboardplacementgeometry.h"
 
 #include "snow_shot/presentation/styles/thememanager.h"
+#include "snow_shot/presentation/styles/mainwindowcomponenttoken.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/capturehistoryrepository.h"
 #include "snow_shot/storage/storageusagetracker.h"
 
 #include "antd_icons.h"
+#include "theme/theme_manager.h"
 #include "widgets/button.h"
 #include "widgets/carousel.h"
 #include "widgets/checkbox.h"
@@ -34,6 +39,7 @@
 #include <QBoxLayout>
 #include <QPointer>
 #include <QApplication>
+#include <QScopeGuard>
 #include <QCoreApplication>
 #include <QDateTime>
 #include <QDir>
@@ -57,6 +63,7 @@
 #include <QThreadPool>
 
 #include <algorithm>
+#include <limits>
 #include <atomic>
 #include <chrono>
 #include <functional>
@@ -110,6 +117,7 @@ class ScreenshotHistoryTaskExecutor final {
         try {
             m_pool.start(
                 [this, function = std::forward<Function>(function), persistence]() mutable {
+                    snow_shot::platform::applyApplicationQoSToCurrentThread();
                     struct Completion final {
                         ScreenshotHistoryTaskExecutor* executor;
                         bool persistence;
@@ -369,7 +377,24 @@ class ApplicationStorageHistoryDataSource final : public ScreenshotHistoryPageDa
                             quint64 generation) override {
         const QPointer<ApplicationStorageHistoryDataSource> guarded(this);
         const auto cancellationToken = m_cancellationToken;
-        historyTaskExecutor().submit([guarded, record, generation, cancellationToken]() {
+        const auto request = snow_shot::presentation::historySelectionPinPlacement(record);
+        const auto placement =
+            request.isPrepared()
+                ? screenshotClipboardSelectionPlacement(request.geometry.nativeGeometry,
+                                                        request.initialWindowSize, request.screen)
+                : std::nullopt;
+        std::optional<ScreenshotClipboardAppearance> appearance;
+        if (record.contentKind == storage::CaptureHistoryContentKind::ScreenshotSession &&
+            record.result) {
+            appearance.emplace();
+            appearance->rasterSize = record.result->imageSize;
+            appearance->borderAppearance =
+                snow_shot::presentation::historySelectionBorderAppearance(record);
+            appearance->checkerboardEnabled =
+                screenshotSelectionNeedsCheckerboard(appearance->borderAppearance);
+        }
+        historyTaskExecutor().submit([guarded, record, generation, cancellationToken, placement,
+                                      appearance]() {
             if (guarded == nullptr || cancellationToken->load(std::memory_order_acquire)) {
                 return;
             }
@@ -383,7 +408,9 @@ class ApplicationStorageHistoryDataSource final : public ScreenshotHistoryPageDa
                         png->bytes(), snow::image::Format::png, "history");
                     if (!image.isNull() && image.size() == png->pixelSize()) {
                         payload = std::make_shared<ScreenshotClipboardPayload>(
-                            ScreenshotClipboardService::prepareImage(image, png->bytes()));
+                            ScreenshotClipboardService::prepareEncoded(
+                                snow_shot::image_codec::srgbRowSource(image), png->bytes(),
+                                placement, appearance));
                     } else {
                         applicationStorage.captureHistory().reportReadFailure(
                             record, QStringLiteral("Unable to read a capture-history payload"));
@@ -570,6 +597,84 @@ class HistoryThumbnailLoader final : public adqt::widgets::AdImageLoader {
     QString m_cacheDirectory;
 };
 
+// Resolve only the image being viewed, including records outside the rendered page.
+class HistoryPreviewLoader final : public adqt::widgets::AdImageLoader {
+  public:
+    HistoryPreviewLoader(ScreenshotHistoryPageDataSource* source, QObject* parent)
+        : AdImageLoader(parent), m_source(source) {}
+
+    QHash<QString, storage::CaptureHistoryRecord> records;
+
+    adqt::widgets::AdImageReply* load(const QUrl& source,
+                                      const adqt::widgets::AdImageLoadOptions& options,
+                                      QObject* parent) override {
+        auto* reply = new HistoryThumbnailReply(parent);
+        const auto record = records.value(source.path());
+        const QPointer<ScreenshotHistoryPageDataSource> dataSource = m_source;
+        const auto resolve = [reply, record, dataSource, source, options](
+                                 const std::optional<storage::CaptureHistoryAssetSet>& assets) {
+            if (reply->isFinished())
+                return;
+            QUrl imageSource;
+            if (assets) {
+                if (source.fragment() == QStringLiteral("result")) {
+                    if (assets->result)
+                        imageSource = assets->result->localFileUrl;
+                } else {
+                    for (const auto& display : assets->displays) {
+                        if (QStringLiteral("display:") + display.stableId == source.fragment()) {
+                            imageSource = display.localFileUrl;
+                            break;
+                        }
+                    }
+                }
+            }
+            if (imageSource.isEmpty()) {
+                reply->finishFailure(QStringLiteral("History image is unavailable"));
+                return;
+            }
+            auto* loader = new HistoryThumbnailLoader(record, dataSource, reply);
+            reply->attach(loader->load(imageSource, options, reply), {});
+        };
+        QMetaObject::invokeMethod(
+            reply,
+            [reply, record, dataSource, resolve]() {
+                if (reply->isFinished())
+                    return;
+                if (!dataSource) {
+                    resolve(std::nullopt);
+                } else if (!dataSource->supportsAsyncDisplayAssets()) {
+                    resolve(dataSource->displayAssets(record));
+                } else {
+                    // Page generations count up from zero; viewer requests count down.
+                    static quint64 nextGeneration = std::numeric_limits<quint64>::max();
+                    const quint64 generation = nextGeneration--;
+                    QObject::connect(dataSource,
+                                     &ScreenshotHistoryPageDataSource::displayAssetsReady, reply,
+                                     [generation, record, resolve](
+                                         quint64 completedGeneration,
+                                         const QVector<ScreenshotHistoryAssetResolution>& results) {
+                                         if (completedGeneration != generation)
+                                             return;
+                                         for (const auto& result : results) {
+                                             if (result.recordId == record.id) {
+                                                 resolve(result.assets);
+                                                 return;
+                                             }
+                                         }
+                                         resolve(std::nullopt);
+                                     });
+                    dataSource->requestDisplayAssets({record}, generation);
+                }
+            },
+            Qt::QueuedConnection);
+        return reply;
+    }
+
+  private:
+    QPointer<ScreenshotHistoryPageDataSource> m_source;
+};
+
 } // namespace
 
 adqt::widgets::AdImageLoader*
@@ -626,7 +731,8 @@ class HistoryEntryWidget final : public QFrame {
   public:
     HistoryEntryWidget(const storage::CaptureHistoryRecord& record,
                        const std::optional<storage::CaptureHistoryAssetSet>& assets,
-                       ScreenshotHistoryPageDataSource* dataSource, bool selected,
+                       ScreenshotHistoryPageDataSource* dataSource,
+                       adqt::widgets::AdImageViewer* viewer, bool selected,
                        std::function<void(bool)> selectionChanged,
                        std::function<void()> editRequested, std::function<void()> copyRequested,
                        std::function<void()> pinRequested, std::function<void()> deleteRequested,
@@ -719,10 +825,7 @@ class HistoryEntryWidget final : public QFrame {
         m_carousel->setAutoplay(false);
         m_carousel->setDraggable(true);
 
-        m_viewer = new adqt::widgets::AdImageViewer(this);
         auto* imageLoader = createScreenshotHistoryImageLoader(record, dataSource, this);
-        m_viewer->setImageLoader(imageLoader);
-        m_previewModel = new adqt::widgets::AdImageListModel(m_viewer);
         adqt::widgets::AdImageItems previewItems;
         if (assets.has_value()) {
             previewItems.reserve(assets->displays.size() + (assets->result.has_value() ? 1 : 0));
@@ -740,8 +843,6 @@ class HistoryEntryWidget final : public QFrame {
                 previewItems.push_back(item);
             }
         }
-        m_previewModel->setItems(previewItems);
-        m_viewer->setModel(m_previewModel);
 
         for (qsizetype index = 0; index < previewItems.size(); ++index) {
             auto* slide = new QWidget;
@@ -755,9 +856,17 @@ class HistoryEntryWidget final : public QFrame {
             image->setSemanticStyles(imageStyles);
             image->setLoadingPolicy(adqt::widgets::AdImage::LoadingPolicy::WhenVisible);
             image->setDecodePolicy(adqt::widgets::AdImage::DecodePolicy::FitWidget);
-            image->setViewer(m_viewer);
+            image->setViewer(viewer);
             image->setImageLoader(imageLoader);
-            image->setPreviewRow(static_cast<int>(index));
+            QUrl previewSource;
+            previewSource.setScheme(QStringLiteral("history"));
+            previewSource.setPath(record.id);
+            const bool isResult = assets->result && index == 0;
+            previewSource.setFragment(
+                isResult ? QStringLiteral("result")
+                         : QStringLiteral("display:") +
+                               assets->displays[index - (assets->result ? 1 : 0)].stableId);
+            image->setProperty("historyPreviewSource", previewSource);
             image->setPreferredImageSize(QSize(kHistoryPreviewWidth, kHistoryPreviewHeight));
             image->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
             image->setAltText(previewItems[index].altText);
@@ -851,10 +960,17 @@ class HistoryEntryWidget final : public QFrame {
         QPalette tertiary = m_metaLabel->palette();
         tertiary.setColor(QPalette::WindowText, scheme.map.colorTextTertiary);
         m_metaLabel->setPalette(tertiary);
+        updateBackgroundStyle();
+    }
+
+    void updateBackgroundStyle() {
+        const auto& scheme = m_scheme;
         m_sourceLabel->setStyleSheet(
             QStringLiteral("QLabel { color: %1; background: %2; border: 1px solid %3; "
                            "border-radius: 4px; padding: 2px 7px; }")
-                .arg(scheme.map.colorPrimaryText.name(), scheme.map.colorPrimaryBg.name(),
+                .arg(scheme.map.colorPrimaryText.name(),
+                     styles::mainWindowBackgroundColor(m_sourceLabel, scheme.map.colorPrimaryBg)
+                         .name(QColor::HexArgb),
                      scheme.map.colorPrimaryBorder.name()));
         update();
     }
@@ -954,7 +1070,8 @@ class HistoryEntryWidget final : public QFrame {
             adqt::widgets::detail::roundedButtonPath(shapeRect, radius, radius, radius, radius);
         QPainter painter(this);
         painter.setRenderHint(QPainter::Antialiasing, true);
-        painter.fillPath(shapePath, m_scheme.map.colorBgContainer);
+        painter.fillPath(shapePath,
+                         styles::mainWindowBackgroundColor(this, m_scheme.map.colorBgContainer));
         painter.setPen(adqt::widgets::detail::makeButtonBorderPen(m_scheme.map.colorBorderSecondary,
                                                                   borderWidth, Qt::SolidLine));
         painter.setBrush(Qt::NoBrush);
@@ -1036,8 +1153,6 @@ class HistoryEntryWidget final : public QFrame {
     adqt::widgets::AdPopconfirm* m_deleteConfirmation = nullptr;
     adqt::widgets::AdCarousel* m_carousel = nullptr;
     QLabel* m_previewPlaceholder = nullptr;
-    adqt::widgets::AdImageViewer* m_viewer = nullptr;
-    adqt::widgets::AdImageListModel* m_previewModel = nullptr;
     styles::ThemeColorScheme m_scheme;
 };
 } // namespace
@@ -1051,6 +1166,11 @@ ScreenshotHistoryPageWidget::ScreenshotHistoryPageWidget(
       m_dataSource(dataSource != nullptr ? dataSource
                                          : new ApplicationStorageHistoryDataSource(this)),
       m_colorScheme(styles::ThemeManager::instance().themeColorScheme()) {
+    m_previewViewer = new adqt::widgets::AdImageViewer(this);
+    m_previewViewer->setOwnerWindow(this);
+    m_previewViewer->setImageLoader(new HistoryPreviewLoader(m_dataSource, m_previewViewer));
+    m_previewModel = new adqt::widgets::AdImageListModel(m_previewViewer);
+    m_previewViewer->setModel(m_previewModel);
     setObjectName(QStringLiteral("screenshotHistoryPage"));
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
 
@@ -1253,6 +1373,8 @@ ScreenshotHistoryPageWidget::ScreenshotHistoryPageWidget(
     const auto& themeManager = styles::ThemeManager::instance();
     connect(&themeManager, &styles::ThemeManager::themeChanged, this,
             &ScreenshotHistoryPageWidget::applyTheme);
+    connect(&adqt::theme::ThemeManager::instance(), &adqt::theme::ThemeManager::themeChanged, this,
+            [this] { updateSkinBackgrounds(); });
     retranslateUi();
     applyTheme(m_colorScheme);
 }
@@ -1286,6 +1408,7 @@ void ScreenshotHistoryPageWidget::refresh() {
 
 void ScreenshotHistoryPageWidget::setActive(bool active) {
     if (!active) {
+        m_previewViewer->close();
         if (m_dataSource != nullptr) {
             m_dataSource->cancelPending();
         }
@@ -1348,10 +1471,46 @@ void ScreenshotHistoryPageWidget::rebuildFilteredRecords(bool resetPage) {
     history_page::updatePagination(m_pagination, static_cast<int>(m_filteredRecords.size()),
                                    resetPage, m_updatingPagination);
     updateHeader();
+    rebuildPreview();
     rebuildEntries();
 }
 
+void ScreenshotHistoryPageWidget::rebuildPreview() {
+    m_previewViewer->close();
+    m_previewRows.clear();
+    auto* loader = static_cast<HistoryPreviewLoader*>(m_previewViewer->imageLoader());
+    loader->records.clear();
+    adqt::widgets::AdImageItems items;
+    for (const auto& record : std::as_const(m_filteredRecords)) {
+        loader->records.insert(record.id, record);
+        QUrl source;
+        source.setScheme(QStringLiteral("history"));
+        source.setPath(record.id);
+        const auto append = [&](const QString& key, const QString& text) {
+            source.setFragment(key);
+            m_previewRows.insert(source.toString(), static_cast<int>(items.size()));
+            items.push_back({source, text});
+        };
+        if (record.result)
+            append(QStringLiteral("result"), HistoryEntryWidget::tr("Screenshot result"));
+        for (const auto& display : record.displays) {
+            append(QStringLiteral("display:") + display.stableId,
+                   display.name.isEmpty() ? HistoryEntryWidget::tr("Screenshot display")
+                                          : display.name);
+        }
+    }
+    m_previewModel->setItems(items);
+}
+
 void ScreenshotHistoryPageWidget::rebuildEntries() {
+    const auto updatePreviewRows = qScopeGuard([this]() {
+        for (auto* entry : std::as_const(m_entryWidgetsById)) {
+            for (auto* image : entry->findChildren<adqt::widgets::AdImage*>()) {
+                image->setPreviewRow(m_previewRows.value(
+                    image->property("historyPreviewSource").toUrl().toString(), -1));
+            }
+        }
+    });
     const auto [firstIndex, lastIndex] =
         history_page::pageRange(m_pagination, static_cast<int>(m_filteredRecords.size()));
 
@@ -1477,7 +1636,8 @@ void ScreenshotHistoryPageWidget::rebuildEntries() {
             (assetsResolved && !entry->matchesAssets(assets))) {
             delete entry;
             entry = new HistoryEntryWidget(
-                record, assets, m_dataSource, m_selectedRecordIds.contains(record.id),
+                record, assets, m_dataSource, m_previewViewer,
+                m_selectedRecordIds.contains(record.id),
                 [this, id = record.id](bool selected) {
                     handleEntrySelectionChanged(id, selected);
                 },
@@ -1719,6 +1879,7 @@ void ScreenshotHistoryPageWidget::retranslateUi() {
 
 void ScreenshotHistoryPageWidget::applyTheme(const styles::ThemeColorScheme& scheme) {
     m_colorScheme = scheme;
+    m_backgroundOpacity = styles::mainWindowBackgroundOpacity(this);
     QPalette pagePalette = palette();
     pagePalette.setColor(QPalette::Window, Qt::transparent);
     setPalette(pagePalette);
@@ -1745,10 +1906,27 @@ void ScreenshotHistoryPageWidget::applyTheme(const styles::ThemeColorScheme& sch
     update();
 }
 
+void ScreenshotHistoryPageWidget::updateSkinBackgrounds() {
+    const qreal opacity = styles::mainWindowBackgroundOpacity(this);
+    if (m_backgroundOpacity == opacity) {
+        return;
+    }
+    m_backgroundOpacity = opacity;
+    for (QWidget* child :
+         m_entriesHost->findChildren<QWidget*>(QString(), Qt::FindDirectChildrenOnly)) {
+        if (auto* entry = dynamic_cast<HistoryEntryWidget*>(child); entry != nullptr) {
+            entry->updateBackgroundStyle();
+        }
+    }
+    m_selectionPanel->update();
+}
+
 void ScreenshotHistoryPageWidget::changeEvent(QEvent* event) {
     QWidget::changeEvent(event);
     if (event->type() == QEvent::LanguageChange) {
         retranslateUi();
+        rebuildPreview();
+        rebuildEntries();
     }
 }
 

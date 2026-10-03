@@ -1,4 +1,7 @@
+#include "snow_shot/app/edition.h"
+#include "snow_shot/presentation/windowcloseshortcut.h"
 #include "snow_shot/presentation/mainwindow.h"
+#include "snow_shot/presentation/mainwindowskinwidget.h"
 
 #include "snow_shot/platform/windows/windowchrome.h"
 #ifdef Q_OS_MACOS
@@ -12,6 +15,8 @@
 #include "snow_shot/presentation/settings/settingsruntimesession.h"
 #include "snow_shot/presentation/styles/thememanager.h"
 #include "snow_shot/presentation/styles/themecolorscheme.h"
+#include "snow_shot/storage/applicationstorage.h"
+#include "theme/theme_manager.h"
 #include "widgets/message.h"
 
 #include <QCloseEvent>
@@ -23,6 +28,7 @@
 #include <QPainter>
 #include <QPalette>
 #include <QPoint>
+#include <QPointer>
 #include <QResizeEvent>
 #include <QScopedValueRollback>
 #include <QStatusBar>
@@ -30,9 +36,11 @@
 #include <QVBoxLayout>
 #include <QWidget>
 
+#include <utility>
+
 namespace {
 constexpr int MAIN_WINDOW_WIDTH = 900;
-constexpr int MAIN_WINDOW_HEIGHT = 556;
+constexpr int MAIN_WINDOW_HEIGHT = 640;
 constexpr int MAIN_WINDOW_MIN_WIDTH = 512;
 constexpr int MAIN_WINDOW_MIN_HEIGHT = 316;
 constexpr int TITLE_BAR_BOTTOM_SHADOW_HEIGHT = 6;
@@ -74,8 +82,10 @@ MainWindow::MainWindow(const snow_shot::presentation::settings::SettingsRegistry
     setAttribute(Qt::WA_LayoutOnEntireRect);
 #endif
     setObjectName(QStringLiteral("snowShotMainWindow"));
-    setAccessibleName(QStringLiteral("WingShot"));
-    setWindowTitle(QStringLiteral("WingShot"));
+    setAccessibleName(snow_shot::app::edition::isMini ? snow_shot::app::edition::productName()
+                                                      : QStringLiteral("SnowShot"));
+    setWindowTitle(snow_shot::app::edition::isMini ? snow_shot::app::edition::productName()
+                                                   : QStringLiteral("SnowShot"));
     resize(MAIN_WINDOW_WIDTH, MAIN_WINDOW_HEIGHT);
     setMinimumSize(MAIN_WINDOW_MIN_WIDTH, MAIN_WINDOW_MIN_HEIGHT);
     setMouseTracking(true);
@@ -87,6 +97,8 @@ MainWindow::MainWindow(const snow_shot::presentation::settings::SettingsRegistry
     QFont interfaceFont = font();
     interfaceFont.setHintingPreference(QFont::PreferNoHinting);
     setFont(interfaceFont);
+
+    snow_shot::presentation::installWindowCloseShortcut(this, [this] { close(); });
 
     menuBar()->hide();
     statusBar()->hide();
@@ -173,6 +185,8 @@ void MainWindow::buildUi() {
     const auto metric =
         snow_shot::presentation::styles::ThemeManager::instance().themeColorScheme().metricAlias;
 
+    // Keep Qt's original opaque widget path when no skin is configured. The
+    // optional background owns all skin paint and viewport hooks while enabled.
     auto* root = new QWidget(this);
     root->setAutoFillBackground(true);
     setCentralWidget(root);
@@ -202,6 +216,7 @@ void MainWindow::buildUi() {
     m_titleBar = titleBar;
 
     auto* body = new QWidget(root);
+    m_body = body;
     body->setAutoFillBackground(true);
     auto* bodyLayout = new QHBoxLayout(body);
     bodyLayout->setContentsMargins(0, 0, 0, 0);
@@ -212,6 +227,7 @@ void MainWindow::buildUi() {
     m_sidebar = sidebar;
 
     auto* contentShell = new QWidget(body);
+    m_contentShell = contentShell;
     contentShell->setAutoFillBackground(true);
     auto* contentShellLayout = new QVBoxLayout(contentShell);
     contentShellLayout->setContentsMargins(0, 0, 0, 0);
@@ -222,6 +238,7 @@ void MainWindow::buildUi() {
     m_contentHeader = contentHeader;
 
     auto* contentArea = new QWidget(contentShell);
+    m_contentArea = contentArea;
     contentArea->setAutoFillBackground(true);
     auto* contentAreaLayout = new QVBoxLayout(contentArea);
     contentAreaLayout->setContentsMargins(metric.padding, metric.padding, metric.padding,
@@ -270,6 +287,77 @@ void MainWindow::buildUi() {
     m_contentCard->setCurrentRoute(m_sidebar->currentRoute());
     m_contentHeader->setSections(m_contentCard->currentSections());
     m_contentHeader->setCurrentSection(m_contentCard->currentLocation().sectionId);
+    auto& configuration = snow_shot::storage::ApplicationStorage::instance().configuration();
+    connect(&configuration, &snow_shot::storage::ConfigurationStore::valueChanged, this,
+            [this](const QString& key) {
+                if (key == QStringLiteral("interface/skin_path") ||
+                    key == QStringLiteral("interface/skin_opacity")) {
+                    syncSkinBackground();
+                }
+            });
+    syncSkinBackground();
+}
+
+void MainWindow::syncSkinBackground() {
+    const auto& configuration = snow_shot::storage::ApplicationStorage::instance().configuration();
+    const bool configured =
+        configuration.value(QStringLiteral("interface/skin_opacity")).toInt(100) > 0 &&
+        !configuration.value(QStringLiteral("interface/skin_path")).toString().isEmpty();
+    if (!configured) {
+        if (m_skinBackground != nullptr) {
+            const QPointer<MainWindow> lifetime(this);
+            delete std::exchange(m_skinBackground, nullptr);
+            if (lifetime) {
+                applySkinAppearance();
+            }
+        }
+        return;
+    }
+    if (m_skinBackground == nullptr) {
+        m_skinBackground = new snow_shot::presentation::MainWindowSkinWidget(centralWidget());
+        m_skinBackground->setBaseColor(snow_shot::presentation::styles::ThemeManager::instance()
+                                           .themeColorScheme()
+                                           .map.colorBgLayout);
+        connect(m_skinBackground,
+                &snow_shot::presentation::MainWindowSkinWidget::skinAppearanceChanged, this,
+                &MainWindow::applySkinAppearance);
+        m_skinBackground->setGeometry(centralWidget()->rect());
+        m_skinBackground->lower();
+        m_skinBackground->show();
+        applySkinAppearance();
+    }
+}
+
+void MainWindow::applySkinAppearance() {
+    const bool skinActive = m_skinBackground != nullptr && m_skinBackground->skinActive();
+    const qreal maskOpacity = skinActive ? m_skinBackground->maskOpacity() : 1.0;
+    auto& controlTheme = adqt::theme::ThemeManager::instance();
+    auto overrideValue = controlTheme.scopeOverride(centralWidget());
+    if (maskOpacity < 1.0) {
+        overrideValue.backgroundOpacity = maskOpacity;
+    } else {
+        overrideValue.backgroundOpacity.reset();
+    }
+    controlTheme.setScopeOverride(centralWidget(), overrideValue);
+    centralWidget()->setAutoFillBackground(!skinActive);
+    for (QWidget* surface : {m_body, m_contentShell, m_contentArea}) {
+        if (surface != nullptr) {
+            surface->setAutoFillBackground(!skinActive);
+            surface->update();
+        }
+    }
+    if (m_titleBar != nullptr) {
+        m_titleBar->setSkinMaskOpacity(maskOpacity);
+    }
+    if (m_sidebar != nullptr) {
+        m_sidebar->setSkinMaskOpacity(maskOpacity, skinActive);
+    }
+    if (m_contentHeader != nullptr) {
+        m_contentHeader->setSkinMaskOpacity(maskOpacity);
+    }
+    if (m_contentCard != nullptr) {
+        m_contentCard->setSkinMaskOpacity(maskOpacity);
+    }
 }
 
 void MainWindow::showAppPermissions(const QString& permissionId) {
@@ -293,6 +381,12 @@ void MainWindow::showFunctionSettings() {
     if (m_contentCard != nullptr) {
         m_contentCard->showFunctionSettings();
     }
+    showAndActivate();
+}
+
+void MainWindow::showSettingsLocation(const QString& pageId, const QString& sectionId) {
+    if (m_contentCard)
+        m_contentCard->navigateTo({pageId, sectionId, {}});
     showAndActivate();
 }
 
@@ -386,10 +480,8 @@ void MainWindow::applyTheme(const snow_shot::presentation::styles::ThemeColorSch
     palette.setColor(QPalette::WindowText, scheme.map.colorText);
     setPalette(palette);
 
-    if (QWidget* centerWidget = centralWidget(); centerWidget != nullptr) {
-        QPalette centerPalette = centerWidget->palette();
-        centerPalette.setColor(QPalette::Window, scheme.map.colorBgLayout);
-        centerWidget->setPalette(centerPalette);
+    if (m_skinBackground != nullptr) {
+        m_skinBackground->setBaseColor(scheme.map.colorBgLayout);
     }
 
     if (m_titleBar != nullptr) {

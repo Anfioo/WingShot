@@ -26,8 +26,10 @@ def main() -> int:
         if name == "screenshot-feature":
             variant, model = "twotone", "twoTone"
             defaults = {"secondary": "#9254DE"}
-        elif name == "wingshot-logo":
+        elif name in {"snow-shot-logo", "snow-shot-mini-logo"}:
             variant = "brand"
+        elif name == "selection-shadow-cursor":
+            variant, model = "cursor", "fullColor"
         entry = {
             "variant": variant,
             "symbol": symbol(name),
@@ -58,10 +60,10 @@ def main() -> int:
     entries.sort(key=lambda item: (item["variant"], item["name"]))
     manifest = {
         "schemaVersion": 1,
-        "pack": "wingshot",
+        "pack": "snow-shot",
         "cppNamespace": "snow_shot::presentation::icons::custom",
         "headerInclude": "snow_shot/presentation/components/icons/snowshoticons.h",
-        "source": "WingShot project-owned static SVG assets",
+        "source": "Snow Shot project-owned static SVG assets",
         "entries": entries,
     }
     expected = json.dumps(manifest, indent=2) + "\n"
@@ -72,7 +74,7 @@ def main() -> int:
             raise SystemExit(f"stale manifest: {output}")
     else:
         output.write_text(expected, encoding="utf-8", newline="\n")
-    print(f"wingshot manifest entries={len(entries)} check={args.check}")
+    print(f"snow-shot manifest entries={len(entries)} check={args.check}")
     return 0
 
 

@@ -18,6 +18,9 @@
 #include "adaptivescrollingcapturecadence.h"
 #include "screenshotscrollingautoscroller.h"
 #include "scrollingselectionmovement.h"
+#include "scrollingstepinput.h"
+#include "scrollingsnapshotrequest.h"
+#include "scrollinghoverpreview.h"
 #include "snow_shot/platform/screenshotnative.h"
 #include "screenshotscrollingpipeline.h"
 #include "screenshotscrollingdiagnostics.h"
@@ -29,8 +32,8 @@
 #include <QLoggingCategory>
 #include <QMetaObject>
 #include <QPointer>
-#include <QSet>
 #include <QTimer>
+#include <QJsonArray>
 
 #include <algorithm>
 #include <functional>
@@ -60,7 +63,40 @@ QRect logicalSelectionRect(const ScreenshotGeometryMapper& geometry,
 struct ScreenshotScrollingCaptureController::Impl {
     Impl(ScreenshotScrollingCaptureController& ownerValue,
          ScreenshotScrollingCaptureControllerContext contextValue)
-        : owner(ownerValue), context(contextValue) {
+        : owner(ownerValue), context(contextValue),
+          hoverPreview({
+              [this](std::function<void()> acknowledged) {
+                  hoverPaused = true;
+                  updatePausedState(std::move(acknowledged));
+              },
+              [this](const QRect& rect, std::function<void(QImage)> completed) {
+                  if (!active || !pipeline || rect.size() != viewportPixelSize)
+                      return false;
+                  const bool horizontal = mode == ScreenshotScrollingRecognitionMode::Horizontal;
+                  if ((horizontal ? rect.y() : rect.x()) != 0)
+                      return false;
+                  const int start = horizontal ? rect.x() : rect.y();
+                  const int extent = horizontal ? rect.width() : rect.height();
+                  return pipeline->requestViewportPreview(start, start + extent, &owner,
+                                                          std::move(completed));
+              },
+              [this](const QImage& image, bool cropping) {
+                  const std::optional<Qt::Orientation> cropGuide =
+                      cropping
+                          ? std::optional(mode == ScreenshotScrollingRecognitionMode::Horizontal
+                                              ? Qt::Vertical
+                                              : Qt::Horizontal)
+                          : std::nullopt;
+                  context.overlayCoordinator.setScrollingResultPreview(
+                      context.displaySession, image, QRectF(canvasSelection), cropGuide);
+                  hoverPreviewVisible = true;
+              },
+              [this] { clearHoverPresentation(); },
+              [this] {
+                  hoverPaused = false;
+                  updatePausedState();
+              },
+          }) {
         previewWatchdog.setSingleShot(true);
         QObject::connect(&previewWatchdog, &QTimer::timeout, &owner, [this] {
             if (active && !exportPaused && !movement.active() && !previewReceived) {
@@ -140,21 +176,37 @@ struct ScreenshotScrollingCaptureController::Impl {
             return false;
         }
 
-        exclusionGeneration = generation + 1;
-        if (!excludeScrollingWindowsFromCapture(anchorOverlay)) {
-            return false;
-        }
-
         const auto renderSpec = screenshotSelectionRenderSpec(context.displaySession, selection);
         if (!renderSpec.isValid())
             return false;
+        const QRect logicalSelection =
+            logicalSelectionRect(context.geometry, *anchorDisplay, selection);
+        if (!context.presentationSuppressed())
+            anchorOverlay->beginScrollingThumbnail(
+                logicalSelection.translated(-anchorOverlay->captureGeometry().topLeft()),
+                requestedMode, renderSpec.pixelSize);
+
+        exclusionGeneration = generation + 1;
+        if (!excludeScrollingWindowsFromCapture(anchorOverlay)) {
+            anchorOverlay->clearScrollingThumbnail();
+            return false;
+        }
+
         viewportPixelSize = renderSpec.pixelSize;
         sourceScale = renderSpec.scale;
         canvasSelection = selection;
         restoreOriginalColors = context.restoreOriginalScreenColors();
         mode = requestedMode;
         thumbnailHost = anchorOverlay;
+        QObject::disconnect(hoverConnection);
+        hoverConnection = QObject::connect(thumbnailHost,
+                                           &ScreenshotOverlayWindow::scrollingThumbnailHoverChanged,
+                                           &owner, [this](const QRect& rect, bool cropping) {
+                                               hoverPreview.setHoverRect(rect, cropping);
+                                           });
+        thumbnailHost->setScrollingTrimModel(trimRange);
         active = true;
+        emit owner.stateChanged();
         ++generation;
         snow_shot::diagnostics::logEvent(
             QStringLiteral("snow_shot.scrolling"), QStringLiteral("scrolling.started"),
@@ -166,31 +218,22 @@ struct ScreenshotScrollingCaptureController::Impl {
                             scrollingRect(selection.translated(context.geometry.canvasOrigin()))},
                            {QStringLiteral("mode"), static_cast<int>(mode)},
                            {QStringLiteral("restore_colors"), restoreOriginalColors}});
-        pendingResultRequestId.reset();
+        snapshotRequest.cancel();
         if (pipeline)
             pipeline->reset(generation);
+        capturePaused = false;
+        pipelineInitialized = false;
 
         context.overlayCoordinator.setScrollingCaptureMode(context.displaySession,
                                                            QRectF(canvasSelection), true);
 
-        const QRect logicalSelection =
-            logicalSelectionRect(context.geometry, *anchorDisplay, canvasSelection);
-        thumbnailHost->beginScrollingThumbnail(
-            logicalSelection.translated(-thumbnailHost->geometry().topLeft()), mode);
-
         logPreparation();
         logScrollingEvent("scrolling.prepared", generation);
-        const quint64 requestGeneration = generation;
         const QRect requestPhysicalSelection =
             canvasSelection.translated(context.geometry.canvasOrigin());
         autoScroller.start(requestPhysicalSelection, mode);
-        const AdaptiveScrollCadence::Config requestCadenceConfig = cadenceConfig;
-        pipeline->begin(requestGeneration, viewportPixelSize, mode,
-                        nativeScrollingSource(requestPhysicalSelection, restoreOriginalColors,
-                                              exclusionWindowIds, generation),
-                        requestCadenceConfig);
-        if (exportPaused)
-            updatePausedState();
+        beginPipelineAfterPresentationClear();
+        refreshHoverEligibility();
         return true;
     }
 
@@ -214,6 +257,7 @@ struct ScreenshotScrollingCaptureController::Impl {
         // selection, overlay presentation, and window exclusion must remain active. Advancing
         // the generation drops work from the previous axis without briefly restoring the canvas.
         movement.end();
+        hoverPreview.reset();
         mode = requestedMode;
         ++generation;
         watchPreview();
@@ -221,35 +265,34 @@ struct ScreenshotScrollingCaptureController::Impl {
                           {{QStringLiteral("mode"), static_cast<int>(mode)}});
         autoScroller.setMode(mode);
         autoScroller.setPaused(exportPaused);
-        pendingResultRequestId.reset();
+        snapshotRequest.cancel();
         if (pipeline)
             pipeline->reset(generation);
+        capturePaused = false;
+        pipelineInitialized = false;
         latestOutputSize = {};
+        emit owner.stateChanged();
+        *trimRange = {};
         cachedSnapshot = {};
         cachedSnapshotTop = -1;
         cachedSnapshotBottom = -1;
         cachedSnapshotGeneration = 0;
 
-        const quint64 requestGeneration = generation;
-        const QRect requestPhysicalSelection =
-            canvasSelection.translated(context.geometry.canvasOrigin());
-        const AdaptiveScrollCadence::Config requestCadenceConfig = cadenceConfig;
         const QRect logicalSelection =
             logicalSelectionRect(context.geometry, *anchorDisplay, canvasSelection);
-        thumbnailHost->beginScrollingThumbnail(
-            logicalSelection.translated(-thumbnailHost->geometry().topLeft()), mode);
+        if (!context.presentationSuppressed())
+            thumbnailHost->beginScrollingThumbnail(
+                logicalSelection.translated(-thumbnailHost->captureGeometry().topLeft()), mode,
+                viewportPixelSize);
 
-        pipeline->begin(requestGeneration, viewportPixelSize, mode,
-                        nativeScrollingSource(requestPhysicalSelection, restoreOriginalColors,
-                                              exclusionWindowIds, generation),
-                        requestCadenceConfig);
-        if (exportPaused)
-            updatePausedState();
+        beginPipelineAfterPresentationClear();
+        refreshHoverEligibility();
         return true;
     }
 
     void stop(bool restoreScreenshotPresentation) {
         previewWatchdog.stop();
+        autoScrollEnabled = false;
         autoScroller.stop();
         const bool wasActive = active;
         if (wasActive) {
@@ -264,13 +307,21 @@ struct ScreenshotScrollingCaptureController::Impl {
                  {QStringLiteral("restore_presentation"), restoreScreenshotPresentation}});
         }
         active = false;
+        QObject::disconnect(hoverConnection);
+        hoverPreview.reset();
+        clearHoverPresentation();
+        ++pauseTransition;
+        emit owner.stateChanged();
         movement.end();
         exportPaused = false;
+        capturePaused = false;
+        pipelineInitialized = false;
         ++generation;
-        pendingResultRequestId.reset();
+        snapshotRequest.cancel();
         if (pipeline)
             pipeline->reset(generation);
         latestOutputSize = {};
+        *trimRange = {};
         cachedSnapshot = {};
         cachedSnapshotTop = -1;
         cachedSnapshotBottom = -1;
@@ -296,10 +347,7 @@ struct ScreenshotScrollingCaptureController::Impl {
     }
 
     void detachPendingResultRequest() {
-        if (pendingResultRequestId.has_value()) {
-            detachedResultRequestIds.insert(*pendingResultRequestId);
-            pendingResultRequestId.reset();
-        }
+        snapshotRequest.detach();
     }
 
     bool excludeScrollingWindowsFromCapture(ScreenshotOverlayWindow* overlay) {
@@ -313,6 +361,7 @@ struct ScreenshotScrollingCaptureController::Impl {
             return false;
         }
         captureExclusion.exclude(overlay);
+        captureExclusion.exclude(overlay->scrollingThumbnailWindow());
         captureExclusion.exclude(toolbar);
         exclusionWindowIds = captureExclusion.windowIds(snow_shot::platform::captureWindowId);
 #else
@@ -349,7 +398,7 @@ struct ScreenshotScrollingCaptureController::Impl {
         qWarning("Scrolling capture stream failed: %s", qUtf8Printable(error));
         autoScroller.setPaused(true);
         ++generation;
-        pendingResultRequestId.reset();
+        snapshotRequest.cancel();
         pipeline->reset(generation);
         // Leave the pipeline's error callback before destroying it. stop() joins
         // capture before restoring native sharing policies, including failed starts.
@@ -372,32 +421,55 @@ struct ScreenshotScrollingCaptureController::Impl {
             handleCaptureError(result.generation, QStringLiteral("scrolling stitching failed"));
             return;
         }
-        if (!result.changed || result.sourceSize.isEmpty() || thumbnailHost == nullptr)
+        if (!result.changed || result.sourceSize.isEmpty())
             return;
-        thumbnailHost->updateScrollingThumbnail(result.previewImage, result.sourceSize,
-                                                result.change, result.addedRows,
-                                                result.previewReplaced, result.replacedPreviewRows);
+        ++contentRevision;
+        latestOutputSize = result.sourceSize;
+        hoverPreview.contentChanged();
+        const int extent = mode == ScreenshotScrollingRecognitionMode::Horizontal
+                               ? result.sourceSize.width()
+                               : result.sourceSize.height();
+        if (context.presentationSuppressed()) {
+            if (!trimRange->isValid() ||
+                result.change == ScreenshotScrollingStitchChange::Replaced ||
+                result.change == ScreenshotScrollingStitchChange::Initial)
+                *trimRange = {0, extent};
+            else if (result.change == ScreenshotScrollingStitchChange::PrependedUp ||
+                     result.change == ScreenshotScrollingStitchChange::PrependedLeft)
+                *trimRange = {0,
+                              std::min(extent, trimRange->bottom + std::max(0, result.addedRows))};
+            else
+                trimRange->bottom = extent;
+        }
+        if (thumbnailHost && !context.presentationSuppressed())
+            thumbnailHost->updateScrollingThumbnail(
+                result.previewImage, result.sourceSize, result.change, result.addedRows,
+                result.previewReplaced, result.replacedPreviewRows);
         if (!previewReceived) {
             previewReceived = true;
             previewWatchdog.stop();
-            auto fields = thumbnailHost->scrollingDiagnostics();
+            auto fields = thumbnailHost ? thumbnailHost->scrollingDiagnostics() : QJsonObject{};
             fields.insert(QStringLiteral("duration_ms"), previewClock.elapsed());
             fields.insert(QStringLiteral("width"), result.sourceSize.width());
             fields.insert(QStringLiteral("height"), result.sourceSize.height());
             logScrollingEvent("scrolling.first_preview", generation, fields);
         }
-        latestOutputSize = result.sourceSize;
+        refreshHoverEligibility();
+        emit owner.stateChanged();
         cachedSnapshot = {};
         cachedSnapshotTop = -1;
         cachedSnapshotBottom = -1;
         cachedSnapshotGeneration = 0;
     }
 
+    ScreenshotScrollingTrimRange currentTrim() const {
+        return *trimRange;
+    }
     QSize trimmedSize() const {
         if (!active || thumbnailHost == nullptr || latestOutputSize.isEmpty()) {
             return {};
         }
-        const ScreenshotScrollingTrimRange trim = thumbnailHost->scrollingThumbnailTrim();
+        const ScreenshotScrollingTrimRange trim = currentTrim();
         if (!trim.isValid()) {
             return {};
         }
@@ -414,68 +486,49 @@ struct ScreenshotScrollingCaptureController::Impl {
     bool
     requestTrimmedSnapshot(ScreenshotScrollingCaptureController::SnapshotResultCallback callback) {
         if (!active || pipeline == nullptr || thumbnailHost == nullptr ||
-            latestOutputSize.isEmpty() || !callback || pendingResultRequestId.has_value()) {
+            latestOutputSize.isEmpty() || !callback || snapshotRequest.pending()) {
             return false;
         }
-        const ScreenshotScrollingTrimRange trim = thumbnailHost->scrollingThumbnailTrim();
+        const ScreenshotScrollingTrimRange trim = currentTrim();
         if (!trim.isValid()) {
             return false;
         }
-        if (cachedSnapshot.isValid() && cachedSnapshotGeneration == generation &&
-            cachedSnapshotTop == trim.top && cachedSnapshotBottom == trim.bottom) {
-            SNOW_SHOT_PIN_PERF_COUNTER("scrolling.snapshot_cache_hit", 1);
-            const QPointer<ScreenshotScrollingCaptureController> receiver(&owner);
-            QTimer::singleShot(
-                0, &owner,
-                [receiver, cached = cachedSnapshot, callback = std::move(callback)]() mutable {
-                    if (!receiver.isNull() && receiver->m_impl != nullptr &&
-                        receiver->m_impl->active) {
-                        callback(std::move(cached));
-                    }
-                });
-            return true;
-        }
         const quint64 requestGeneration = generation;
-        const quint64 requestId = ++nextResultRequestId;
-        pendingResultRequestId = requestId;
         const QPointer<ScreenshotScrollingCaptureController> receiver(&owner);
-        const bool invoked = pipeline->requestSnapshot(
-            trim.top, trim.bottom, &owner,
-            [receiver, requestId, requestGeneration, trim,
+        auto completion = snapshotRequest.begin(
+            [receiver, requestGeneration, trim,
              callback = std::move(callback)](ScreenshotScrollingSnapshot result) mutable {
-                if (receiver.isNull() || receiver->m_impl == nullptr ||
-                    (receiver->m_impl->pendingResultRequestId != requestId &&
-                     !receiver->m_impl->detachedResultRequestIds.contains(requestId))) {
+                if (receiver.isNull() || receiver->m_impl == nullptr)
                     return;
-                }
-                const bool detached =
-                    receiver->m_impl->detachedResultRequestIds.contains(requestId);
-                if (detached) {
-                    receiver->m_impl->detachedResultRequestIds.remove(requestId);
-                } else {
-                    receiver->m_impl->pendingResultRequestId.reset();
-                }
-                if (!detached && (!receiver->m_impl->active ||
-                                  receiver->m_impl->generation != requestGeneration)) {
-                    return;
-                }
-                if (result.isValid()) {
-                    receiver->m_impl->cachedSnapshot = result;
-                    receiver->m_impl->cachedSnapshotTop = trim.top;
-                    receiver->m_impl->cachedSnapshotBottom = trim.bottom;
-                    receiver->m_impl->cachedSnapshotGeneration = requestGeneration;
+                auto& impl = *receiver->m_impl;
+                if (result.isValid() && impl.active && impl.generation == requestGeneration) {
+                    impl.cachedSnapshot = result;
+                    impl.cachedSnapshotTop = trim.top;
+                    impl.cachedSnapshotBottom = trim.bottom;
+                    impl.cachedSnapshotGeneration = requestGeneration;
                 }
                 callback(std::move(result));
             });
-        if (!invoked && pendingResultRequestId == requestId) {
-            pendingResultRequestId.reset();
+        if (cachedSnapshot.isValid() && cachedSnapshotGeneration == generation &&
+            cachedSnapshotTop == trim.top && cachedSnapshotBottom == trim.bottom) {
+            SNOW_SHOT_PIN_PERF_COUNTER("scrolling.snapshot_cache_hit", 1);
+            QTimer::singleShot(
+                0, &owner, [cached = cachedSnapshot, completion = std::move(completion)]() mutable {
+                    completion(std::move(cached));
+                });
+            return true;
         }
+        const bool invoked =
+            pipeline->requestSnapshot(trim.top, trim.bottom, &owner, std::move(completion));
+        if (!invoked)
+            snapshotRequest.cancel();
         return invoked;
     }
 
     bool beginSelectionMove(ScreenshotScrollingRecognitionMode axis, QPoint pointer) {
         if (!active || exportPaused || !movement.begin(axis, mode, canvasSelection, pointer))
             return false;
+        refreshHoverEligibility();
         updatePausedState();
         return true;
     }
@@ -493,7 +546,7 @@ struct ScreenshotScrollingCaptureController::Impl {
             if (overlay == thumbnailHost) {
                 thumbnailHost->reanchorScrollingThumbnail(
                     logicalSelectionRect(context.geometry, display, canvasSelection)
-                        .translated(-thumbnailHost->geometry().topLeft()));
+                        .translated(-thumbnailHost->captureGeometry().topLeft()));
             }
         });
     }
@@ -502,34 +555,119 @@ struct ScreenshotScrollingCaptureController::Impl {
         if (!movement.active())
             return;
         movement.end();
-        if (active)
+        if (active) {
+            refreshHoverEligibility();
             updatePausedState();
+        }
     }
 
     void setExportPaused(bool paused) {
         if (!active || exportPaused == paused)
             return;
         exportPaused = paused;
+        refreshHoverEligibility();
         logScrollingEvent("scrolling.export_pause", generation,
                           {{QStringLiteral("status"), paused}});
         updatePausedState();
     }
 
-    void updatePausedState() {
-        const bool paused = exportPaused || movement.active();
+    void refreshHoverEligibility() {
+        hoverPreview.setEnabled(active && !exportPaused && !movement.active() &&
+                                    !latestOutputSize.isEmpty() &&
+                                    !context.presentationSuppressed(),
+                                !autoScrollEnabled);
+    }
+
+    void clearHoverPresentation() {
+        if (!hoverPreviewVisible)
+            return;
+        context.overlayCoordinator.clearScrollingResultPreview(context.displaySession);
+        hoverPreviewVisible = false;
+        presentationFlushPending = true;
+    }
+
+    void afterPresentationClear(std::function<void()> action, std::function<bool()> valid,
+                                int attempt = 0) {
+        if (!valid())
+            return;
+#if defined(Q_OS_WIN) || defined(_WIN32)
+        if (presentationFlushPending && !snow_shot::platform::windows::flushWindowComposition()) {
+            if (attempt == 0)
+                qWarning("Waiting for scrolling result preview removal before capture resumes");
+            // Keep the stitched result and source stopped until native presentation catches up.
+            // Back off without blocking input; a new hover or session cancels this continuation.
+            QTimer::singleShot(
+                std::min(1000, 50 * (1 << std::min(attempt, 5))), &owner,
+                [this, action = std::move(action), valid = std::move(valid), attempt]() mutable {
+                    afterPresentationClear(std::move(action), std::move(valid), attempt + 1);
+                });
+            return;
+        }
+#else
+        Q_UNUSED(attempt);
+#endif
+        presentationFlushPending = false;
+        action();
+    }
+
+    void beginPipelineAfterPresentationClear() {
+        autoScroller.setPaused(true);
+        afterPresentationClear(
+            [this] {
+                // Input may move the selection or change pause reasons while composition catches
+                // up. Initialize once from the current selection, then reconcile every reason.
+                pipeline->begin(generation, viewportPixelSize, mode,
+                                nativeScrollingSource(
+                                    canvasSelection.translated(context.geometry.canvasOrigin()),
+                                    restoreOriginalColors, exclusionWindowIds, generation),
+                                cadenceConfig);
+                pipelineInitialized = true;
+                capturePaused = false;
+                updatePausedState();
+                if (!capturePaused)
+                    autoScroller.setPaused(false);
+            },
+            [this, session = generation] {
+                return active && generation == session && !pipelineInitialized;
+            });
+    }
+
+    void updatePausedState(std::function<void()> acknowledged = {}) {
+        if (!active || !pipeline)
+            return;
+        if (!pipelineInitialized) {
+            autoScroller.setPaused(true);
+            return;
+        }
+        const bool paused = exportPaused || movement.active() || hoverPaused;
+        if (paused == capturePaused && !acknowledged)
+            return;
+        capturePaused = paused;
+        const quint64 transition = ++pauseTransition;
         if (paused)
             previewWatchdog.stop();
         else if (!previewReceived)
             watchPreview();
-        autoScroller.setPaused(paused);
+        autoScroller.setPaused(true);
         if (paused) {
-            pipeline->pause(generation);
+            pipeline->pause(generation, std::move(acknowledged));
         } else {
-            pipeline->resume(
-                generation, viewportPixelSize,
-                nativeScrollingSource(canvasSelection.translated(context.geometry.canvasOrigin()),
-                                      restoreOriginalColors, exclusionWindowIds, generation),
-                cadenceConfig);
+            QTimer::singleShot(0, &owner, [this, transition, session = generation] {
+                afterPresentationClear(
+                    [this] {
+                        pipeline->resume(
+                            generation, viewportPixelSize,
+                            nativeScrollingSource(
+                                canvasSelection.translated(context.geometry.canvasOrigin()),
+                                restoreOriginalColors, exclusionWindowIds, generation),
+                            cadenceConfig);
+                        autoScroller.setPaused(false);
+                    },
+                    [this, transition, session] {
+                        return active && generation == session && pauseTransition == transition &&
+                               !exportPaused && !movement.active() && !hoverPaused;
+                    });
+            });
         }
     }
 
@@ -566,6 +704,17 @@ struct ScreenshotScrollingCaptureController::Impl {
     QElapsedTimer previewClock;
     bool previewReceived = false;
     bool exportPaused = false;
+    bool autoScrollEnabled = false;
+    bool hoverPaused = false;
+    bool capturePaused = false;
+    bool pipelineInitialized = false;
+    bool hoverPreviewVisible = false;
+    bool presentationFlushPending = false;
+    quint64 pauseTransition = 0;
+    QMetaObject::Connection hoverConnection;
+    std::shared_ptr<ScreenshotScrollingTrimRange> trimRange =
+        std::make_shared<ScreenshotScrollingTrimRange>();
+    quint64 contentRevision = 0;
     ScreenshotScrollingCaptureControllerContext context;
     AdaptiveScrollCadence::Config cadenceConfig;
     bool restoreOriginalColors = false;
@@ -601,15 +750,14 @@ struct ScreenshotScrollingCaptureController::Impl {
     int cachedSnapshotTop = -1;
     int cachedSnapshotBottom = -1;
     quint64 cachedSnapshotGeneration = 0;
-    std::optional<quint64> pendingResultRequestId;
-    QSet<quint64> detachedResultRequestIds;
+    snow_shot::capture_detail::ScrollingSnapshotRequest snapshotRequest;
     QRect canvasSelection;
     QSize viewportPixelSize;
     qreal sourceScale = 1.;
     quint64 generation = 0;
-    quint64 nextResultRequestId = 0;
     bool active = false;
     ScreenshotScrollingRecognitionMode mode = ScreenshotScrollingRecognitionMode::Vertical;
+    snow_shot::capture_detail::ScrollingHoverPreview hoverPreview;
 };
 
 ScreenshotScrollingCaptureController::ScreenshotScrollingCaptureController(
@@ -663,11 +811,17 @@ void ScreenshotScrollingCaptureController::setExportPaused(bool paused) {
     m_impl->setExportPaused(paused);
 }
 
+void ScreenshotScrollingCaptureController::setAutoScrollIntervalMs(int milliseconds) {
+    m_impl->autoScroller.setIntervalMs(milliseconds);
+}
+
 void ScreenshotScrollingCaptureController::setAutoScroll(bool enabled) {
     logScrollingEvent("scrolling.auto_scroll", m_impl->generation,
                       {{QStringLiteral("status"), enabled && m_impl->active}});
     m_impl->lastScrollStatus = -1;
-    m_impl->autoScroller.setEnabled(enabled && m_impl->active);
+    m_impl->autoScrollEnabled = enabled && m_impl->active;
+    m_impl->autoScroller.setEnabled(m_impl->autoScrollEnabled);
+    m_impl->refreshHoverEligibility();
 }
 
 void ScreenshotScrollingCaptureController::detachPendingResultRequest() {
@@ -690,4 +844,72 @@ void ScreenshotScrollingCaptureController::endSelectionMove() {
 }
 bool ScreenshotScrollingCaptureController::movingSelection() const {
     return m_impl->movement.active();
+}
+
+QJsonObject ScreenshotScrollingCaptureController::state() const {
+    const auto& s = *m_impl;
+    const auto trim = s.currentTrim();
+    return {{QStringLiteral("active"), s.active},
+            {QStringLiteral("axis"), s.mode == ScreenshotScrollingRecognitionMode::Horizontal
+                                         ? QStringLiteral("horizontal")
+                                         : QStringLiteral("vertical")},
+            {QStringLiteral("auto_scroll"), s.autoScrollEnabled},
+            {QStringLiteral("ready"), !s.latestOutputSize.isEmpty()},
+            {QStringLiteral("content_revision"), static_cast<qint64>(s.contentRevision)},
+            {QStringLiteral("width"), s.latestOutputSize.width()},
+            {QStringLiteral("height"), s.latestOutputSize.height()},
+            {QStringLiteral("trim"), QJsonArray{trim.top, trim.bottom}}};
+}
+bool ScreenshotScrollingCaptureController::setTrimRange(int start, int end) {
+    auto& s = *m_impl;
+    const int extent = s.mode == ScreenshotScrollingRecognitionMode::Horizontal
+                           ? s.latestOutputSize.width()
+                           : s.latestOutputSize.height();
+    if (!s.active || s.exportPaused || start < 0 || end <= start || end > extent)
+        return false;
+    *s.trimRange = {start, end};
+    ++s.contentRevision;
+    if (s.thumbnailHost)
+        s.thumbnailHost->setScrollingTrimModel(s.trimRange);
+    return true;
+}
+bool ScreenshotScrollingCaptureController::moveSelection(QPoint offset) {
+    auto& s = *m_impl;
+    if (!s.beginSelectionMove(s.mode, {}))
+        return false;
+    s.updateSelectionMove(offset);
+    s.endSelectionMove();
+    return true;
+}
+QJsonObject ScreenshotScrollingCaptureController::scrollOnce(const QString& direction,
+                                                             QString* error) {
+    const auto& s = *m_impl;
+    const auto delta = snow_shot::capture_detail::scrollingStepDelta(direction);
+    if (!delta || (delta->y() != 0) != (s.mode == ScreenshotScrollingRecognitionMode::Vertical)) {
+        *error = QStringLiteral("invalid_direction");
+        return {};
+    }
+    if (!s.active || s.latestOutputSize.isEmpty()) {
+        *error = QStringLiteral("scrolling_not_ready");
+        return {};
+    }
+    if (s.autoScrollEnabled || s.exportPaused || s.movement.active() || s.hoverPaused) {
+        *error = QStringLiteral("busy");
+        return {};
+    }
+    if (!snow_shot::platform::screenshotScrollPermission()) {
+        *error = QStringLiteral("permission_required");
+        return {};
+    }
+    const auto input = snow_shot::platform::sendScreenshotScroll(
+        s.canvasSelection.translated(s.context.geometry.canvasOrigin()), *delta);
+    if (input.status != snow_shot::platform::ScrollInputResult::Status::Posted) {
+        *error = input.status == snow_shot::platform::ScrollInputResult::Status::TargetNotFound
+                     ? QStringLiteral("target_not_found")
+                     : QStringLiteral("scroll_dispatch_failed");
+        return {};
+    }
+    error->clear();
+    return {{QStringLiteral("direction"), direction},
+            {QStringLiteral("dispatch_status"), QStringLiteral("posted")}};
 }

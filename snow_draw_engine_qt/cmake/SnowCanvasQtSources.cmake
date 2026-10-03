@@ -29,6 +29,7 @@ set(SNOW_CANVAS_QT_SOURCES
     src/core/snow_canvas_runtime_access.h
     src/core/snow_canvas_runtime_clients.cpp
     src/core/snow_canvas_runtime_clients.h
+    src/core/snow_canvas_runtime_cleanup.h
     src/core/snow_canvas_runtime_session.cpp
     src/core/snow_canvas_runtime_session.h
     src/core/snow_canvas_runtime_thread_affinity.cpp
@@ -44,8 +45,12 @@ set(SNOW_CANVAS_QT_SOURCES
     src/core/snow_canvas_viewport.cpp
     src/core/snow_canvas_viewport.h
     src/rendering/snow_canvas_compositor.cpp
+    src/rendering/snow_canvas_background_restore.cpp
+    src/rendering/snow_canvas_background_restore.h
     src/rendering/snow_canvas_compositor.h
     src/rendering/snow_canvas_custom_renderer.cpp
+    src/rendering/snow_canvas_reference_scene.cpp
+    src/rendering/snow_canvas_reference_scene.h
     src/rendering/snow_canvas_display_cache.cpp
     src/rendering/snow_canvas_display_cache.h
     src/rendering/snow_canvas_display_item.cpp
@@ -127,5 +132,6 @@ set(SNOW_CANVAS_QT_SOURCES
     include/snow_draw_engine_qt/snow_canvas_region_filter.h
     include/snow_draw_engine_qt/snow_canvas_runtime.h
     include/snow_draw_engine_qt/snow_canvas_types.h
+    include/snow_draw_engine_qt/snow_canvas_style_edit.h
     include/snow_draw_engine_qt/snow_canvas_widget.h
 )

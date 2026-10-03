@@ -2,6 +2,7 @@
 #define SNOW_SHOT_SHORTCUTS_SHORTCUTBINDING_H
 
 #include <QKeyCombination>
+#include <QKeySequence>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QJsonValue>
@@ -55,27 +56,39 @@ struct ShortcutIdentity {
     }
 };
 
+// Command identity only; never use this to derive inserted text.
+[[nodiscard]] Qt::Key commandKey(const QKeyEvent& event);
+[[nodiscard]] Qt::Key commandKey(const ShortcutBinding& binding);
+[[nodiscard]] bool matchesStandardShortcut(const QKeyEvent& event, QKeySequence::StandardKey key);
+
 [[nodiscard]] QString canonicalPortableText(const QString& text,
-                                            bool allowModifierOnlyShift = false);
+                                            bool allowModifierOnlyShift = false,
+                                            bool allowModifierOnlyAlt = false,
+                                            bool allowModifierOnlyControl = false);
 [[nodiscard]] ShortcutBinding canonicalBinding(const ShortcutBinding& binding,
-                                               bool allowModifierOnlyShift = false);
+                                               bool allowModifierOnlyShift = false,
+                                               bool allowModifierOnlyAlt = false,
+                                               bool allowModifierOnlyControl = false);
 [[nodiscard]] ShortcutBinding bindingFromPortableText(const QString& text,
-                                                      bool allowModifierOnlyShift = false);
+                                                      bool allowModifierOnlyShift = false,
+                                                      bool allowModifierOnlyAlt = false);
 [[nodiscard]] ShortcutBinding bindingFromKeyEvent(const QKeyEvent& event,
-                                                  bool allowModifierOnlyShift = false);
+                                                  bool allowModifierOnlyShift = false,
+                                                  bool allowModifierOnlyAlt = false);
 [[nodiscard]] ShortcutBindingList bindingsFromPortableText(const QStringList& shortcuts,
                                                            bool allowModifierOnlyShift = false,
-                                                           int maximumItems = -1);
+                                                           int maximumItems = -1,
+                                                           bool allowModifierOnlyAlt = false);
 [[nodiscard]] QStringList portableTextList(const ShortcutBindingList& bindings);
 [[nodiscard]] QJsonObject shortcutBindingToJson(const ShortcutBinding& binding);
-[[nodiscard]] ShortcutBinding shortcutBindingFromJson(const QJsonValue& value,
-                                                      bool allowModifierOnlyShift,
-                                                      bool* valid = nullptr,
-                                                      bool* changed = nullptr);
+[[nodiscard]] ShortcutBinding
+shortcutBindingFromJson(const QJsonValue& value, bool allowModifierOnlyShift, bool* valid = nullptr,
+                        bool* changed = nullptr, bool allowModifierOnlyAlt = false);
 [[nodiscard]] QJsonArray shortcutBindingsToJson(const ShortcutBindingList& bindings);
 [[nodiscard]] ShortcutBindingList
 shortcutBindingsFromJson(const QJsonValue& value, bool allowModifierOnlyShift,
-                         int maximumItems = -1, bool* valid = nullptr, bool* changed = nullptr);
+                         int maximumItems = -1, bool* valid = nullptr, bool* changed = nullptr,
+                         bool allowModifierOnlyAlt = false);
 [[nodiscard]] ShortcutIdentity effectiveIdentity(const ShortcutBinding& binding);
 [[nodiscard]] bool bindingsConflict(const ShortcutBinding& first, const ShortcutBinding& second);
 [[nodiscard]] bool

@@ -2,12 +2,12 @@
 use crate::{MacError, MacResult, audio::AudioSamples};
 use block2::RcBlock;
 use crossbeam_channel::Receiver;
-use objc2::rc::Retained;
+use objc2::{RefEncode, encode::Encoding, msg_send, rc::Retained};
 use objc2_audio_toolbox::{
     AudioUnitSetProperty, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global,
 };
 use objc2_av_foundation::{AVAuthorizationStatus, AVCaptureDevice, AVMediaTypeAudio};
-use objc2_avf_audio::{AVAudioEngine, AVAudioPCMBuffer, AVAudioTime};
+use objc2_avf_audio::{AVAudioEngine, AVAudioIONode, AVAudioPCMBuffer, AVAudioTime};
 use objc2_core_audio::*;
 use objc2_core_foundation::{CFRetained, CFString};
 use objc2_core_media::CMClock;
@@ -141,6 +141,29 @@ pub fn request_microphone_access(completion: impl Fn(bool) + Send + 'static) {
     }
 }
 
+// AVFAudio on macOS uses the legacy ComponentInstanceRecord pointer encoding.
+// objc2-avf-audio 0.3.2 declares OpaqueAudioComponentInstance instead, which
+// causes objc2's debug signature validation to panic before capture can start.
+// Keep the native encoding at the message boundary, then cast the opaque handle
+// to AudioToolbox's equivalent pointer type for its C APIs.
+#[repr(C)]
+struct ComponentInstanceRecord {
+    _opaque: [u8; 0],
+}
+// SAFETY: This type is only used behind a pointer; it is never dereferenced.
+// The struct name matches AVAudioIONode's native macOS method signature.
+unsafe impl RefEncode for ComponentInstanceRecord {
+    const ENCODING_REF: Encoding =
+        Encoding::Pointer(&Encoding::Struct("ComponentInstanceRecord", &[]));
+}
+type NativeAudioUnit = *mut ComponentInstanceRecord;
+
+fn audio_unit(node: &AVAudioIONode) -> NativeAudioUnit {
+    // SAFETY: audioUnit takes no arguments and returns a borrowed opaque handle.
+    // The engine owns the handle for the lifetime of its input node.
+    unsafe { msg_send![node, audioUnit] }
+}
+
 pub struct MicrophoneStream {
     uid: String,
     engine: Retained<AVAudioEngine>,
@@ -151,6 +174,15 @@ pub struct MicrophoneStream {
 unsafe impl Send for MicrophoneStream {}
 impl MicrophoneStream {
     pub fn start(uid: Option<&str>) -> MacResult<Self> {
+        Self::start_cancelable(uid, &crate::CancellationToken::default())
+    }
+    pub fn start_cancelable(
+        uid: Option<&str>,
+        cancellation: &crate::CancellationToken,
+    ) -> MacResult<Self> {
+        if cancellation.is_canceled() {
+            return Err(MacError::Canceled);
+        }
         if !microphone_authorized() {
             return Err(MacError::MicrophonePermissionDenied);
         }
@@ -158,12 +190,18 @@ impl MicrophoneStream {
             .into_iter()
             .find(|d| uid.map_or(d.is_default, |uid| d.uid == uid))
             .ok_or(MacError::TargetUnavailable)?;
+        if cancellation.is_canceled() {
+            return Err(MacError::Canceled);
+        }
         let engine = unsafe { AVAudioEngine::new() };
         let node = unsafe { engine.inputNode() };
-        let unit = unsafe { node.audioUnit() };
+        let unit = audio_unit(&node);
+        if unit.is_null() {
+            return Err(MacError::TargetUnavailable);
+        }
         let status = unsafe {
             AudioUnitSetProperty(
-                unit,
+                unit.cast(),
                 kAudioOutputUnitProperty_CurrentDevice,
                 kAudioUnitScope_Global,
                 0,
@@ -247,7 +285,13 @@ impl MicrophoneStream {
             samples,
             dropped,
         };
+        if cancellation.is_canceled() {
+            return Err(MacError::Canceled);
+        }
         unsafe { result.engine.startAndReturnError() }.map_err(|e| MacError::from_native(&e))?;
+        if cancellation.is_canceled() {
+            return Err(MacError::Canceled);
+        }
         Ok(result)
     }
     pub fn device_uid(&self) -> &str {
@@ -271,5 +315,31 @@ impl Drop for MicrophoneStream {
             self.engine.stop();
             self.engine.inputNode().removeTapOnBus(0);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::NativeAudioUnit;
+    use objc2::{ClassType, sel};
+    use objc2_avf_audio::AVAudioIONode;
+
+    #[test]
+    fn audio_unit_return_type_matches_macos_runtime() {
+        // Check the native method without opening a device or requesting permission.
+        // A mismatch here panics at message dispatch in debug recording builds.
+        AVAudioIONode::class()
+            .verify_sel::<(), NativeAudioUnit>(sel!(audioUnit))
+            .expect("microphone audioUnit binding must match the macOS runtime");
+    }
+
+    #[test]
+    fn canceled_microphone_start_never_checks_permission_or_opens_a_device() {
+        let cancellation = crate::CancellationToken::default();
+        cancellation.cancel();
+        assert!(matches!(
+            super::MicrophoneStream::start_cancelable(None, &cancellation),
+            Err(crate::MacError::Canceled)
+        ));
     }
 }

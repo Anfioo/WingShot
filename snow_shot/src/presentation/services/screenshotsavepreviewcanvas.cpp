@@ -1,3 +1,4 @@
+#include "snow_shot/shortcuts/shortcutbinding.h"
 #include "snow_shot/presentation/screenshotsavepreviewcanvas.h"
 #include "snow_shot/presentation/screenshotwheelinput.h"
 #include "theme/theme_manager.h"
@@ -258,15 +259,16 @@ void ScreenshotSavePreviewCanvas::wheelEvent(QWheelEvent* event) {
     event->accept();
 }
 void ScreenshotSavePreviewCanvas::keyPressEvent(QKeyEvent* event) {
-    if (event->key() == Qt::Key_Left)
+    if (snow_shot::shortcuts::commandKey(*event) == Qt::Key_Left)
         setSplitRatio(m_split - 0.02);
-    else if (event->key() == Qt::Key_Right)
+    else if (snow_shot::shortcuts::commandKey(*event) == Qt::Key_Right)
         setSplitRatio(m_split + 0.02);
-    else if (event->key() == Qt::Key_Home)
+    else if (snow_shot::shortcuts::commandKey(*event) == Qt::Key_Home)
         fitImage(true);
-    else if (event->key() == Qt::Key_Plus || event->key() == Qt::Key_Equal)
+    else if (snow_shot::shortcuts::commandKey(*event) == Qt::Key_Plus ||
+             snow_shot::shortcuts::commandKey(*event) == Qt::Key_Equal)
         zoomAt(m_zoom * 1.15, QRectF(rect()).center());
-    else if (event->key() == Qt::Key_Minus)
+    else if (snow_shot::shortcuts::commandKey(*event) == Qt::Key_Minus)
         zoomAt(m_zoom / 1.15, QRectF(rect()).center());
     else
         QWidget::keyPressEvent(event);

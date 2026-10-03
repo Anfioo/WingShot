@@ -197,6 +197,10 @@
             <translation>No pinned windows</translation>
         </message>
         <message>
+            <source>Not Closed</source>
+            <translation>Not Closed</translation>
+        </message>
+        <message>
             <source>Other / legacy</source>
             <translation>Other / legacy</translation>
         </message>
@@ -219,10 +223,6 @@
         <message>
             <source>Restore</source>
             <translation>Restore</translation>
-        </message>
-        <message>
-            <source>Retained</source>
-            <translation>Retained</translation>
         </message>
         <message>
             <source>Saved records and their open windows will be removed</source>
@@ -471,6 +471,10 @@
             <translation>Current: %1%</translation>
         </message>
         <message>
+            <source>Decrease 10%</source>
+            <translation>Decrease 10%</translation>
+        </message>
+        <message>
             <source>Default</source>
             <translation>Default</translation>
         </message>
@@ -539,12 +543,12 @@
             <translation>Image file</translation>
         </message>
         <message>
-            <source>Image files (%1)</source>
-            <translation>Image files (%1)</translation>
-        </message>
-        <message>
             <source>Image size is too large.</source>
             <translation>Image size is too large.</translation>
+        </message>
+        <message>
+            <source>Increase 10%</source>
+            <translation>Increase 10%</translation>
         </message>
         <message>
             <source>Load new content</source>
@@ -611,6 +615,14 @@
             <translation>Show main interface</translation>
         </message>
         <message>
+            <source>Supported files (%1)</source>
+            <translation>Supported files (%1)</translation>
+        </message>
+        <message>
+            <source>The image could not be saved automatically: %1</source>
+            <translation>The image could not be saved automatically: %1</translation>
+        </message>
+        <message>
             <source>The new content could not be loaded</source>
             <translation>The new content could not be loaded</translation>
         </message>
@@ -637,6 +649,33 @@
         <message>
             <source>Window Management</source>
             <translation>Window Management</translation>
+        </message>
+    </context>
+    <context>
+        <name>WindowGroupSwitcher</name>
+        <message>
+            <source>%1, %2 not closed windows, %3 total</source>
+            <translation>%1, %2 not closed windows, %3 total</translation>
+        </message>
+        <message>
+            <source>Click a group to switch. Esc to cancel.</source>
+            <translation>Click a group to switch. Esc to cancel.</translation>
+        </message>
+        <message>
+            <source>Current</source>
+            <translation>Current</translation>
+        </message>
+        <message>
+            <source>Release shortcut keys or click a group to switch. Esc to cancel.</source>
+            <translation>Release shortcut keys or click a group to switch. Esc to cancel.</translation>
+        </message>
+        <message>
+            <source>Switch Window Group</source>
+            <translation>Switch Window Group</translation>
+        </message>
+        <message>
+            <source>Windows · not closed / total</source>
+            <translation>Windows · not closed / total</translation>
         </message>
     </context>
     <context>
@@ -704,6 +743,13 @@
         <message>
             <source>This group name is already in use</source>
             <translation>This group name is already in use</translation>
+        </message>
+    </context>
+    <context>
+        <name>snow_shot::presentation::WindowGroupSwitcherController</name>
+        <message>
+            <source>Could not switch window group. Please try again.</source>
+            <translation>Could not switch window group. Please try again.</translation>
         </message>
     </context>
 </TS>

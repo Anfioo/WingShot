@@ -1,6 +1,8 @@
 #include "snow_shot/presentation/screenshotcolorpickerwindow.h"
+#include "widgets/detail/top_level_popup_window.h"
 
 #include "snow_shot/presentation/screenshotgeometry.h"
+#include "snow_shot/platform/screenshotnative.h"
 #include "snow_shot/presentation/screenshotguidelinerendering.h"
 #include "snow_shot/presentation/styles/thememanager.h"
 #include "snow_shot/storage/applicationstorage.h"
@@ -10,6 +12,7 @@
 #include <QFont>
 #include <QFontMetrics>
 #include <QGraphicsOpacityEffect>
+#include <QEvent>
 #include <QPainter>
 #include <QPainterPath>
 #include <QWindow>
@@ -26,7 +29,9 @@ constexpr int kPanelPadding = 4;
 constexpr int kPanelRadius = 6;
 constexpr int kContentGap = 4;
 constexpr int kTextVerticalOffset = 1;
+// Keep the compact single-line layout; long coordinates are elided when painted.
 constexpr int kTextHeight = 20;
+constexpr int kTextPixelSize = 13;
 constexpr int kColorTextHeight = 24;
 constexpr int kCenterPixelBorderWidth = 1;
 constexpr int kShadowMargin = 10;
@@ -162,6 +167,9 @@ QPainterPath topRoundedRectPath(const QRectF& rect, qreal radius) {
 ScreenshotColorPickerWindow::ScreenshotColorPickerWindow(QWidget* parent)
     : QWidget(parent, colorPickerWindowFlags()) {
     if (snow_shot::storage::ApplicationStorage::instance().isInitialized()) {
+        m_relativeCoordinates =
+            snow_shot::storage::ScreenshotUiSettings().colorPickerCoordinateMode() ==
+            QStringLiteral("relative");
         const QString format = snow_shot::storage::ScreenshotUiSettings().colorPickerFormat();
         if (format == QStringLiteral("hex_without_hash")) {
             m_colorFormat = ColorFormat::HexWithoutHash;
@@ -223,18 +231,14 @@ void ScreenshotColorPickerWindow::setOwnerWindow(QWidget* owner) {
     // The initial native geometry must also belong to the owner's monitor.
     // Leaving it at (0, 0) can select another monitor's DPI before first reveal.
     move(owner->mapToGlobal(owner->rect().center()) - rect().center());
-    QWindow* ownerHandle = owner->windowHandle();
-    if (ownerHandle == nullptr) {
+    if (owner->windowHandle() == nullptr) {
         static_cast<void>(owner->winId());
-        ownerHandle = owner->windowHandle();
     }
     // winId() sets WA_NativeWindow and forces the picker's canvas siblings to
     // become native too. Cocoa can then lose their hover events beneath this
     // input-transparent tool. Create only this top-level surface instead.
     create();
-    if (QWindow* handle = windowHandle()) {
-        handle->setTransientParent(ownerHandle);
-    }
+    adqt::widgets::detail::setTopLevelToolTransientParent(this, owner);
 }
 
 void ScreenshotColorPickerWindow::prepareNativeSurface() {
@@ -267,20 +271,32 @@ void ScreenshotColorPickerWindow::prepareNativeSurface() {
 
 void ScreenshotColorPickerWindow::resetForNewCapture() {
     m_captureImage = QImage();
+    m_cursorPatch = {};
+    m_cursorPixelRect = {};
     m_physicalRect = QRect();
     m_previewImage = QImage();
     m_currentPhysicalPoint = QPoint();
+    m_displayValues = {};
+    m_positionText.reset();
     m_currentColor = QColor();
     m_hasCurrentColor = false;
     hidePicker();
 }
 
-void ScreenshotColorPickerWindow::setCaptureImage(const QImage& image, const QRect& physicalRect) {
-    if (m_captureImage.cacheKey() == image.cacheKey() && m_physicalRect == physicalRect) {
+void ScreenshotColorPickerWindow::setCaptureImage(const QImage& image, const QRect& physicalRect,
+                                                  const QImage& cursorPatch,
+                                                  const QRect& cursorPixelRect) {
+    if (m_captureImage.cacheKey() == image.cacheKey() && m_physicalRect == physicalRect &&
+        m_cursorPatch.cacheKey() == cursorPatch.cacheKey() &&
+        m_cursorPixelRect == cursorPixelRect) {
         return;
     }
 
     m_captureImage = image;
+    const bool validPatch = !cursorPatch.isNull() && cursorPatch.size() == cursorPixelRect.size() &&
+                            image.rect().contains(cursorPixelRect);
+    m_cursorPatch = validPatch ? cursorPatch : QImage();
+    m_cursorPixelRect = validPatch ? cursorPixelRect : QRect();
     m_physicalRect = physicalRect;
     if (m_previewImage.size() != QSize(kPreviewPickerSize, kPreviewPickerSize) ||
         m_previewImage.format() != QImage::Format_ARGB32_Premultiplied) {
@@ -290,8 +306,9 @@ void ScreenshotColorPickerWindow::setCaptureImage(const QImage& image, const QRe
     m_hasCurrentColor = false;
 }
 
-void ScreenshotColorPickerWindow::updatePicker(const QPoint& physicalPoint,
-                                               const QPointF& overlayLocalPosition, qreal opacity) {
+void ScreenshotColorPickerWindow::updatePicker(
+    const QPoint& physicalPoint, const QPointF& overlayLocalPosition, qreal opacity,
+    std::optional<ScreenshotCoordinateDisplayValues> displayValues) {
     if (m_captureImage.isNull() || m_physicalRect.isNull()) {
         hidePicker();
         return;
@@ -299,6 +316,20 @@ void ScreenshotColorPickerWindow::updatePicker(const QPoint& physicalPoint,
 
     opacity = std::clamp<qreal>(opacity, 0.0, 1.0);
     const bool previewChanged = updatePreview(physicalPoint);
+    auto values = displayValues.value_or(ScreenshotCoordinateDisplayValues{
+        QPointF(m_currentPhysicalPoint), ScreenshotSelectionDisplayUnit::PhysicalPixels, false});
+    // The readout uses whole pixels; subpixel changes do not invalidate text layout.
+    values.position = QPointF(std::round(values.position.x()), std::round(values.position.y()));
+    if (values.relativePosition) {
+        values.relativePosition = QPointF(std::round(values.relativePosition->x()),
+                                          std::round(values.relativePosition->y()));
+    }
+    const QString previousPositionText = currentPositionText();
+    if (m_displayValues != values) {
+        m_displayValues = values;
+        m_positionText.reset();
+    }
+    const bool coordinatesChanged = previousPositionText != currentPositionText();
     static_cast<void>(updatePosition(overlayLocalPosition));
     bool opacityChanged = false;
     if (m_opacityEffect != nullptr) {
@@ -318,9 +349,21 @@ void ScreenshotColorPickerWindow::updatePicker(const QPoint& physicalPoint,
         show();
         raise();
     }
-    if (previewChanged || opacityChanged) {
+    if (previewChanged || opacityChanged || coordinatesChanged) {
         update();
     }
+}
+
+QString ScreenshotColorPickerWindow::currentPositionText() const {
+    if (m_positionText)
+        return *m_positionText;
+    const QPointF position = m_relativeCoordinates && m_displayValues.relativePosition
+                                 ? *m_displayValues.relativePosition
+                                 : m_displayValues.position;
+    const QString x = QStringLiteral("X: %1").arg(screenshotSelectionDisplayValue(position.x()));
+    const QString y = QStringLiteral("Y: %1").arg(screenshotSelectionDisplayValue(position.y()));
+    m_positionText = x + QLatin1Char(' ') + y;
+    return *m_positionText;
 }
 
 void ScreenshotColorPickerWindow::hidePicker() {
@@ -330,12 +373,38 @@ void ScreenshotColorPickerWindow::hidePicker() {
     hide();
 }
 
+bool ScreenshotColorPickerWindow::event(QEvent* event) {
+#ifdef Q_OS_MACOS
+    if ((event->type() == QEvent::WinIdChange || event->type() == QEvent::Show) &&
+        internalWinId() != 0) {
+        snow_shot::platform::configureScreenshotColorPickerWindow(this);
+    }
+#endif
+    return QWidget::event(event);
+}
+
+bool ScreenshotColorPickerWindow::nativeEvent(const QByteArray& eventType, void* message,
+                                              qintptr* result) {
+    adqt::widgets::detail::constrainTopLevelToolStackingToOwner(this, message);
+    return QWidget::nativeEvent(eventType, message, result);
+}
+
 void ScreenshotColorPickerWindow::setCenterGuideLineColor(const QColor& color) {
     const QColor next = color.isValid() ? color : QColor(0, 0, 0, 0);
     if (m_centerGuideLineColor == next) {
         return;
     }
     m_centerGuideLineColor = next;
+    update();
+}
+
+void ScreenshotColorPickerWindow::toggleCoordinateMode() {
+    m_relativeCoordinates = !m_relativeCoordinates;
+    m_positionText.reset();
+    if (snow_shot::storage::ApplicationStorage::instance().isInitialized()) {
+        static_cast<void>(snow_shot::storage::ScreenshotUiSettings().setColorPickerCoordinateMode(
+            m_relativeCoordinates ? QStringLiteral("relative") : QStringLiteral("global")));
+    }
     update();
 }
 
@@ -380,6 +449,14 @@ QSize ScreenshotColorPickerWindow::sizeHint() const {
                             kTextHeight + kContentGap + kTextVerticalOffset + kColorTextHeight +
                             kPanelPadding;
     return QSize(panelWidth + kShadowMargin * 2, panelHeight + kShadowMargin * 2);
+}
+
+void ScreenshotColorPickerWindow::changeEvent(QEvent* event) {
+    QWidget::changeEvent(event);
+    if (event->type() == QEvent::LanguageChange || event->type() == QEvent::FontChange) {
+        m_positionText.reset();
+        update();
+    }
 }
 
 void ScreenshotColorPickerWindow::paintEvent(QPaintEvent* event) {
@@ -428,12 +505,10 @@ void ScreenshotColorPickerWindow::paintEvent(QPaintEvent* event) {
     painter.drawRoundedRect(centerRect.adjusted(0.5, 0.5, -0.5, -0.5), 2.0, 2.0);
 
     QFont textFont = font();
-    textFont.setPixelSize(13);
+    textFont.setPixelSize(kTextPixelSize);
     painter.setFont(textFont);
     painter.setPen(m_panelTextColor);
-    const QString positionText = QStringLiteral("X: %1 Y: %2")
-                                     .arg(m_currentPhysicalPoint.x())
-                                     .arg(m_currentPhysicalPoint.y());
+    const QString positionText = currentPositionText();
     painter.drawText(positionTextRect(), Qt::AlignCenter,
                      fitText(textFont, positionText, positionTextRect().toAlignedRect().width()));
 
@@ -470,17 +545,22 @@ bool ScreenshotColorPickerWindow::updatePreview(const QPoint& physicalPoint) {
             QImage(kPreviewPickerSize, kPreviewPickerSize, QImage::Format_ARGB32_Premultiplied);
     }
 
+    const auto sample = [this](int x, int y) {
+        if (!m_cursorPatch.isNull() && m_cursorPixelRect.contains(x, y))
+            return rgbaPixelAt(m_cursorPatch, x - m_cursorPixelRect.x(), y - m_cursorPixelRect.y());
+        return rgbaPixelAt(m_captureImage, x, y);
+    };
     const int halfPicker = kPreviewPickerSize / 2;
     for (int y = 0; y < kPreviewPickerSize; ++y) {
         auto* previewLine = reinterpret_cast<QRgb*>(m_previewImage.scanLine(y));
         for (int x = 0; x < kPreviewPickerSize; ++x) {
             const int sourceX = std::clamp(imageX + x - halfPicker, 0, maxImageX);
             const int sourceY = std::clamp(imageY + y - halfPicker, 0, maxImageY);
-            previewLine[x] = premultipliedArgb(rgbaPixelAt(m_captureImage, sourceX, sourceY));
+            previewLine[x] = premultipliedArgb(sample(sourceX, sourceY));
         }
     }
 
-    const RgbaPixel centerPixel = rgbaPixelAt(m_captureImage, imageX, imageY);
+    const RgbaPixel centerPixel = sample(imageX, imageY);
     m_currentColor = QColor(centerPixel.red, centerPixel.green, centerPixel.blue, 255);
     m_hasCurrentColor = true;
     return true;

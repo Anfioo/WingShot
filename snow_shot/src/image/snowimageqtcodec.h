@@ -17,6 +17,24 @@ class QIODevice;
 
 namespace snow_shot::image_codec {
 
+enum class SkinDecodeError {
+    None,
+    UnsupportedFormat,
+    UnreadableFile,
+    InputTooLarge,
+    InvalidImage,
+    ResourceLimit,
+};
+
+struct SkinDecodeResult final {
+    QImage image;
+    SkinDecodeError error = SkinDecodeError::None;
+};
+
+// Decodes one static preview, including the first composited animation frame.
+// Skin decoding has independent resource limits and never uses Qt image plugins.
+[[nodiscard]] SkinDecodeResult decodeSkinFile(const QString& path);
+
 struct EncodeResult final {
     quint64 bytesWritten = 0;
     snow::image::Format format = snow::image::Format::unknown;
@@ -46,8 +64,12 @@ struct EncodeResult final {
                                    int compressionLevel = 0);
 [[nodiscard]] ScreenshotImageRowSource srgbRowSource(const QImage& image);
 [[nodiscard]] QByteArray encodeWebp(const QImage& image, int quality = 75);
+// Decoded RGB images retain their source color space. Convert to sRGB at the
+// rendering/encoding boundary; merely assigning an sRGB tag changes their meaning.
 [[nodiscard]] QImage decode(const QByteArray& encoded, snow::image::Format expectedFormat,
                             const char* nameHint);
+[[nodiscard]] QImage decodeIconFile(const QString& path, uint32_t preferredExtent);
+[[nodiscard]] QSize inspectSize(const QByteArray& encoded, snow::image::Format expectedFormat);
 [[nodiscard]] QImage decodeFile(const QString& path, snow::image::Format expectedFormat);
 [[nodiscard]] QImage decodeFileBgra(const QString& path, snow::image::Format expectedFormat);
 [[nodiscard]] bool inspectFile(const QString& path, snow::image::Format expectedFormat,

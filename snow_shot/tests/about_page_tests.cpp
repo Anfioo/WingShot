@@ -33,6 +33,7 @@
 #include <QPointer>
 #include <QProgressBar>
 #include <QScrollBar>
+#include <QStringList>
 #include <QTemporaryDir>
 #include <QTimer>
 #include <QTranslator>
@@ -75,6 +76,69 @@ void snapshot(QWidget& widget, const QString& name) {
         require(widget.grab().save(QDir(directory).filePath(name + QStringLiteral(".png"))),
                 "save About preview");
     }
+}
+
+class StyleChangeRecorder final : public QObject {
+  public:
+    QStringList styles;
+
+  protected:
+    bool eventFilter(QObject* watched, QEvent* event) override {
+        if (event->type() == QEvent::StyleChange) {
+            styles.push_back(static_cast<QWidget*>(watched)->styleSheet());
+        }
+        return false;
+    }
+};
+
+void themeAndSkinChangesUpdateOnlyAffectedBackgrounds() {
+    auto& themeManager = styles::ThemeManager::instance();
+    themeManager.setThemeAppearance(styles::ThemeAppearance::Light);
+    AboutPageWidget page;
+    page.resize(920, 680);
+    page.show();
+    flushEvents();
+    auto* panel = child<QWidget>(page, "aboutVersionPanel");
+    auto* name = child<QLabel>(page, "aboutProductName");
+    StyleChangeRecorder recorder;
+    panel->installEventFilter(&recorder);
+    for (const auto appearance : {styles::ThemeAppearance::Dark, styles::ThemeAppearance::Light}) {
+        const QString previous = panel->styleSheet();
+        recorder.styles.clear();
+        themeManager.setThemeAppearance(appearance);
+        require(recorder.styles.size() == 1 && recorder.styles.first() != previous,
+                "an unskinned About theme change must apply its new background exactly once");
+    }
+    auto& controlTheme = adqt::theme::ThemeManager::instance();
+    QWidget unrelated;
+    adqt::theme::ThemeOverride unrelatedOverride;
+    unrelatedOverride.backgroundOpacity = 0.4;
+    recorder.styles.clear();
+    controlTheme.setScopeOverride(&unrelated, unrelatedOverride);
+    require(recorder.styles.isEmpty(),
+            "an unrelated skin must not restyle the unskinned About backgrounds");
+    controlTheme.clearScopeOverride(&unrelated);
+    const QFont nameFont = name->font();
+    const QString opaque = panel->styleSheet();
+    for (const qreal opacity : {0.4, 0.0, 1.0}) {
+        adqt::theme::ThemeOverride overrideValue;
+        overrideValue.backgroundOpacity = opacity;
+        recorder.styles.clear();
+        controlTheme.setScopeOverride(&page, overrideValue);
+        require(!recorder.styles.isEmpty() && name->font() == nameFont,
+                "About skin opacity edits must update backgrounds without changing typography");
+        if (opacity == 1.0) {
+            require(panel->styleSheet() == opaque,
+                    "full About mask opacity must restore its original background style");
+        } else {
+            require(panel->styleSheet() != opaque,
+                    "About backgrounds must reflect a translucent skin mask");
+        }
+    }
+    recorder.styles.clear();
+    controlTheme.clearScopeOverride(&page);
+    require(recorder.styles.isEmpty(),
+            "removing an already opaque skin scope must not restyle About backgrounds");
 }
 
 void versionIsExactSelectableAndCopyable() {
@@ -148,7 +212,8 @@ void projectLinkSurfacesMatchStandardButtons() {
     for (const auto appearance : {styles::ThemeAppearance::Light, styles::ThemeAppearance::Dark}) {
         manager.setThemeAppearance(appearance);
         flushEvents();
-        for (const char* name : {"aboutWebsite", "aboutSourceCode", "aboutFeedback"}) {
+        for (const char* name : {"aboutWebsite", "aboutSourceCode", "aboutFeedback",
+                                 "aboutQqGroup2", "aboutQqGroup3"}) {
             auto* button = child<AdButton>(page, name);
             require(button->buttonStyle() == AdButton::ButtonStyle::Outline &&
                         button->accentRole() == AdButton::AccentRole::Neutral,
@@ -215,11 +280,13 @@ void projectLinksAreExplicitAccessibleAndRecoverable() {
     require(opened.isEmpty(), "About does not open links or check for updates on construction");
     snapshot(page, QStringLiteral("about-actions"));
     const QString project = QStringLiteral(SNOW_SHOT_TEST_PROJECT_URL);
-    const std::array<std::pair<const char*, QUrl>, 4> links{{
+    const std::array<std::pair<const char*, QUrl>, 6> links{{
         {"aboutWebsite", QUrl(QStringLiteral(SNOW_SHOT_TEST_WEBSITE_URL))},
         {"aboutSourceCode", QUrl(project)},
         {"aboutFeedback", QUrl(project + QStringLiteral("/issues"))},
         {"aboutReleaseNotes", QUrl(project + QStringLiteral("/releases"))},
+        {"aboutQqGroup2", QUrl(QStringLiteral(SNOW_SHOT_TEST_QQ_GROUP_2_URL))},
+        {"aboutQqGroup3", QUrl(QStringLiteral(SNOW_SHOT_TEST_QQ_GROUP_3_URL))},
     }};
     for (const auto& [name, url] : links) {
         auto* button = child<QAbstractButton>(page, name);
@@ -296,8 +363,9 @@ void largerTypeKeepsEveryActionReachable() {
     auto* artwork = child<QWidget>(page, "aboutArtwork");
     require(artwork->width() <= scroll->viewport()->width() && artwork->height() > 0,
             "artwork scales down to the available width with larger fonts");
-    for (const char* name : {"aboutCopyVersion", "aboutReleaseNotes", "aboutUpdateAction",
-                             "aboutWebsite", "aboutSourceCode", "aboutFeedback"}) {
+    for (const char* name :
+         {"aboutCopyVersion", "aboutReleaseNotes", "aboutUpdateAction", "aboutWebsite",
+          "aboutSourceCode", "aboutFeedback", "aboutQqGroup2", "aboutQqGroup3"}) {
         auto* button = child<QAbstractButton>(page, name);
         scroll->ensureWidgetVisible(button);
         flushEvents();
@@ -338,14 +406,27 @@ void updatePolicyAndUnavailableCopy() {
     require(child<adqt::widgets::AdButton>(page, "aboutUpdateAction")->isEnabled(),
             "macOS can check without installation metadata");
     auto& status = const_cast<snow_shot::update::UpdateStatus&>(updates.status());
-    status = {snow_shot::update::UpdateState::Available, QStringLiteral("2.0.0"), {}, 0, 0};
+    status = {
+        snow_shot::update::UpdateState::Available,
+        QStringLiteral("2.0.0"),
+        {},
+        0,
+        0,
+        QUrl(QStringLiteral("https://github.com/mg-chao/snow-apps/releases/tag/v2.0.0_snow-shot"))};
     updates.statusChanged();
     auto* action = child<adqt::widgets::AdButton>(page, "aboutUpdateAction");
-    require(action->text() == QStringLiteral("Download from website"),
+    require(action->text() == QStringLiteral("Download from GitHub"),
             "About explains external download");
     action->click();
-    require(opened == QList<QUrl>{QUrl(QStringLiteral(SNOW_SHOT_TEST_WEBSITE_URL))},
-            "About opens configured website");
+    require(opened == QList<QUrl>{status.downloadUrl}, "About opens the exact GitHub release");
+    status.downloadUrl =
+        QUrl(QStringLiteral("https://gitee.com/mg-chao/snow-apps/releases/tag/v2.0.0_snow-shot"));
+    emit updates.statusChanged();
+    flushEvents();
+    require(action->text() == QStringLiteral("Download from Gitee"),
+            "About identifies Gitee release");
+    action->click();
+    require(opened.last() == status.downloadUrl, "About opens the exact Gitee release");
 #else
     require(backend.selectValue(binding).toString() == QStringLiteral("download"),
             "automatic download is the default update policy");
@@ -508,6 +589,39 @@ void updateStatesFitTheVersionPanel() {
             "blocked restarts keep their action and show the reason in the warning color");
     page.hide();
     styles::ThemeManager::instance().setThemeAppearance(styles::ThemeAppearance::Light);
+}
+
+void updateModuleKeepsItsHeightAcrossStates() {
+    using namespace snow_shot::update;
+    UpdateService updates({});
+    auto& status = const_cast<UpdateStatus&>(updates.status());
+    QCoreApplication::setApplicationVersion(QStringLiteral(SNOW_SHOT_TEST_VERSION));
+    AboutPageWidget page(nullptr, [](const QUrl&) { return true; }, &updates);
+    auto* panel = child<QFrame>(page, "aboutVersionPanel");
+    page.show();
+    for (const int width : {660, 360}) {
+        page.resize(width, 460);
+        flushEvents();
+        int panelHeight = -1;
+        // Unavailable is a static property of the copy and never transitions at runtime;
+        // every state the update flow can actually move through must keep one height.
+        for (const auto state : {UpdateState::Idle, UpdateState::Checking, UpdateState::Available,
+                                 UpdateState::Downloading, UpdateState::Verifying,
+                                 UpdateState::Ready, UpdateState::Applying, UpdateState::Failed}) {
+            status = {state, QStringLiteral("1.2.3"), {}, 5 * 1048576, 20 * 1048576};
+            if (state == UpdateState::Failed) {
+                status.error = QStringLiteral("network error");
+            }
+            updates.statusChanged();
+            flushEvents();
+            if (panelHeight < 0) {
+                panelHeight = panel->height();
+            }
+            require(panel->height() == panelHeight,
+                    "update state transitions never change the version panel height");
+        }
+    }
+    page.hide();
 }
 
 void dividersFollowTheComponentLibraryAndUpdatesBreathe() {
@@ -803,6 +917,28 @@ void mainNavigationSearchThemesAndLanguages() {
                             "AboutPageWidget",
                             "Screenshot selection, annotation tools, and recognized text"),
                 "resource and illustration accessibility copy follows the active language");
+        struct QqGroupCopy {
+            const char* objectName;
+            const char* title;
+            const char* number;
+        };
+        const std::array<QqGroupCopy, 2> qqGroups{{
+            {"aboutQqGroup2", "QQ Group 2", "895818102"},
+            {"aboutQqGroup3", "QQ Group 3", "1037819112"},
+        }};
+        for (const auto& group : qqGroups) {
+            const QString title = translator.translate("AboutPageWidget", group.title);
+            const QString description =
+                translator.translate("AboutPageWidget", "Discussion and support · Group No. %1")
+                    .arg(QString::fromLatin1(group.number));
+            auto* button = child<QAbstractButton>(*page, group.objectName);
+            require(button->accessibleName() == title &&
+                        button->accessibleDescription() == description,
+                    "QQ group cards retranslate their title and description");
+            const QByteArray labelName = QByteArray(group.objectName) + "Description";
+            require(child<QLabel>(*button, labelName.constData())->text() == description,
+                    "QQ group cards display the translated description with the group number");
+        }
         require(sidebar->currentRoute() == QStringLiteral("/about"),
                 "translated navigation preserves About selection");
         auto* scroll = page->findChild<adqt::widgets::AdScrollArea*>();
@@ -825,7 +961,7 @@ void mainNavigationSearchThemesAndLanguages() {
         scroll->verticalScrollBar()->setValue(scroll->verticalScrollBar()->maximum());
         flushEvents();
         snapshot(window, QStringLiteral("about-%1-compact-bottom").arg(locale));
-        window.resize(900, 556);
+        window.resize(900, 640);
         sidebar->setCollapsed(false);
         QCoreApplication::removeTranslator(&translator);
         flushEvents();
@@ -854,6 +990,7 @@ int main(int argc, char** argv) {
     require(storage.initialize({directory.path(), directory.path(), 8000}).success,
             "initialize isolated storage");
     styles::ThemeManager::instance().initialize(application);
+    themeAndSkinChangesUpdateOnlyAffectedBackgrounds();
     versionIsExactSelectableAndCopyable();
     absentVersionDoesNotInventARelease();
     stableVersionsDoNotClaimToBePreviews();
@@ -861,6 +998,7 @@ int main(int argc, char** argv) {
     projectLinksAreExplicitAccessibleAndRecoverable();
     updatePolicyAndUnavailableCopy();
     updateStatesFitTheVersionPanel();
+    updateModuleKeepsItsHeightAcrossStates();
     dividersFollowTheComponentLibraryAndUpdatesBreathe();
     traySettingsAndFunctionNavigation();
     mainNavigationSearchThemesAndLanguages();

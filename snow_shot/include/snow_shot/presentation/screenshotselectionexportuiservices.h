@@ -4,24 +4,28 @@
 #include "snow_shot/storage/pinnedwindowtypes.h"
 
 #include "snow_shot/presentation/screenshotclipboardcontent.h"
+#include "snow_shot/presentation/screenshotclipboardservice.h"
 #include "snow_shot/presentation/screenshotexportartifact.h"
 #include "snow_shot/presentation/screenshotimagesource.h"
 #include "snow_shot/presentation/screenshotselectionexportworkflowports.h"
 
 #include <atomic>
 #include <QSet>
+#include <QHash>
+#include <QPointer>
 #include <functional>
 #include <memory>
-#include <vector>
 
 class QScreen;
 class ScreenshotOcrRecognitionPort;
 class ScreenshotQrRecognitionPort;
 class SnowShotApiClient;
 class ScreenshotPinnedWindowPool;
+class ScreenshotPinnedWindow;
 class ScreenshotPendingPinCoordinator;
 class QTextDocument;
 struct ScreenshotPinnedRecognitionProviders;
+struct ScreenshotHistoryEntry;
 
 namespace snow_shot::presentation {
 class PinnedWindowGroupManager;
@@ -46,6 +50,11 @@ class ScreenshotSelectionExportUiServices final : public ScreenshotSelectionExpo
     void cancelClipboardPublication();
     // Prepares one hidden native shell for the next Pin to Screen presentation.
     void prewarmPinnedWindow(QScreen* screen = nullptr);
+    // Fits decoded file or drop content on the target screen, retaining its text document.
+    [[nodiscard]] bool
+    presentDecodedContentOnScreen(ScreenshotClipboardContent content, QScreen* screen,
+                                  bool autoResizeWindow,
+                                  snow_shot::storage::PinnedWindowCreationSource source);
     // A null image is accepted when imageLoader is provided and
     // initialWindowSize supplies the known canvas dimensions.
     [[nodiscard]] bool presentPinnedImage(
@@ -58,7 +67,9 @@ class ScreenshotSelectionExportUiServices final : public ScreenshotSelectionExpo
         std::optional<snow_shot::storage::PinnedBorderAppearance> borderAppearance = {},
         std::optional<bool> checkerboardEnabled = {},
         snow_shot::storage::PinnedWindowCreationSource source =
-            snow_shot::storage::PinnedWindowCreationSource::Other);
+            snow_shot::storage::PinnedWindowCreationSource::Other,
+        snow_shot::storage::PinnedSourceIdentity sourceIdentity = {},
+        std::optional<bool> initialBorderVisible = {});
     // An already composited selection bitmap placed by screenshotSelectionPinRequest.
     [[nodiscard]] bool
     presentCompositedSelectionImage(const QImage& image,
@@ -67,6 +78,10 @@ class ScreenshotSelectionExportUiServices final : public ScreenshotSelectionExpo
     [[nodiscard]] bool presentPinnedSelection(const ScreenshotPinnedSelectionRequest& request,
                                               ScreenshotPinnedSelectionResultHandle result,
                                               PinnedCompletion completion) override;
+    [[nodiscard]] bool presentPinnedDocument(const QImage& background, QScreen* screen,
+                                             const QRect& nativeGeometry,
+                                             const ScreenshotHistoryEntry& entry,
+                                             PinnedCompletion completion);
     [[nodiscard]] bool presentPinnedArtifact(const ScreenshotPinnedSelectionRequest& request,
                                              std::shared_ptr<ScreenshotExportArtifact> artifact,
                                              PinnedCompletion completion = {});
@@ -78,12 +93,21 @@ class ScreenshotSelectionExportUiServices final : public ScreenshotSelectionExpo
     // Returns whether restoration was queued; completion and failures are asynchronous.
     bool restoreRecord(const QString& id, bool activateGroup = true);
     void restoreLastClosedWindow();
+    [[nodiscard]] ScreenshotPinnedWindow*
+    findDuplicatePin(const snow_shot::storage::PinnedSourceIdentity& identity) const;
+    [[nodiscard]] QSet<QString> duplicateSourceKeys() const;
+    // A true result consumes the request. The caller owns one restore guard per action/batch.
+    bool handleDuplicatePin(const snow_shot::storage::PinnedSourceIdentity& identity,
+                            const QString& action, bool& restored);
+
     void setRestoreFailureHandler(std::function<void()> handler) {
         m_restoreFailure = std::move(handler);
     }
     void destroyRecords(const QVector<QString>& ids);
 
   private:
+    void trackSourceWindow(ScreenshotPinnedWindow* window,
+                           const snow_shot::storage::PinnedSourceIdentity& identity);
     [[nodiscard]] bool presentRestoredRecord(snow_shot::storage::PinnedWindowRecord record);
     [[nodiscard]] bool presentPinnedImageOnCanvas(
         const QImage& image, QScreen* screen, const QRect& nativeGeometry,
@@ -94,10 +118,20 @@ class ScreenshotSelectionExportUiServices final : public ScreenshotSelectionExpo
         std::optional<snow_shot::storage::PinnedBorderAppearance> borderAppearance = {},
         std::optional<bool> checkerboardEnabled = {},
         snow_shot::storage::PinnedWindowCreationSource source =
-            snow_shot::storage::PinnedWindowCreationSource::Other);
+            snow_shot::storage::PinnedWindowCreationSource::Other,
+        const ScreenshotHistoryEntry* document = nullptr,
+        snow_shot::storage::PinnedSourceIdentity sourceIdentity = {},
+        std::optional<bool> initialBorderVisible = {});
 
+    QHash<QString, QList<QPointer<ScreenshotPinnedWindow>>> m_sourceWindows;
     std::function<void()> m_restoreFailure;
-    QSet<QString> m_restoringIds;
+    struct RestoringPin {
+        snow_shot::storage::PinnedSourceIdentity sourceIdentity;
+        QString groupId;
+        QDateTime createdUtc;
+        bool attentionPending = false;
+    };
+    QHash<QString, RestoringPin> m_restoringIds;
     std::shared_ptr<std::atomic_bool> m_restoreAlive = std::make_shared<std::atomic_bool>(true);
     ScreenshotOcrRecognitionPort* m_recognition = nullptr;
     ScreenshotQrRecognitionPort* m_qrRecognition = nullptr;
@@ -107,8 +141,7 @@ class ScreenshotSelectionExportUiServices final : public ScreenshotSelectionExpo
     snow_shot::presentation::PinnedWindowGroupManager* m_groupManager = nullptr;
     std::unique_ptr<ScreenshotPinnedWindowPool> m_windowPool;
     std::unique_ptr<ScreenshotPendingPinCoordinator> m_pendingPinCoordinator;
-    std::vector<ScreenshotClipboardCommitHandle> m_clipboardCommits;
-    std::vector<std::shared_ptr<std::atomic_bool>> m_clipboardCompletionEnabled;
+    ScreenshotClipboardCommitScope m_clipboardScope;
 };
 
 #endif // SNOW_SHOT_PRESENTATION_SCREENSHOTSELECTIONEXPORTUISERVICES_H

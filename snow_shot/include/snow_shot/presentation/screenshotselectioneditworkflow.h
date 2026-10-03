@@ -2,6 +2,8 @@
 #define SNOW_SHOT_PRESENTATION_SCREENSHOTSELECTIONEDITWORKFLOW_H
 
 #include "snow_shot/presentation/screenshotselectioneditworkflowports.h"
+#include "snow_shot/presentation/screenshotselectionaspectratio.h"
+#include "snow_shot/presentation/screenshotselectioneffectgeometry.h"
 
 #include <QRect>
 
@@ -24,7 +26,8 @@ struct ScreenshotSelectionEditWorkflowContext {
     ScreenshotSelectionEditUiActions ui;
     std::function<void(int cornerRadius, int shadowWidth)> persistSelectionEffects = [](int, int) {
     };
-    std::function<void(bool locked)> persistSelectionAspectRatioLock = [](bool) {};
+    std::function<void(ScreenshotSelectionAspectRatioPreset preset, bool locked)>
+        persistSelectionAspectRatioPreference = [](ScreenshotSelectionAspectRatioPreset, bool) {};
 };
 
 class ScreenshotSelectionEditWorkflow final {
@@ -34,7 +37,10 @@ class ScreenshotSelectionEditWorkflow final {
     void adjustSelectionFromToolbar(int minDx, int minDy, int maxDx, int maxDy);
     void setSelectionCornerRadiusFromToolbar(int radius);
     void setSelectionShadowWidthFromToolbar(int shadowWidth);
+    void previewSelectionEffect(ScreenshotSelectionEffectHandle handle, int value);
+    void commitSelectionEffects();
     void toggleSelectionAspectRatioLockFromToolbar();
+    void setSelectionAspectRatioPresetFromToolbar(ScreenshotSelectionAspectRatioPreset preset);
     void openSelectionResizeModalFromToolbar();
     void repositionToolbarForContentChange();
     void hideColorPickersForScreenshotUi() const;

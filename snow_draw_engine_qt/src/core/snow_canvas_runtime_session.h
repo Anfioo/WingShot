@@ -6,7 +6,6 @@
 #include "snow_draw_engine.h"
 #include "snow_draw_engine_qt/snow_canvas_types.h"
 
-#include <future>
 #include <QByteArray>
 #include <vector>
 
@@ -29,11 +28,13 @@ class RuntimeSession final {
     bool reset();
     bool cloneDocumentSessionFrom(const RuntimeSession& source);
     QByteArray serializeDocumentSession() const;
+    QByteArray serializeSelectedDrawTemplate() const;
     bool restoreDocumentSession(const QByteArray& payload);
     QByteArray serializeDocumentHistory() const;
     bool restoreDocumentHistory(const QByteArray& payload);
     bool restoreDocumentHistoryPreservingEditorStyles(const QByteArray& payload);
     bool clearDocumentPreservingViewports();
+    void clearRenderState();
     bool setQuickSelectionDisabledTools(const QSet<SnowCanvasTool>& tools);
     void destroyAsync(SnowCanvasRuntime& owner);
     void destroyForOwnerDestruction(SnowCanvasRuntime& owner, OwnerDestructionPolicy policy);
@@ -50,13 +51,11 @@ class RuntimeSession final {
   private:
     bool replaceRuntime(ScopedRuntimeHandle replacement);
     void destroyRuntimeAsync();
-    void waitForPendingDestroy();
 
     SnowCanvasRuntimeConfig m_config;
     ScopedRuntimeHandle m_runtime;
     ClientRegistry m_clients;
     snow_canvas_smart_erase::Coordinator m_smartErase;
-    std::future<void> m_pendingDestroy;
 };
 
 } // namespace snow_canvas_runtime

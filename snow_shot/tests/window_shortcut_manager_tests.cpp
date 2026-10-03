@@ -1,10 +1,14 @@
+#include "snow_shot/presentation/windowcloseshortcut.h"
+#include "physical_key_test_support.h"
 #include "snow_shot/presentation/windowshortcutmanager.h"
 #include "snow_shot/shortcuts/shortcutbinding.h"
 #include "snow_shot/shortcuts/shortcutdisplayservice.h"
 
 #include <QApplication>
+#include <QDialog>
 #include <QKeyEvent>
 #include <QLineEdit>
+#include <QMouseEvent>
 #include <QSpinBox>
 #include <QPlainTextEdit>
 #include <QTextBrowser>
@@ -63,6 +67,20 @@ void sharedShortcutDomainCanonicalizesIdentityAndDisplay() {
                 shortcut_domain::canonicalPortableText(QStringLiteral("Shift"), true) ==
                     QStringLiteral("Shift"),
             "modifier-only Shift must remain an explicit per-scope policy");
+    require(shortcut_domain::canonicalPortableText(QStringLiteral("Alt"), true).isEmpty() &&
+                shortcut_domain::canonicalPortableText(QStringLiteral("Alt"), true, true) ==
+                    QStringLiteral("Alt") &&
+                shortcut_domain::effectiveIdentity(
+                    shortcut_domain::bindingFromPortableText(QStringLiteral("Alt"), true, true))
+                        .key == Qt::Key_Alt &&
+                !shortcut_domain::formatShortcutDisplayText(
+                     shortcut_domain::bindingFromPortableText(QStringLiteral("Alt"), true, true))
+                     .isEmpty(),
+            "modifier-only Alt must be accepted and displayed only under an explicit policy");
+    require(shortcut_domain::canonicalPortableText(QStringLiteral("Ctrl")).isEmpty() &&
+                shortcut_domain::canonicalPortableText(QStringLiteral("Ctrl"), false, false,
+                                                       true) == QStringLiteral("Ctrl"),
+            "standalone Ctrl must require an explicit fixed-binding policy");
 
 #ifdef Q_OS_MACOS
     shortcut_domain::ShortcutBinding physical{QStringLiteral("Ctrl+A")};
@@ -113,7 +131,7 @@ void sharedShortcutDomainCanonicalizesIdentityAndDisplay() {
 
 bool sendKey(QObject* receiver, QEvent::Type type, Qt::Key key,
              Qt::KeyboardModifiers modifiers = Qt::NoModifier, bool autoRepeat = false) {
-    QKeyEvent event(type, key, modifiers, QString(), autoRepeat);
+    PhysicalKeyEvent event(type, key, modifiers, QString(), autoRepeat);
     event.setAccepted(false);
     const bool filtered = QCoreApplication::sendEvent(receiver, &event);
     return filtered || event.isAccepted();
@@ -122,8 +140,8 @@ bool sendKey(QObject* receiver, QEvent::Type type, Qt::Key key,
 bool sendNativeKey(QObject* receiver, QEvent::Type type, Qt::Key logicalKey,
                    Qt::KeyboardModifiers modifiers, quint32 nativeVirtualKey,
                    bool autoRepeat = false) {
-    QKeyEvent event(type, logicalKey, modifiers, nativeVirtualKey, nativeVirtualKey, 0, QString(),
-                    autoRepeat);
+    PhysicalKeyEvent event(type, logicalKey, modifiers, nativeVirtualKey, nativeVirtualKey, 0,
+                           QString(), autoRepeat);
     event.setAccepted(false);
     const bool filtered = QCoreApplication::sendEvent(receiver, &event);
     return filtered || event.isAccepted();
@@ -137,6 +155,108 @@ WindowShortcutManager::Binding binding(const QString& id, Qt::Key key, int prior
     result.priority = priority;
     result.activate = [action = std::move(action)](const auto&) { return action(); };
     return result;
+}
+
+class LifetimeObservedWidget : public QWidget {
+  public:
+    using QWidget::QWidget;
+
+    int destructionObserverCount() const {
+        return receivers(SIGNAL(destroyed(QObject*)));
+    }
+};
+
+void removedScopesReleaseTheirLifetimeObservers() {
+    LifetimeObservedWidget window;
+    QWidget child(&window);
+    WindowShortcutManager manager;
+    QObject unrelatedObserver;
+    QObject::connect(&window, &QObject::destroyed, &unrelatedObserver, [] {});
+    const int originalObservers = window.destructionObserverCount();
+    for (int iteration = 0; iteration < 256; ++iteration) {
+        manager.addScopeWindow(&child);
+        require(window.destructionObserverCount() == originalObservers + 1,
+                "an active scope must own exactly one destruction observer");
+        manager.addScopeWindow(&window);
+        require(window.destructionObserverCount() == originalObservers + 1,
+                "adding the same root again must preserve one destruction observer");
+        manager.removeScopeWindow(&child);
+        require(window.destructionObserverCount() == originalObservers,
+                "removing a reusable scope must release its destruction observer");
+    }
+
+    manager.addScopeWindow(&window);
+    int activations = 0;
+    require(manager.addBinding(&window, binding(QStringLiteral("scope-reuse"), Qt::Key_K, 100,
+                                                [&]() {
+                                                    ++activations;
+                                                    return true;
+                                                })) != 0,
+            "binding registration after repeated scope removal failed");
+    require(sendKey(&child, QEvent::KeyPress, Qt::Key_K) && activations == 1,
+            "a reused scope must continue dispatching its shortcuts");
+    sendKey(&child, QEvent::KeyRelease, Qt::Key_K);
+    manager.removeScopeWindow(&window);
+    sendKey(&child, QEvent::KeyPress, Qt::Key_K);
+    require(activations == 1, "a removed scope must stop dispatching its shortcuts");
+    sendKey(&child, QEvent::KeyRelease, Qt::Key_K);
+}
+
+void removedBindingsReleaseTheirLifetimeObservers() {
+    LifetimeObservedWidget owner;
+    WindowShortcutManager manager;
+    QObject unrelatedObserver;
+    int destroyed = 0;
+    QObject::connect(&owner, &QObject::destroyed, &unrelatedObserver,
+                     [&destroyed]() { ++destroyed; });
+    const int originalObservers = owner.destructionObserverCount();
+    for (int iteration = 0; iteration < 256; ++iteration) {
+        const auto handle = manager.addBinding(
+            &owner, binding(QStringLiteral("binding-reuse"), Qt::Key_K, 100, [] { return true; }));
+        require(handle != 0 && owner.destructionObserverCount() == originalObservers + 1,
+                "an active binding must own exactly one destruction observer");
+        require(manager.removeBinding(handle), "registered binding removal failed");
+        require(owner.destructionObserverCount() == originalObservers,
+                "removing a binding must release only its own destruction observer");
+        require(!manager.removeBinding(handle), "a removed binding must not remain registered");
+    }
+
+    auto destroyedOwner = std::make_unique<QObject>();
+    const auto destroyedHandle =
+        manager.addBinding(destroyedOwner.get(), binding(QStringLiteral("destroyed-owner"),
+                                                         Qt::Key_K, 100, [] { return true; }));
+    destroyedOwner.reset();
+    require(!manager.removeBinding(destroyedHandle),
+            "owner destruction must still unregister an active binding");
+    require(destroyed == 0, "unregistering a binding must not destroy its owner");
+}
+
+void managerDestructionRetiresObserversBeforeItsState() {
+    {
+        auto manager = std::make_unique<WindowShortcutManager>();
+        require(manager->addBinding(manager.get(), binding(QStringLiteral("self-owned"), Qt::Key_K,
+                                                           100, [] { return true; })) != 0,
+                "a manager may own its own shortcut binding");
+        manager.reset();
+    }
+
+    auto window = std::make_unique<LifetimeObservedWidget>();
+    auto owner = std::make_unique<QObject>();
+    auto manager = std::make_unique<WindowShortcutManager>();
+    manager->addScopeWindow(window.get());
+    require(manager->addBinding(owner.get(), binding(QStringLiteral("external-owner"), Qt::Key_K,
+                                                     100, [] { return true; })) != 0,
+            "an external binding owner must be registered before manager destruction");
+    QObject observer;
+    int destructionCalls = 0;
+    QObject::connect(manager.get(), &QObject::destroyed, &observer, [&] {
+        ++destructionCalls;
+        window.reset();
+        owner.reset();
+    });
+    manager.reset();
+    require(destructionCalls == 1 && !window && !owner,
+            "manager destruction observers may destroy registered scopes and owners safely");
 }
 
 void priorityAndFallthroughAreDeterministic() {
@@ -198,9 +318,10 @@ void priorityAndFallthroughAreDeterministic() {
 void shiftedTabMatchesBacktabEvents() {
     const auto binding =
         snow_shot::shortcuts::bindingFromPortableText(QStringLiteral("Alt+Shift+Tab"));
-    QKeyEvent press(QEvent::KeyPress, Qt::Key_Backtab, Qt::AltModifier | Qt::ShiftModifier);
-    QKeyEvent release(QEvent::KeyRelease, Qt::Key_Backtab, Qt::AltModifier | Qt::ShiftModifier);
-    QKeyEvent plainTab(QEvent::KeyPress, Qt::Key_Tab, Qt::AltModifier);
+    PhysicalKeyEvent press(QEvent::KeyPress, Qt::Key_Backtab, Qt::AltModifier | Qt::ShiftModifier);
+    PhysicalKeyEvent release(QEvent::KeyRelease, Qt::Key_Backtab,
+                             Qt::AltModifier | Qt::ShiftModifier);
+    PhysicalKeyEvent plainTab(QEvent::KeyPress, Qt::Key_Tab, Qt::AltModifier);
     require(snow_shot::shortcuts::shortcutMatchesEvent(binding, press) &&
                 snow_shot::shortcuts::shortcutReleaseMatchesEvent(binding, release),
             "Shift+Tab bindings must recognize Qt Backtab press and release events");
@@ -519,7 +640,89 @@ void heldModifierParsingAndAdditionalModifiersAreScoped() {
     require(exactCount == 0, "ordinary bare shortcuts must retain exact modifier matching");
 }
 
+void windowCloseShortcutStaysWithinItsOwnSurface() {
+#ifdef Q_OS_MACOS
+    QWidget window;
+    QLineEdit editor(&window);
+    int closes = 0;
+    snow_shot::presentation::installWindowCloseShortcut(&window, [&] { ++closes; });
+    window.show();
+    QDialog dialog(&window);
+    QLineEdit dialogEditor(&dialog);
+    dialog.setWindowModality(Qt::WindowModal);
+    dialog.show();
+    QApplication::processEvents();
+    const auto pressClose = [](QWidget* receiver) {
+        sendNativeKey(receiver, QEvent::KeyPress, Qt::Key_Q, Qt::ControlModifier, 13);
+        sendNativeKey(receiver, QEvent::KeyRelease, Qt::Key_Q, Qt::ControlModifier, 13);
+    };
+    pressClose(&dialogEditor);
+    require(closes == 0, "Cmd+W in an owned modal must not close its parent window");
+    dialog.hide();
+    QWidget tool(&window, Qt::Tool);
+    tool.show();
+    QApplication::processEvents();
+    pressClose(&tool);
+    require(closes == 0, "owned tool windows must not inherit their parent's close shortcut");
+    tool.hide();
+    pressClose(&editor);
+    require(closes == 1, "ordinary child widgets must retain the window's close shortcut");
+
+    // Register the parent last so filter ordering cannot hide an overly broad scope.
+    QWidget secondWindow;
+    QDialog secondDialog(&secondWindow);
+    QLineEdit secondEditor(&secondDialog);
+    int dialogCloses = 0;
+    snow_shot::presentation::installWindowCloseShortcut(&secondDialog, [&] { ++dialogCloses; });
+    snow_shot::presentation::installWindowCloseShortcut(&secondWindow, [&] { ++closes; });
+    secondWindow.show();
+    secondDialog.setModal(true);
+    secondDialog.show();
+    QApplication::processEvents();
+    pressClose(&secondEditor);
+    require(dialogCloses == 1 && closes == 1,
+            "a modal's own close shortcut must win independently of filter installation order");
+#endif
+}
+
 void macPhysicalBindingsSurviveLogicalLayoutChanges() {
+#ifdef Q_OS_MACOS
+    namespace domain = snow_shot::shortcuts;
+    const auto aBinding = domain::bindingFromPortableText(QStringLiteral("Ctrl+A"));
+    QKeyEvent nativeA(QEvent::KeyPress, Qt::Key_unknown, Qt::ControlModifier, 1, 0, 0);
+    require(domain::shortcutMatchesEvent(aBinding, nativeA) &&
+                domain::commandKey(nativeA) == Qt::Key_A,
+            "native code zero must work even when the logical key is unknown");
+    QKeyEvent syntheticA(QEvent::KeyPress, Qt::Key_A, Qt::ControlModifier);
+    require(!domain::shortcutMatchesEvent(aBinding, syntheticA),
+            "synthetic characters without physical identity must not dispatch commands");
+    const domain::ShortcutBinding unsupported{QStringLiteral("Ctrl+F25")};
+    QKeyEvent unsupportedEvent(QEvent::KeyPress, Qt::Key_F25, Qt::ControlModifier, 1, 128, 0);
+    require(!domain::shortcutMatchesEvent(unsupported, unsupportedEvent),
+            "unresolvable keys must not fall back to logical matching");
+    const auto commandC = domain::bindingFromPortableText(QStringLiteral("Ctrl+C"));
+    QKeyEvent controlC(QEvent::KeyPress, Qt::Key_C, Qt::MetaModifier, 1, 8, 0);
+    require(!domain::shortcutMatchesEvent(commandC, controlC),
+            "physical Control must not impersonate Command");
+    QKeyEvent shiftedPunctuation(QEvent::KeyPress, Qt::Key_Q, Qt::ShiftModifier, 1, 24, 0);
+    require(domain::shortcutMatchesEvent(domain::bindingFromPortableText(QStringLiteral("Shift+=")),
+                                         shiftedPunctuation) &&
+                domain::commandKey(shiftedPunctuation) == Qt::Key_Equal,
+            "shifted punctuation must retain its unshifted physical position");
+    QKeyEvent rightShift(QEvent::KeyPress, Qt::Key_unknown, Qt::NoModifier, 1, 60, 0);
+    require(domain::shortcutMatchesEvent(
+                domain::bindingFromPortableText(QStringLiteral("Shift"), true), rightShift),
+            "either physical Shift key must support modifier-only shortcuts");
+    QWidget closeWindow;
+    int closes = 0;
+    snow_shot::presentation::installWindowCloseShortcut(&closeWindow, [&] { ++closes; });
+    snow_shot::presentation::installWindowCloseShortcut(&closeWindow, [&] { closes += 10; });
+    sendNativeKey(&closeWindow, QEvent::KeyPress, Qt::Key_Q, Qt::ControlModifier, 13);
+    sendNativeKey(&closeWindow, QEvent::KeyRelease, Qt::Key_Q, Qt::ControlModifier, 13);
+    sendNativeKey(&closeWindow, QEvent::KeyPress, Qt::Key_W, Qt::ControlModifier, 12);
+    require(closes == 1, "close must use physical W and be installed only once");
+#endif
+
 #ifdef Q_OS_MACOS
     namespace shortcut_domain = snow_shot::shortcuts;
     QWidget window;
@@ -555,13 +758,13 @@ void macPhysicalBindingsSurviveLogicalLayoutChanges() {
 
     const shortcut_domain::ShortcutBinding ordinaryUp =
         shortcut_domain::bindingFromPortableText(QStringLiteral("Up"));
-    QKeyEvent implicitKeypad(QEvent::KeyPress, Qt::Key_Up, Qt::KeypadModifier, 126, 126, 0);
+    PhysicalKeyEvent implicitKeypad(QEvent::KeyPress, Qt::Key_Up, Qt::KeypadModifier, 126, 126, 0);
     require(shortcut_domain::shortcutMatchesEvent(ordinaryUp, implicitKeypad),
             "Cocoa's implicit keypad modifier on navigation keys must be ignored");
 
     shortcut_domain::ShortcutBinding keypadUp{QStringLiteral("Num+Up")};
     keypadUp.physicalKeys.insert(shortcut_domain::ShortcutPlatform::MacOS, 91);
-    QKeyEvent explicitKeypad(QEvent::KeyPress, Qt::Key_Up, Qt::KeypadModifier, 91, 91, 0);
+    PhysicalKeyEvent explicitKeypad(QEvent::KeyPress, Qt::Key_Up, Qt::KeypadModifier, 91, 91, 0);
     require(shortcut_domain::shortcutMatchesEvent(keypadUp, explicitKeypad) &&
                 !shortcut_domain::shortcutMatchesEvent(ordinaryUp, explicitKeypad),
             "explicit keypad navigation must retain its distinct physical identity");
@@ -1135,6 +1338,115 @@ void canceledCloseDoesNotStealAnotherManagersFreshPress() {
     require(closes == 1, "canceled ownership must not steal another window's fresh gesture");
 }
 
+void standaloneModifierTapIgnoresChordsAndInterruptions() {
+    QWidget window;
+    window.show();
+    WindowShortcutManager manager;
+    manager.addScopeWindow(&window);
+    int toggles = 0;
+    int chordActivations = 0;
+    WindowShortcutManager::Binding tap;
+    tap.id = QStringLiteral("guide-tap");
+    tap.shortcutBindings = {
+        snow_shot::shortcuts::bindingFromPortableText(QStringLiteral("Alt"), true, true)};
+    tap.activationTrigger = WindowShortcutManager::Binding::ActivationTrigger::Tap;
+    tap.activate = [&](const auto&) {
+        ++toggles;
+        return true;
+    };
+    require(manager.addBinding(&window, std::move(tap)) != 0, "standalone Alt tap must register");
+    auto chord = binding(QStringLiteral("alt-r"), Qt::Key_R, 100, [&] {
+        ++chordActivations;
+        return true;
+    });
+    chord.keyCombinations = {QKeyCombination(Qt::AltModifier, Qt::Key_R)};
+    require(manager.addBinding(&window, std::move(chord)) != 0, "Alt+R fixture must register");
+
+    sendKey(&window, QEvent::KeyPress, Qt::Key_Alt, Qt::AltModifier);
+    require(toggles == 0, "Alt press must not toggle before release");
+    sendKey(&window, QEvent::KeyPress, Qt::Key_Alt, Qt::AltModifier, true);
+    sendKey(&window, QEvent::KeyRelease, Qt::Key_Alt);
+    require(toggles == 1, "a standalone Alt tap must toggle exactly once");
+
+    sendKey(&window, QEvent::KeyPress, Qt::Key_Alt, Qt::AltModifier);
+    sendKey(&window, QEvent::KeyPress, Qt::Key_R, Qt::AltModifier);
+    sendKey(&window, QEvent::KeyRelease, Qt::Key_R, Qt::AltModifier);
+    sendKey(&window, QEvent::KeyRelease, Qt::Key_Alt);
+    require(toggles == 1 && chordActivations == 1,
+            "Alt+R must activate its chord without toggling guides");
+
+    sendKey(&window, QEvent::KeyPress, Qt::Key_Alt, Qt::AltModifier);
+    QMouseEvent mousePress(QEvent::MouseButtonPress, QPointF(4, 4), QPointF(4, 4), Qt::LeftButton,
+                           Qt::LeftButton, Qt::AltModifier);
+    QCoreApplication::sendEvent(&window, &mousePress);
+    sendKey(&window, QEvent::KeyRelease, Qt::Key_Alt);
+    require(toggles == 1, "Alt plus a mouse action must not count as a tap");
+
+    sendKey(&window, QEvent::KeyPress, Qt::Key_Alt, Qt::AltModifier);
+    const auto suspension = manager.suspendInput();
+    manager.resumeInput(suspension);
+    sendKey(&window, QEvent::KeyRelease, Qt::Key_Alt);
+    require(toggles == 1, "interrupted Alt input must not toggle");
+
+    sendKey(&window, QEvent::KeyPress, Qt::Key_Alt, Qt::AltModifier);
+    QEvent focusLoss(QEvent::WindowDeactivate);
+    QCoreApplication::sendEvent(&window, &focusLoss);
+    sendKey(&window, QEvent::KeyRelease, Qt::Key_Alt);
+    require(toggles == 1, "losing focus while Alt is held must cancel the tap");
+
+    sendKey(&window, QEvent::KeyPress, Qt::Key_Alt, Qt::AltModifier);
+    sendKey(&window, QEvent::KeyRelease, Qt::Key_Alt);
+    require(toggles == 2, "a fresh Alt tap must work after interruption");
+}
+
+void standaloneControlHoldIsOptInAndReleases() {
+    QWidget window;
+    window.show();
+    WindowShortcutManager manager;
+    manager.addScopeWindow(&window);
+    int presses = 0;
+    int releases = 0;
+    int cancellations = 0;
+    int chords = 0;
+    WindowShortcutManager::Binding control;
+    control.id = QStringLiteral("selection-snap");
+    control.keyCombinations = {QKeyCombination(Qt::ControlModifier, Qt::Key_Control)};
+    control.allowModifierOnlyControl = true;
+    control.allowedAdditionalModifiers = Qt::ShiftModifier;
+    control.activate = [&](const auto&) {
+        ++presses;
+        return true;
+    };
+    control.release = [&](const auto&) {
+        ++releases;
+        return true;
+    };
+    control.cancel = [&] { ++cancellations; };
+    require(manager.addBinding(&window, std::move(control)) != 0,
+            "opted-in standalone Ctrl binding must register");
+    auto copy = binding(QStringLiteral("copy"), Qt::Key_C, 100, [&] {
+        ++chords;
+        return true;
+    });
+    copy.keyCombinations = {QKeyCombination(Qt::ControlModifier, Qt::Key_C)};
+    require(manager.addBinding(&window, std::move(copy)) != 0, "Ctrl+C fixture must register");
+
+    sendKey(&window, QEvent::KeyPress, Qt::Key_Control, Qt::ControlModifier);
+    sendKey(&window, QEvent::KeyPress, Qt::Key_C, Qt::ControlModifier);
+    sendKey(&window, QEvent::KeyRelease, Qt::Key_C, Qt::ControlModifier);
+    sendKey(&window, QEvent::KeyRelease, Qt::Key_Control);
+    require(presses == 1 && releases == 1 && chords == 1,
+            "Ctrl hold must coexist with a normal Ctrl command and release once");
+
+    sendKey(&window, QEvent::KeyPress, Qt::Key_Control, Qt::ControlModifier | Qt::ShiftModifier);
+    require(presses == 2, "Shift held before Ctrl must still arm the snap binding");
+    const auto suspension = manager.suspendInput();
+    manager.resumeInput(suspension);
+    sendKey(&window, QEvent::KeyRelease, Qt::Key_Control);
+    require(cancellations == 1 && releases == 1,
+            "interrupted Ctrl holds must cancel without a delayed release action");
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -1142,7 +1454,13 @@ int main(int argc, char** argv) {
         qputenv("QT_QPA_PLATFORM", "offscreen");
     }
     QApplication application(argc, argv);
+    removedScopesReleaseTheirLifetimeObservers();
+    removedBindingsReleaseTheirLifetimeObservers();
+    managerDestructionRetiresObserversBeforeItsState();
+    windowCloseShortcutStaysWithinItsOwnSurface();
     sharedShortcutDomainCanonicalizesIdentityAndDisplay();
+    standaloneModifierTapIgnoresChordsAndInterruptions();
+    standaloneControlHoldIsOptInAndReleases();
     canceledCloseDoesNotStealAnotherManagersFreshPress();
     releaseActivationOwnsTheWholeSequence();
     interruptedReleaseActivationNeverClosesLater();

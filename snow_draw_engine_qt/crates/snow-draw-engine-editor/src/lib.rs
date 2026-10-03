@@ -8,6 +8,7 @@ mod creation_workflow;
 pub use creation_workflow::SerialNumberLabelLayoutRequest;
 mod defaults;
 mod document_ops;
+mod draw_template;
 mod edit_workflow;
 mod eraser_workflow;
 mod free_draw_workflow;
@@ -25,22 +26,24 @@ mod text;
 
 pub use api::{
     ActiveTextDraftPresentation, ActiveTextDraftTarget, ActiveTool, ArrowHandleKind,
-    ArrowHandleState, ArrowStyle, BindingHighlightPresentation, EditorPresentationState,
-    EditorViewState, EditorViewportState, ElementCreationPreview, FILTER_STYLE_PROPERTY_ALL,
+    ArrowHandleState, ArrowStyle, BRUSH_ERASER_STYLE_PROPERTY_STROKE_WIDTH,
+    BindingHighlightPresentation, BrushEraserStyle, EditorPresentationState, EditorViewState,
+    EditorViewportState, ElementCreationPreview, FILTER_STYLE_PROPERTY_ALL,
     FILTER_STYLE_PROPERTY_OPACITY, FILTER_STYLE_PROPERTY_STRENGTH,
     FILTER_STYLE_PROPERTY_STROKE_WIDTH, FILTER_STYLE_PROPERTY_TYPE, FilterStyle, FreeDrawPreview,
     HistoryState, MIN_BINDING_HIGHLIGHT_ZOOM, PenFilterPreview, RectangleShapeStyle,
     SERIAL_NUMBER_STYLE_MIXED_COLOR, SERIAL_NUMBER_STYLE_MIXED_FILL,
     SERIAL_NUMBER_STYLE_MIXED_FILL_STYLE, SERIAL_NUMBER_STYLE_MIXED_FONT_FAMILY,
     SERIAL_NUMBER_STYLE_MIXED_FONT_SIZE, SERIAL_NUMBER_STYLE_MIXED_NUMBER,
-    SERIAL_NUMBER_STYLE_MIXED_OPACITY, SERIAL_NUMBER_STYLE_MIXED_STROKE_STYLE,
-    SERIAL_NUMBER_STYLE_MIXED_STROKE_WIDTH, SERIAL_NUMBER_STYLE_MIXED_TYPE,
-    SHAPE_STYLE_MIXED_ARROW_RATIO, SHAPE_STYLE_MIXED_ARROW_SHAFT_TYPE,
-    SHAPE_STYLE_MIXED_ARROW_TYPE, SHAPE_STYLE_MIXED_CORNER_RADII, SHAPE_STYLE_MIXED_END_ARROWHEAD,
-    SHAPE_STYLE_MIXED_FILL, SHAPE_STYLE_MIXED_FILL_STYLE, SHAPE_STYLE_MIXED_HIGHLIGHT_SHAPE,
-    SHAPE_STYLE_MIXED_OPACITY, SHAPE_STYLE_MIXED_SHAPE, SHAPE_STYLE_MIXED_START_ARROWHEAD,
-    SHAPE_STYLE_MIXED_STROKE, SHAPE_STYLE_MIXED_STROKE_STYLE, SHAPE_STYLE_MIXED_STROKE_WIDTH,
-    SHAPE_STYLE_PROPERTY_ALL, SHAPE_STYLE_PROPERTY_ARROW, SHAPE_STYLE_PROPERTY_ARROW_RATIO,
+    SERIAL_NUMBER_STYLE_MIXED_NUMERIC_TYPE, SERIAL_NUMBER_STYLE_MIXED_OPACITY,
+    SERIAL_NUMBER_STYLE_MIXED_STROKE_STYLE, SERIAL_NUMBER_STYLE_MIXED_STROKE_WIDTH,
+    SERIAL_NUMBER_STYLE_MIXED_TYPE, SHAPE_STYLE_MIXED_ARROW_RATIO,
+    SHAPE_STYLE_MIXED_ARROW_SHAFT_TYPE, SHAPE_STYLE_MIXED_ARROW_TYPE,
+    SHAPE_STYLE_MIXED_CORNER_RADII, SHAPE_STYLE_MIXED_END_ARROWHEAD, SHAPE_STYLE_MIXED_FILL,
+    SHAPE_STYLE_MIXED_FILL_STYLE, SHAPE_STYLE_MIXED_HIGHLIGHT_SHAPE, SHAPE_STYLE_MIXED_OPACITY,
+    SHAPE_STYLE_MIXED_SHAPE, SHAPE_STYLE_MIXED_START_ARROWHEAD, SHAPE_STYLE_MIXED_STROKE,
+    SHAPE_STYLE_MIXED_STROKE_STYLE, SHAPE_STYLE_MIXED_STROKE_WIDTH, SHAPE_STYLE_PROPERTY_ALL,
+    SHAPE_STYLE_PROPERTY_ARROW, SHAPE_STYLE_PROPERTY_ARROW_RATIO,
     SHAPE_STYLE_PROPERTY_ARROW_SHAFT_TYPE, SHAPE_STYLE_PROPERTY_ARROW_TYPE,
     SHAPE_STYLE_PROPERTY_CORNER_RADII, SHAPE_STYLE_PROPERTY_END_ARROWHEAD,
     SHAPE_STYLE_PROPERTY_FILL, SHAPE_STYLE_PROPERTY_FILL_STYLE, SHAPE_STYLE_PROPERTY_FREE_DRAW,
@@ -49,13 +52,15 @@ pub use api::{
     SHAPE_STYLE_PROPERTY_START_ARROWHEAD, SHAPE_STYLE_PROPERTY_STROKE,
     SHAPE_STYLE_PROPERTY_STROKE_STYLE, SHAPE_STYLE_PROPERTY_STROKE_WIDTH, SelectionArrowState,
     SelectionBounds, SelectionRectState, SerialNumberToolbarState, ShapeKind, ShapeStyle,
-    ShapeStylePatch, StyleToolbarSource, StyleToolbarState, TEXT_STYLE_MIXED_COLOR,
-    TEXT_STYLE_MIXED_CORNER_RADII, TEXT_STYLE_MIXED_FILL, TEXT_STYLE_MIXED_FILL_STYLE,
-    TEXT_STYLE_MIXED_FONT_FAMILY, TEXT_STYLE_MIXED_FONT_SIZE, TEXT_STYLE_MIXED_HORIZONTAL_ALIGN,
-    TEXT_STYLE_MIXED_OPACITY, TEXT_STYLE_MIXED_STROKE, TEXT_STYLE_MIXED_STROKE_WIDTH,
-    TEXT_STYLE_MIXED_VERTICAL_ALIGN, selection_box_visible_for_members,
+    ShapeStylePatch, SnapGuideTargets, StyleToolbarSource, StyleToolbarState,
+    TEXT_STYLE_ALL_PROPERTIES, TEXT_STYLE_MIXED_COLOR, TEXT_STYLE_MIXED_CORNER_RADII,
+    TEXT_STYLE_MIXED_FILL, TEXT_STYLE_MIXED_FILL_STYLE, TEXT_STYLE_MIXED_FONT_FAMILY,
+    TEXT_STYLE_MIXED_FONT_SIZE, TEXT_STYLE_MIXED_HORIZONTAL_ALIGN, TEXT_STYLE_MIXED_OPACITY,
+    TEXT_STYLE_MIXED_STROKE, TEXT_STYLE_MIXED_STROKE_WIDTH, TEXT_STYLE_MIXED_VERTICAL_ALIGN,
+    selection_box_visible_for_members,
 };
 pub use defaults::{EditorStyleDefaults, editor_style_defaults};
+pub use draw_template::DrawTemplate;
 pub use session::{
     EditorSession, EditorSessionSnapshot, PersistedEditorSession, validate_editor_style_defaults,
 };
@@ -71,8 +76,8 @@ pub(crate) use geometry::*;
 use snow_draw_engine_core::{
     Camera, DrawRect, EngineConfig, ErrorCode, GRID_SNAP_SERVICE, GridConfig, OBJECT_SNAP_SERVICE,
     ObjectSnapRectRequest, ObjectSnapResult, Point, SnapAxisAnchor, SnapConfig, SnapGuide,
-    SnappingMode, SurfaceSize, ZoomFocus, normalize_rotation, resolve_effective_snapping_mode,
-    validate_camera, validate_config, view_to_canvas,
+    SnapGuideAxis, SnappingMode, SurfaceSize, ZoomFocus, normalize_rotation,
+    resolve_effective_snapping_mode, validate_camera, validate_config, view_to_canvas,
 };
 use snow_draw_engine_document::{
     ArrowData, DEFAULT_ARROW_MAX_COORDINATE, ElementId, ElementKind, PenFilterData, RectangleData,
@@ -498,14 +503,16 @@ mod tests {
         );
         assert!(ObjectSnapActor::selection(&document, &[rect_state], &[]).participates());
 
-        let editor = Editor::new(EngineConfig::default()).unwrap();
+        let mut config = EngineConfig::default();
+        config.snap.enabled = true;
+        let mut editor = Editor::new(config).unwrap();
         assert!(
             editor
                 .object_snap_plan(
                     &document,
                     ObjectSnapActor::Creation(ActiveTool::RectangleFilter),
                     &[],
-                    SnappingMode::Object,
+                    Modifiers::default(),
                 )
                 .is_none()
         );
@@ -515,7 +522,7 @@ mod tests {
                     &document,
                     ObjectSnapActor::Creation(ActiveTool::PenFilter),
                     &[],
-                    SnappingMode::Object,
+                    Modifiers::default(),
                 )
                 .is_none()
         );
@@ -525,7 +532,7 @@ mod tests {
                     &document,
                     ObjectSnapActor::selection(&document, &[filter_state], &[]),
                     &[],
-                    SnappingMode::Object,
+                    Modifiers::default(),
                 )
                 .is_none()
         );
@@ -535,7 +542,7 @@ mod tests {
                 &document,
                 ObjectSnapActor::Creation(ActiveTool::Shape),
                 &[],
-                SnappingMode::Object,
+                Modifiers::default(),
             )
             .expect("layout creation should object-snap");
         assert_eq!(plan.references.len(), 1);
@@ -545,28 +552,30 @@ mod tests {
                 &document,
                 ObjectSnapActor::selection(&document, &[rect_state], &[]),
                 &[rect_id],
-                SnappingMode::Object,
+                Modifiers::default(),
             )
             .expect("layout selection should object-snap");
         assert!(plan.references.is_empty());
 
+        editor.config.grid.enabled = true;
         assert!(
             editor
                 .object_snap_plan(
                     &document,
                     ObjectSnapActor::Creation(ActiveTool::Shape),
                     &[],
-                    SnappingMode::Grid,
+                    Modifiers::default(),
                 )
                 .is_none()
         );
+        editor.config.grid.enabled = false;
         assert!(
             editor
                 .object_snap_plan(
                     &document,
                     ObjectSnapActor::selection(&document, &[filter_state, rect_state], &[]),
                     &[],
-                    SnappingMode::Object,
+                    Modifiers::default(),
                 )
                 .is_some()
         );

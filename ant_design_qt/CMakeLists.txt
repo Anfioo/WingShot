@@ -26,6 +26,7 @@ file(GLOB ADQT_ICON_CORE_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/packages/adqt_icon_core/src/*.h"
 )
 add_library(adqt_icon_core STATIC ${ADQT_ICON_CORE_SOURCES})
+snow_apply_release_options(adqt_icon_core)
 add_library(adqt::icon_core ALIAS adqt_icon_core)
 target_include_directories(adqt_icon_core SYSTEM PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/packages/adqt_icon_core/src"
@@ -36,6 +37,18 @@ file(GLOB_RECURSE ADQT_ICONS_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/packages/ant_design_icons_qt/src/*.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/packages/ant_design_icons_qt/src/*.h"
 )
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/AdQtIconSubset.cmake")
+if(ADQT_ICON_USAGE_ROOTS)
+    if(ADQT_BUILD_TESTS OR ADQT_BUILD_BENCHMARKS)
+        message(FATAL_ERROR "AdQt icon subsets are for application-only builds; tests need the full pack")
+    endif()
+    adqt_generate_icon_subset(_adqt_icon_subset_source NAME antd_icons
+        USAGE_ROOTS ${ADQT_ICON_USAGE_ROOTS}
+            "${CMAKE_CURRENT_SOURCE_DIR}/packages/ant_design_qt/src")
+    list(REMOVE_ITEM ADQT_ICONS_SOURCES
+        "${CMAKE_CURRENT_SOURCE_DIR}/packages/ant_design_icons_qt/src/antd_icons.cpp")
+    list(APPEND ADQT_ICONS_SOURCES "${_adqt_icon_subset_source}")
+endif()
 # The checked-in icon registry is validated by its generator and is too large
 # for useful source-level linting. It remains subject to strict compilation.
 set_source_files_properties(
@@ -45,6 +58,11 @@ set_source_files_properties(
         SKIP_UNITY_BUILD_INCLUSION ON
 )
 add_library(ant_design_icons_qt STATIC ${ADQT_ICONS_SOURCES})
+if(SNOW_APPS_ENABLE_RELEASE_SIZE_OPTIMIZATION)
+    snow_apply_release_options(ant_design_icons_qt POLICY size)
+else()
+    snow_apply_release_options(ant_design_icons_qt)
+endif()
 add_library(adqt::icons ALIAS ant_design_icons_qt)
 target_include_directories(ant_design_icons_qt SYSTEM PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/packages/ant_design_icons_qt/src"
@@ -55,11 +73,37 @@ file(GLOB_RECURSE ADQT_WIDGET_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/packages/ant_design_qt/src/*.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/packages/ant_design_qt/src/*.h"
 )
+# Window DPI support needs only Qt. Keep it usable by passive auxiliary windows without
+# pulling in icon rendering and image codecs, while the widget library shares its implementation.
+set(ADQT_WINDOW_DPI_SOURCES
+    "${CMAKE_CURRENT_SOURCE_DIR}/packages/ant_design_qt/src/widgets/control_scale.h"
+    "${CMAKE_CURRENT_SOURCE_DIR}/packages/ant_design_qt/src/widgets/control_scale.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/packages/ant_design_qt/src/widgets/dpi_stable_window_controller.h"
+    "${CMAKE_CURRENT_SOURCE_DIR}/packages/ant_design_qt/src/widgets/dpi_stable_window_controller.cpp")
+list(REMOVE_ITEM ADQT_WIDGET_SOURCES ${ADQT_WINDOW_DPI_SOURCES})
+add_library(ant_design_qt_dpi_window STATIC ${ADQT_WINDOW_DPI_SOURCES})
+add_library(adqt::dpi_window ALIAS ant_design_qt_dpi_window)
+snow_apply_release_options(ant_design_qt_dpi_window)
+target_include_directories(ant_design_qt_dpi_window SYSTEM PUBLIC
+    "${CMAKE_CURRENT_SOURCE_DIR}/packages/ant_design_qt/src")
+target_link_libraries(ant_design_qt_dpi_window PUBLIC Qt6::Widgets)
+if(WIN32)
+    target_link_libraries(ant_design_qt_dpi_window PRIVATE comctl32 user32)
+    target_compile_definitions(ant_design_qt_dpi_window PRIVATE NOMINMAX)
+endif()
+if(MSVC)
+    target_compile_options(ant_design_qt_dpi_window PRIVATE /utf-8)
+endif()
+
 add_library(ant_design_qt STATIC ${ADQT_WIDGET_SOURCES})
+snow_apply_release_options(ant_design_qt)
+# Keep the modal-blocking query behind a private adapter so native input and
+# popup hover use Qt's complete modal stack on every platform. Consumers finalize
+# executables in sibling directories, so this static library's private link
+# dependency must remain visible there as well.
+find_package(Qt6 REQUIRED COMPONENTS GuiPrivate GLOBAL)
+target_link_libraries(ant_design_qt PRIVATE Qt6::GuiPrivate)
 if(APPLE)
-    # Consumers finalize Qt executables in sibling directories, so this static
-    # library's private link dependency must remain visible there as well.
-    find_package(Qt6 REQUIRED COMPONENTS GuiPrivate GLOBAL)
     # This repair uses QAccessibleCache's private destruction slot. Do not
     # silently disable it on upgrades: review the upstream fix and run the
     # accessibility regression before changing the validated version here.
@@ -76,13 +120,13 @@ if(APPLE)
         packages/ant_design_qt/src/widgets/detail/window_surface_mac.mm
         packages/ant_design_qt/src/widgets/detail/top_level_popup_window_mac.mm)
     # QPlatformMenu keeps Cocoa's modal ownership and mouse-release cleanup in Qt.
-    target_link_libraries(ant_design_qt PRIVATE Qt6::GuiPrivate "-framework AppKit")
+    target_link_libraries(ant_design_qt PRIVATE "-framework AppKit")
 endif()
 add_library(adqt::widgets ALIAS ant_design_qt)
 target_include_directories(ant_design_qt SYSTEM PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/packages/ant_design_qt/src"
 )
-target_link_libraries(ant_design_qt PUBLIC adqt::icon_core adqt::icons
+target_link_libraries(ant_design_qt PUBLIC adqt::dpi_window adqt::icon_core adqt::icons
     Qt6::Widgets Qt6::Svg Qt6::Network snow_image::snow_image_static)
 target_precompile_headers(ant_design_qt PRIVATE
     <algorithm>
@@ -109,6 +153,7 @@ qt_add_translations(
     ant_design_qt
     TS_FILES ${ADQT_TS_FILES}
     SOURCE_TARGETS ant_design_qt
+    SOURCES examples/theme-demo/progress_docs_page.cpp examples/theme-demo/progress_docs_page.h
     RESOURCE_PREFIX "/ant_design_qt/i18n"
     LUPDATE_TARGET ant_design_qt_update_translations
     LUPDATE_OPTIONS -no-obsolete
@@ -145,6 +190,31 @@ if(ADQT_BUILD_TESTS)
     # Test binaries must report failures as stderr output plus a non-zero
     # exit code instead of blocking on modal dialogs.
     snow_link_test_cli_guard(qt)
+    set(_adqt_subset_test_roots "${CMAKE_CURRENT_SOURCE_DIR}/packages/ant_design_qt/src")
+    foreach(_adqt_subset_consumer IN ITEMS snow_shot snow_draw_engine_qt)
+        foreach(_adqt_subset_tree IN ITEMS src include)
+            if(IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../${_adqt_subset_consumer}/${_adqt_subset_tree}")
+                list(APPEND _adqt_subset_test_roots
+                    "${CMAKE_CURRENT_SOURCE_DIR}/../${_adqt_subset_consumer}/${_adqt_subset_tree}")
+            endif()
+        endforeach()
+    endforeach()
+    adqt_generate_icon_subset(_adqt_subset_test_source NAME antd_subset_icons
+        NAMESPACE adqt::icons::subset_test USAGE_ROOTS ${_adqt_subset_test_roots})
+    add_executable(adqt-icon-subset-tests tests/icon_subset_tests.cpp "${_adqt_subset_test_source}")
+    target_include_directories(adqt-icon-subset-tests PRIVATE
+        "${CMAKE_CURRENT_BINARY_DIR}/generated/antd_subset_icons")
+    target_link_libraries(adqt-icon-subset-tests PRIVATE adqt::icons Qt6::Widgets)
+    if(MSVC)
+        target_compile_options(adqt-icon-subset-tests PRIVATE /utf-8)
+    endif()
+    if(TARGET Qt6::QOffscreenIntegrationPlugin)
+        qt_import_plugins(adqt-icon-subset-tests INCLUDE Qt6::QOffscreenIntegrationPlugin)
+    endif()
+    add_test(NAME adqt-icon-subset-tests COMMAND adqt-icon-subset-tests)
+    set_tests_properties(adqt-icon-subset-tests PROPERTIES
+        LABELS "unit" ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_executable(adqt-checkerboard-tests
         packages/ant_design_qt/tests/checkerboard_tests.cpp)
     target_link_libraries(adqt-checkerboard-tests PRIVATE adqt::widgets Qt6::Widgets)
@@ -167,7 +237,21 @@ if(ADQT_BUILD_TESTS)
         LABELS "unit"
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
         TIMEOUT 30)
+    add_executable(adqt-context-menu-lifecycle-tests
+        packages/ant_design_qt/tests/context_menu_lifecycle_tests.cpp)
+    target_link_libraries(adqt-context-menu-lifecycle-tests PRIVATE adqt::widgets Qt6::Widgets)
+    if(TARGET Qt6::QOffscreenIntegrationPlugin)
+        qt_import_plugins(adqt-context-menu-lifecycle-tests INCLUDE Qt6::QOffscreenIntegrationPlugin)
+    endif()
+    add_test(NAME adqt-context-menu-lifecycle-tests COMMAND adqt-context-menu-lifecycle-tests)
+    set_tests_properties(adqt-context-menu-lifecycle-tests PROPERTIES
+        LABELS "unit" ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 30)
     if(APPLE)
+        # This lifecycle check creates native menu items without displaying a popup.
+        add_test(NAME adqt-context-menu-lifecycle-native-tests
+            COMMAND adqt-context-menu-lifecycle-tests)
+        set_tests_properties(adqt-context-menu-lifecycle-native-tests PROPERTIES
+            LABELS "unit" ENVIRONMENT "QT_QPA_PLATFORM=cocoa" TIMEOUT 30)
         add_executable(adqt-popup-stacking-native-tests tests/popup_stacking_native_tests.mm)
         target_link_libraries(adqt-popup-stacking-native-tests PRIVATE
             adqt::widgets Qt6::Widgets "-framework AppKit")
@@ -272,22 +356,65 @@ if(ADQT_BUILD_TESTS)
     add_executable(adqt-select-tests packages/ant_design_qt/tests/select_tests.cpp)
     set_target_properties(adqt-select-tests PROPERTIES AUTOMOC ON)
     target_link_libraries(adqt-select-tests PRIVATE adqt::widgets Qt6::Test)
-    if(TARGET Qt6::QOffscreenIntegrationPlugin)
+    get_target_property(_adqt_offscreen_qt_core_type Qt6::Core TYPE)
+    if(_adqt_offscreen_qt_core_type STREQUAL "STATIC_LIBRARY" AND TARGET Qt6::QOffscreenIntegrationPlugin)
         target_link_libraries(adqt-select-tests PRIVATE Qt6::QOffscreenIntegrationPlugin)
         qt_import_plugins(adqt-select-tests INCLUDE Qt6::QOffscreenIntegrationPlugin)
     endif()
     add_test(NAME adqt-select-tests COMMAND adqt-select-tests)
+    add_test(NAME adqt-select-compact-height-tests
+        COMMAND adqt-select-tests compactControlHeightTokenSurvivesSelectionThemeAndStyleRefresh
+            controlHeightTokenSurvivesVisualRefreshAndScaling
+            controlScaleAppliesToContentAndSurvivesStyleRefresh)
+    add_test(NAME adqt-select-toolbar-input-tests
+        COMMAND adqt-select-tests selectorShellClickConsumesPressAndIgnoresHiddenClearGeometry
+            popupCanBeDestroyedBeforeItsSelectDuringHostTeardown)
+    set_tests_properties(adqt-select-compact-height-tests PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    set_tests_properties(adqt-select-toolbar-input-tests PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     set_tests_properties(adqt-select-tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
     add_executable(adqt-spin-tests packages/ant_design_qt/tests/tst_spin.cpp)
     set_target_properties(adqt-spin-tests PROPERTIES AUTOMOC ON)
     target_link_libraries(adqt-spin-tests PRIVATE adqt::widgets Qt6::Test)
-    if(TARGET Qt6::QOffscreenIntegrationPlugin)
+    if(_adqt_offscreen_qt_core_type STREQUAL "STATIC_LIBRARY" AND TARGET Qt6::QOffscreenIntegrationPlugin)
         target_link_libraries(adqt-spin-tests PRIVATE Qt6::QOffscreenIntegrationPlugin)
         qt_import_plugins(adqt-spin-tests INCLUDE Qt6::QOffscreenIntegrationPlugin)
     endif()
     add_test(NAME adqt-spin-tests COMMAND adqt-spin-tests)
     set_tests_properties(adqt-spin-tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+    add_executable(adqt-progress-tests packages/ant_design_qt/tests/progress_tests.cpp)
+    target_link_libraries(adqt-progress-tests PRIVATE adqt::widgets Qt6::Widgets)
+    if(TARGET Qt6::QOffscreenIntegrationPlugin)
+        qt_import_plugins(adqt-progress-tests INCLUDE Qt6::QOffscreenIntegrationPlugin)
+    endif()
+    add_test(NAME adqt-progress-tests COMMAND adqt-progress-tests)
+    set_tests_properties(adqt-progress-tests PROPERTIES
+        LABELS "unit" ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 30)
+
+    add_executable(adqt-progress-demo-tests tests/progress_demo_tests.cpp
+        examples/theme-demo/progress_docs_page.cpp examples/theme-demo/progress_docs_page.h)
+    target_include_directories(adqt-progress-demo-tests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/examples/theme-demo")
+    target_link_libraries(adqt-progress-demo-tests PRIVATE adqt::widgets Qt6::Widgets)
+    if(TARGET Qt6::QOffscreenIntegrationPlugin)
+        qt_import_plugins(adqt-progress-demo-tests INCLUDE Qt6::QOffscreenIntegrationPlugin)
+    endif()
+    add_test(NAME adqt-progress-demo-tests COMMAND adqt-progress-demo-tests)
+    set_tests_properties(adqt-progress-demo-tests PROPERTIES
+        LABELS "unit" ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 30)
+
+    add_executable(adqt-message-clipping-tests packages/ant_design_qt/tests/message_clipping_tests.cpp)
+    set_target_properties(adqt-message-clipping-tests PROPERTIES AUTOMOC ON)
+    target_link_libraries(adqt-message-clipping-tests PRIVATE adqt::widgets Qt6::Test)
+    if(TARGET Qt6::QOffscreenIntegrationPlugin)
+        qt_import_plugins(adqt-message-clipping-tests INCLUDE Qt6::QOffscreenIntegrationPlugin)
+    endif()
+    add_test(NAME adqt-message-clipping-tests COMMAND adqt-message-clipping-tests)
+    set_tests_properties(adqt-message-clipping-tests PROPERTIES
+        LABELS "unit" ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 60)
 
     add_executable(adqt-pagination-tests packages/ant_design_qt/tests/tst_pagination.cpp)
     set_target_properties(adqt-pagination-tests PROPERTIES AUTOMOC ON)
@@ -329,6 +456,23 @@ if(ADQT_BUILD_TESTS)
     else()
         set_tests_properties(adqt-modal-window-tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     endif()
+
+    if(APPLE)
+        add_test(NAME adqt-modal-window-native-tests
+            COMMAND adqt-modal-window-tests -platform cocoa)
+        set_tests_properties(adqt-modal-window-native-tests PROPERTIES
+            LABELS "interactive;macos" RUN_SERIAL TRUE TIMEOUT 60)
+    endif()
+
+    add_executable(adqt-modal-popup-interaction-tests
+        packages/ant_design_qt/tests/modal_popup_interaction_tests.cpp)
+    target_link_libraries(adqt-modal-popup-interaction-tests PRIVATE adqt::widgets Qt6::Test)
+    if(TARGET Qt6::QOffscreenIntegrationPlugin)
+        qt_import_plugins(adqt-modal-popup-interaction-tests INCLUDE Qt6::QOffscreenIntegrationPlugin)
+    endif()
+    add_test(NAME adqt-modal-popup-interaction-tests
+        COMMAND adqt-modal-popup-interaction-tests -platform offscreen)
+    set_tests_properties(adqt-modal-popup-interaction-tests PROPERTIES LABELS "unit" TIMEOUT 30)
 
     add_executable(adqt-segmented-tests packages/ant_design_qt/tests/tst_segmented.cpp)
     set_target_properties(adqt-segmented-tests PROPERTIES AUTOMOC ON)
@@ -381,6 +525,7 @@ if(ADQT_BUILD_TESTS)
     add_test(NAME adqt-tooltip-hover-lifecycle-tests
         COMMAND adqt-qt-tool-popup-tests unrelatedLeaveDoesNotDismissTooltip
                 popupOptionTooltipsRemainVisible warmTooltipSurvivesGroupPopoverOpening
+                hoveringFromTooltipToAdjacentPopoverOpensPopover
                 pendingTooltipSurvivesGroupRouteRegistration -platform offscreen)
     set_tests_properties(adqt-tooltip-hover-lifecycle-tests PROPERTIES LABELS "unit")
     add_test(NAME adqt-popup-hover-recovery-tests
@@ -393,10 +538,22 @@ if(ADQT_BUILD_TESTS)
                 directContentRemainsCompatibleWithFactoryApi
                 colorPickerPrewarmCanBeDisabled -platform offscreen)
     set_tests_properties(adqt-popover-content-lifecycle-tests PROPERTIES LABELS "unit")
+    foreach(_adqt_audio_ui_test IN ITEMS slider-meter popover-surface-guard)
+        string(REPLACE "-" "_" _adqt_audio_ui_source "${_adqt_audio_ui_test}")
+        add_executable(adqt-${_adqt_audio_ui_test}-tests tests/${_adqt_audio_ui_source}_tests.cpp)
+        target_link_libraries(adqt-${_adqt_audio_ui_test}-tests PRIVATE adqt::widgets Qt6::Test)
+        if(TARGET Qt6::QOffscreenIntegrationPlugin AND adqt_qt_core_type STREQUAL "STATIC_LIBRARY")
+            target_link_libraries(adqt-${_adqt_audio_ui_test}-tests PRIVATE Qt6::QOffscreenIntegrationPlugin)
+            qt_import_plugins(adqt-${_adqt_audio_ui_test}-tests INCLUDE Qt6::QOffscreenIntegrationPlugin)
+        endif()
+        add_test(NAME adqt-${_adqt_audio_ui_test}-tests COMMAND adqt-${_adqt_audio_ui_test}-tests)
+        set_tests_properties(adqt-${_adqt_audio_ui_test}-tests PROPERTIES
+            LABELS "unit" ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    endforeach()
     add_executable(adqt-popup-hover-geometry-tests tests/popup_hover_geometry_tests.cpp)
     add_executable(adqt-pointer-hover-tests tests/pointer_hover_tests.cpp)
     target_link_libraries(adqt-pointer-hover-tests PRIVATE adqt::widgets Qt6::Test)
-    if(TARGET Qt6::QOffscreenIntegrationPlugin)
+    if(TARGET Qt6::QOffscreenIntegrationPlugin AND adqt_qt_core_type STREQUAL "STATIC_LIBRARY")
         target_link_libraries(adqt-pointer-hover-tests PRIVATE Qt6::QOffscreenIntegrationPlugin)
         qt_import_plugins(adqt-pointer-hover-tests INCLUDE Qt6::QOffscreenIntegrationPlugin)
     endif()
@@ -408,6 +565,9 @@ if(ADQT_BUILD_TESTS)
         qt_import_plugins(adqt-popup-hover-geometry-tests INCLUDE Qt6::QOffscreenIntegrationPlugin)
     endif()
     add_test(NAME adqt-popup-hover-geometry-tests COMMAND adqt-popup-hover-geometry-tests)
+    add_test(NAME adqt-popup-relayout-tests COMMAND adqt-qt-tool-popup-tests
+        stationaryPopoverStopsRelayout visiblePopoverRelayoutDoesNotRaise -platform offscreen)
+    set_tests_properties(adqt-popup-relayout-tests PROPERTIES LABELS "unit")
     set_tests_properties(adqt-popup-hover-geometry-tests PROPERTIES LABELS "unit")
     add_test(NAME adqt-qt-tool-popup-tests COMMAND adqt-qt-tool-popup-tests)
     if(WIN32)
@@ -442,6 +602,17 @@ if(ADQT_BUILD_TESTS)
     set_tests_properties(adqt-locale-manager-tests PROPERTIES
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
+    add_executable(adqt-background-opacity-tests
+        tests/background_opacity_tests.cpp tests/auxiliary_background_opacity_tests.cpp
+        tests/date_picker_background_opacity_tests.cpp)
+    target_link_libraries(adqt-background-opacity-tests PRIVATE adqt::widgets Qt6::Widgets)
+    if(TARGET Qt6::QOffscreenIntegrationPlugin)
+        qt_import_plugins(adqt-background-opacity-tests INCLUDE Qt6::QOffscreenIntegrationPlugin)
+    endif()
+    add_test(NAME adqt-background-opacity-tests COMMAND adqt-background-opacity-tests)
+    set_tests_properties(adqt-background-opacity-tests PROPERTIES
+        LABELS "unit" ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
     add_executable(adqt-theme-typography-tests
         packages/ant_design_qt/tests/theme_typography_tests.cpp)
     target_link_libraries(adqt-theme-typography-tests PRIVATE adqt::widgets Qt6::Widgets)
@@ -453,7 +624,28 @@ if(ADQT_BUILD_TESTS)
     set_tests_properties(adqt-theme-typography-tests PROPERTIES
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
+    add_executable(adqt-registration-lifecycle-tests
+        packages/ant_design_qt/tests/registration_lifecycle_tests.cpp)
+    target_link_libraries(adqt-registration-lifecycle-tests PRIVATE adqt::widgets Qt6::Widgets)
+    if(TARGET Qt6::QOffscreenIntegrationPlugin)
+        qt_import_plugins(adqt-registration-lifecycle-tests INCLUDE Qt6::QOffscreenIntegrationPlugin)
+    endif()
+    add_test(NAME adqt-registration-lifecycle-tests COMMAND adqt-registration-lifecycle-tests)
+    set_tests_properties(adqt-registration-lifecycle-tests PROPERTIES
+        LABELS "unit" ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
     if(APPLE)
+        add_executable(adqt-widget-surface-lifecycle-tests
+            packages/ant_design_qt/tests/widget_surface_lifecycle_tests.mm)
+        target_link_libraries(adqt-widget-surface-lifecycle-tests PRIVATE adqt::widgets
+            Qt6::Widgets "-framework AppKit")
+        add_test(NAME adqt-widget-surface-lifecycle-tests
+            COMMAND adqt-widget-surface-lifecycle-tests -platform offscreen)
+        add_test(NAME adqt-widget-surface-lifecycle-native-tests
+            COMMAND adqt-widget-surface-lifecycle-tests -platform cocoa)
+        set_tests_properties(adqt-widget-surface-lifecycle-tests PROPERTIES LABELS "unit;macos")
+        set_tests_properties(adqt-widget-surface-lifecycle-native-tests PROPERTIES
+            LABELS "unit;macos" RUN_SERIAL TRUE)
         add_executable(adqt-widget-accessibility-repair-tests
             packages/ant_design_qt/tests/widget_accessibility_repair_tests.mm)
         target_link_libraries(adqt-widget-accessibility-repair-tests PRIVATE adqt::widgets Qt6::Widgets)
@@ -474,6 +666,14 @@ if(ADQT_BUILD_TESTS)
 endif()
 
 if(ADQT_BUILD_BENCHMARKS)
+    add_executable(adqt-progress-benchmark tests/progress_performance_benchmark.cpp)
+    target_link_libraries(adqt-progress-benchmark PRIVATE adqt::widgets Qt6::Widgets)
+    if(TARGET Qt6::QOffscreenIntegrationPlugin)
+        qt_import_plugins(adqt-progress-benchmark INCLUDE Qt6::QOffscreenIntegrationPlugin)
+    endif()
+    add_test(NAME adqt-progress-benchmark COMMAND adqt-progress-benchmark)
+    set_tests_properties(adqt-progress-benchmark PROPERTIES
+        LABELS "benchmark" ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 60)
     add_executable(adqt-date-picker-perf tools/date-picker-perf/main.cpp)
     target_link_libraries(adqt-date-picker-perf PRIVATE adqt::widgets Qt6::Widgets)
 endif()

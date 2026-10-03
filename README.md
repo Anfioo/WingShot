@@ -4,10 +4,49 @@ Snow Apps repository, providing source code for Snow Shot and Snow Image Viewer.
 
 <div style="font-size: 128px">🏗️🚧🦺</div>
 
-## Building on macOS
+## Install Snow Shot on Windows
 
-See [the Snow Shot macOS build guide](docs-macos-build.md) for prerequisites,
-Apple Silicon and Intel presets, shell scripts, targeted tests, and DMG packaging.
+Download the installer from [Snow Shot releases](https://github.com/mg-chao/snow-apps/releases).
+Install the offline Windows x64 package from the WinGet community repository with:
+
+```powershell
+winget install --exact --id mg-chao.snow-shot --source winget
+```
+
+This package includes published beta versions and the default OCR resources. See
+[WinGet release support](docs/snow-shot-releases.md#winget) for upgrades, removal,
+and maintainer setup.
+
+Once [Snow Shot's submission](https://github.com/ScoopInstaller/Extras/issues/18870)
+is accepted into Scoop's official
+[Extras bucket](https://github.com/ScoopInstaller/Extras), install the portable
+Windows x64 package with [Scoop](https://scoop.sh):
+
+```powershell
+scoop bucket add extras
+scoop install extras/snowshot
+```
+
+The Scoop package follows stable releases and includes the default OCR resources.
+Quit Snow Shot before running `scoop update snowshot`; use Scoop rather than the
+app's built-in updater. Settings and history persist across upgrades and ordinary
+uninstall. See [Scoop release support](docs/snow-shot-releases.md#scoop) for removal,
+data locations, and maintainer setup.
+
+## Install Snow Shot on macOS
+
+Apple Silicon Macs running macOS 15 or later can install the stable release with:
+
+```sh
+brew update
+brew install --cask mg-chao/tap/snow-shot
+brew upgrade --cask snow-shot
+brew uninstall --cask snow-shot
+```
+
+Installation reuses Snow Shot's local signing identity and may request Keychain
+access and macOS privacy permissions. See [Homebrew installation and migration](docs-macos-build.md#homebrew-installation)
+for existing installations, custom app directories, and recovery.
 
 ## Open Source Licenses
 

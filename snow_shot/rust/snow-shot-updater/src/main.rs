@@ -78,7 +78,7 @@ fn run() -> Result<i32> {
             transaction::validate_root(&root)?;
             Ok(
                 if snow_shot_updater::platform::launch_on_interactive_desktop(
-                    &root.join("bin/WingShot.exe"),
+                    &root.join(snow_shot_updater::edition::APP_PATH),
                 )? {
                     0
                 } else {
@@ -98,7 +98,8 @@ fn run() -> Result<i32> {
                 snow_shot_updater::service::ServiceOptions {
                     root,
                     cache_directory: path_option(&args, "--cache")?,
-                    base_url: option(&args, "--base-url")?,
+                    github_api_url: option(&args, "--github-api-url")?,
+                    gitee_api_url: option(&args, "--gitee-api-url")?,
                     allow_local_http: args.iter().any(|argument| argument == "--allow-local-http"),
                     parent_pid: option(&args, "--parent")?.parse().map_err(|_| {
                         UpdateError::new(

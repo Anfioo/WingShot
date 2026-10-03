@@ -1,4 +1,8 @@
 #include "snow_shot/presentation/screenrecordingshortcutcontroller.h"
+#include "recordingaudiogainpopover.h"
+#include "widgets/popover.h"
+
+#include <QKeyEvent>
 
 #include "snow_shot/presentation/screenrecordingareawindow.h"
 #include "snow_shot/presentation/screenrecordingtoolbarwindow.h"
@@ -21,7 +25,9 @@ ScreenRecordingShortcutController::ScreenRecordingShortcutController(
         ShortcutManager::Binding binding;
         binding.id = QStringLiteral("recording.drawing.") + tool.key();
         binding.priority = ShortcutManager::StandardPriority::DrawingShortcut;
-        binding.canActivate = [this](const auto& context) { return canActivate(context); };
+        binding.canActivate = [this](const auto& context) {
+            return canActivate(context) && !m_area->drawingBlocked();
+        };
         binding.activate = [this, toolId = tool.key()](const auto&) {
             return m_toolbar->palette()->activateDrawingShortcut(toolId);
         };
@@ -32,7 +38,9 @@ ScreenRecordingShortcutController::ScreenRecordingShortcutController(
         ShortcutManager::Binding binding;
         binding.id = QStringLiteral("recording.") + action;
         binding.priority = ShortcutManager::StandardPriority::ScreenshotShortcut;
-        binding.canActivate = [this](const auto& context) { return canActivate(context); };
+        binding.canActivate = [this](const auto& context) {
+            return canActivate(context) && !m_area->drawingBlocked();
+        };
         binding.activate = [this, action](const auto&) {
             return m_toolbar->palette()->activateScreenshotShortcut(action);
         };
@@ -73,9 +81,19 @@ ScreenRecordingShortcutController::ScreenRecordingShortcutController(
 bool ScreenRecordingShortcutController::canActivate(
     const ShortcutManager::ActivationContext& context) const {
     const auto* receiver = qobject_cast<QWidget*>(context.receiver);
+    if (m_toolbar && receiver) {
+        for (bool microphone : {false, true}) {
+            auto* popup = m_toolbar->palette()->recordingAudioGainPopover(microphone);
+            if (!popup || !popup->popover()->isVisible())
+                continue;
+            const QWidget* content = popup->popover()->contentWidget();
+            if ((content && (content == receiver || content->isAncestorOf(receiver))) ||
+                (context.event && context.event->key() == Qt::Key_Escape))
+                return false;
+        }
+    }
     return m_area != nullptr && m_toolbar != nullptr && m_area->isVisible() &&
            m_toolbar->isVisible() && receiver != nullptr && receiver->isVisible() &&
-           !m_area->drawingBlocked() &&
            !ShortcutManager::focusAcceptsTextInput(context.focusWidget) &&
            !m_area->canvas()->hasActiveTextEditing();
 }

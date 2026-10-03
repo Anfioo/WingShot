@@ -110,12 +110,13 @@ class Server final : public QObject {
     bool rejectModels = false;
     QVector<Stream> streams;
     QVector<QPointer<QTcpSocket>> pendingModels;
-    QJsonArray models{QJsonObject{{QStringLiteral("model"), QStringLiteral("vision")},
+    QJsonArray models{QJsonObject{{QStringLiteral("model"), QStringLiteral("general")},
+                                  {QStringLiteral("name"), QStringLiteral("AI Translation")},
+                                  {QStringLiteral("translation_mode"), QStringLiteral("default")},
+                                  {QStringLiteral("supports_vision"), true}},
+                      QJsonObject{{QStringLiteral("model"), QStringLiteral("vision")},
                                   {QStringLiteral("name"), QStringLiteral("Vision model")},
                                   {QStringLiteral("supports_vision"), true}},
-                      QJsonObject{{QStringLiteral("model"), QStringLiteral("general")},
-                                  {QStringLiteral("name"), QStringLiteral("AI Translation")},
-                                  {QStringLiteral("translation_mode"), QStringLiteral("default")}},
                       QJsonObject{{QStringLiteral("model"), QStringLiteral("specialist")},
                                   {QStringLiteral("name"), QStringLiteral("Translation Model")},
                                   {QStringLiteral("translation_mode"), QStringLiteral("qwen-mt")}}};

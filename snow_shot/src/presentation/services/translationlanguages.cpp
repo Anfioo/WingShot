@@ -12,6 +12,7 @@ const QVector<TranslationLanguage>& translationLanguages() {
         {"fr", QT_TRANSLATE_NOOP("TranslationLanguages", "French")},
         {"it", QT_TRANSLATE_NOOP("TranslationLanguages", "Italian")},
         {"ja", QT_TRANSLATE_NOOP("TranslationLanguages", "Japanese")},
+        {"ko", QT_TRANSLATE_NOOP("TranslationLanguages", "Korean")},
         {"pt", QT_TRANSLATE_NOOP("TranslationLanguages", "Portuguese")},
         {"ru", QT_TRANSLATE_NOOP("TranslationLanguages", "Russian")},
         {"tr", QT_TRANSLATE_NOOP("TranslationLanguages", "Turkish")},
@@ -52,9 +53,6 @@ int translationModelIndex(const QVector<SnowShotChatModel>& models, const QStrin
     int general = -1;
     for (int index = 0; index < models.size(); ++index) {
         const auto& model = models.at(index);
-        if (!model.supportsTranslation()) {
-            continue;
-        }
         if (model.id == preferredId) {
             return index;
         }

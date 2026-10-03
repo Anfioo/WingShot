@@ -43,6 +43,61 @@ test checks native click-through, drawing input, stacking and fullscreen Space
 policies through repeated show/hide cycles. Native desktop geometry tests exercise
 mixed display density without requiring multiple physical displays.
 
+Recording settings and render progress share recording-area ownership and application
+modality. Render progress detaches before area teardown so rendering, cancellation,
+and retry can continue independently. Run the focused offscreen and Cocoa checks:
+
+```sh
+ctest --test-dir build/snow-shot-macos-arm64-debug --output-on-failure \
+  -R '^snow-shot-(macos-)?recording-modal-stacking-tests$'
+```
+
+The Cocoa fixture uses the controller with a fake recording backend; it does not
+capture the desktop or open audio devices. It checks native window levels and order
+above both recording controls after raises, cancellation, and retry. On 2026-10-01,
+the render-progress check reproduced the detached dialog's stacking failure before
+the fix and passed afterward, along with its offscreen ownership/lifecycle check.
+
+Recording border input has a focused Cocoa check (requires permission to post mouse
+events; otherwise CTest reports a skip):
+
+```sh
+ctest --test-dir build/snow-shot-macos-arm64-debug --output-on-failure \
+  -R '^snow-shot-macos-recording-border-input-tests$'
+```
+
+It drags every painted edge and corner to the ten-physical-pixel minimum, across
+the fixed boundary, and back before releasing. The same cases run offscreen in
+the area-window tests. The native overlay-initialization fixture also verifies
+that AppKit cannot take over recording geometry after native surface recreation.
+
+## Cursor orientation and hotspot regression
+
+Cursor bitmaps, effect tiles, and editable cursor assets use top-first rows.
+`NSCursor.hotSpot` uses points from the image's top-left; Quartz input locations
+use top-left desktop points. Drawing the native CGImage into an untransformed
+bitmap context preserves its scanline order. Applying a Cocoa-style Y flip here
+inverts only the image, leaving its hotspot unchanged: the pointer tip then appears
+below the highlight. Fix this at cursor acquisition, shared by direct and editable
+recording, rather than compensating in the highlight or desktop transform.
+
+Focused, offscreen checks (use the FFmpeg environment above for runtime tests):
+
+```sh
+cargo test --manifest-path snow-crates/Cargo.toml -p snow-macos --lib cursor::tests
+cargo test --manifest-path snow-crates/Cargo.toml -p snow-macos --lib compositor::tests
+cargo test --manifest-path snow-crates/Cargo.toml -p snow-recording-runtime --lib macos_effects::
+cargo test --manifest-path snow-crates/Cargo.toml -p snow-recording-runtime --lib macos::editable_cursor::
+```
+
+The asymmetric native pixel fixture failed with reversed rows before the correction
+and passed afterward. Coverage includes premultiplied alpha, scaled hotspots at
+1x/1.5x/2x, negative desktop origins, destination offsets, tile boundaries, editable
+straight-alpha assets, and native GPU overlay/highlight orientation with padded
+rows and clipping at the canvas edge. For visual acceptance, record with highlight
+and separate cursor enabled, switch between arrow and text cursors, and verify the
+hotspot stays at the highlight center in both direct output and editable export.
+
 ## Native export probe
 
 Deploy with the normal bundle installer, then use the diagnostic entry point:
@@ -62,6 +117,23 @@ arguments for animations. The probe does not modify application settings.
 Check decoded dimensions, duration, codec, every animation frame and loop metadata;
 play a known sound throughout startup and recording to distinguish silence from
 failed system-audio capture.
+
+## Concurrent screenshot input
+
+With system audio enabled, record a small region while taking a screenshot. Move
+the pointer across screenshot toolbar buttons, open their popups, and drag the
+selection. Verify smooth input and stable cursor changes with recorded cursor
+visibility both enabled and disabled. Repeat after pause/resume and with a large
+recording region. Play a known sound and confirm the exported video still contains
+system audio and follows the selected cursor visibility setting.
+
+The audio stream has no screen-output consumer and must disable cursor capture and
+click visualization. Its permission-free regression runs with
+`cargo test --manifest-path snow-crates/Cargo.toml -p snow-macos --lib audio::tests`.
+On 2026-09-26, user-assisted verification of the rebuilt arm64 debug app confirmed
+smooth screenshot-toolbar input with system audio enabled and audible sound in
+the exported recording. The configuration regression failed before the correction
+and all three focused audio tests passed afterward.
 
 ## Coverage on 2026-09-22
 

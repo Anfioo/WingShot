@@ -1,6 +1,7 @@
 #ifndef SNOW_SHOT_PRESENTATION_SCREENSHOTOVERLAYUIHOST_H
 #define SNOW_SHOT_PRESENTATION_SCREENSHOTOVERLAYUIHOST_H
 
+#include "snow_shot/presentation/screenshotselectiondisplayunit.h"
 #include "snow_shot/presentation/screenshotshortcuthints.h"
 
 #include <QColor>
@@ -42,7 +43,9 @@ class ScreenshotOverlayUiHost final {
     ScreenshotColorPickerWindow* colorPicker() const;
     void updateColorPicker(ScreenshotOverlayWindow* overlay, const QImage& image,
                            const QRect& physicalRect, const QPoint& physicalPoint,
-                           const QPointF& localPosition, qreal opacity);
+                           const QPointF& localPosition, qreal opacity,
+                           const ScreenshotCoordinateDisplayValues& displayValues,
+                           const QImage& cursorPatch = {}, const QRect& cursorPixelRect = {});
     void hideColorPicker();
     void setColorPickerCenterGuideLineColor(const QColor& color);
     void resetColorPickerForNewCapture();
@@ -79,6 +82,7 @@ class ScreenshotOverlayUiHost final {
     QPointer<ScreenshotToolbarWindow> m_toolbar;
     QPointer<SnowCanvasWidget> m_toolbarStyleCanvas;
     QMetaObject::Connection m_toolbarStyleConnection;
+    QPointer<QObject> m_toolbarStyleBinding;
     QMetaObject::Connection m_toolbarHistoryConnection;
     QMetaObject::Connection m_toolbarStylePopupBeginConnection;
     QMetaObject::Connection m_toolbarStylePopupEndConnection;

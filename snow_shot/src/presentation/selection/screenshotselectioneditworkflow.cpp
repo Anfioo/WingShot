@@ -16,6 +16,7 @@ ScreenshotSelectionEditWorkflow::ScreenshotSelectionEditWorkflow(
 
 void ScreenshotSelectionEditWorkflow::adjustSelectionFromToolbar(int minDx, int minDy, int maxDx,
                                                                  int maxDy) {
+    static_cast<void>(m_context.interaction.cancelEffectDrag());
     if (!m_context.interaction.canResizeSelection()) {
         return;
     }
@@ -37,12 +38,14 @@ void ScreenshotSelectionEditWorkflow::adjustSelectionFromToolbar(int minDx, int 
 }
 
 void ScreenshotSelectionEditWorkflow::setSelectionCornerRadiusFromToolbar(int radius) {
-    if (!m_context.selection.setCornerRadius(radius)) {
+    const bool cancelled = m_context.interaction.cancelEffectDrag();
+    const bool changed = m_context.selection.setCornerRadius(radius);
+    if (!changed && !cancelled) {
         return;
     }
 
-    m_context.persistSelectionEffects(m_context.selection.cornerRadius(),
-                                      m_context.selection.shadowWidth());
+    if (changed)
+        commitSelectionEffects();
 
     if (m_context.ui.updateOverlayState) {
         m_context.ui.updateOverlayState();
@@ -50,12 +53,14 @@ void ScreenshotSelectionEditWorkflow::setSelectionCornerRadiusFromToolbar(int ra
 }
 
 void ScreenshotSelectionEditWorkflow::setSelectionShadowWidthFromToolbar(int shadowWidth) {
-    if (!m_context.selection.setShadowWidth(shadowWidth)) {
+    const bool cancelled = m_context.interaction.cancelEffectDrag();
+    const bool changed = m_context.selection.setShadowWidth(shadowWidth);
+    if (!changed && !cancelled) {
         return;
     }
 
-    m_context.persistSelectionEffects(m_context.selection.cornerRadius(),
-                                      m_context.selection.shadowWidth());
+    if (changed)
+        commitSelectionEffects();
 
     if (m_context.ui.updateOverlayState) {
         m_context.ui.updateOverlayState();
@@ -63,13 +68,62 @@ void ScreenshotSelectionEditWorkflow::setSelectionShadowWidthFromToolbar(int sha
 }
 
 void ScreenshotSelectionEditWorkflow::toggleSelectionAspectRatioLockFromToolbar() {
-    if (!m_context.selection.rectangular())
+    if (!m_context.selection.rectangular() || !m_context.interaction.canResizeSelection())
         return;
     m_context.selection.toggleAspectRatioLock(
         snow_shot::presentation::kScreenshotSelectionMinimumSize);
-    m_context.persistSelectionAspectRatioLock(m_context.selection.aspectRatioLocked());
+    m_context.persistSelectionAspectRatioPreference(m_context.selection.aspectRatioPreset(),
+                                                    m_context.selection.aspectRatioLocked());
     if (m_context.ui.updateOverlayState) {
         m_context.ui.updateOverlayState();
+    }
+}
+
+void ScreenshotSelectionEditWorkflow::previewSelectionEffect(ScreenshotSelectionEffectHandle handle,
+                                                             int value) {
+    const bool changed =
+        handle == ScreenshotSelectionEffectHandle::Shadow
+            ? m_context.selection.setShadowWidth(value)
+            : screenshotSelectionRadiusHandle(handle) && m_context.selection.setCornerRadius(value);
+    if (changed && m_context.ui.updateOverlayState)
+        m_context.ui.updateOverlayState();
+}
+
+void ScreenshotSelectionEditWorkflow::commitSelectionEffects() {
+    m_context.persistSelectionEffects(m_context.selection.cornerRadius(),
+                                      m_context.selection.shadowWidth());
+}
+
+void ScreenshotSelectionEditWorkflow::setSelectionAspectRatioPresetFromToolbar(
+    ScreenshotSelectionAspectRatioPreset preset) {
+    if (!m_context.selection.rectangular() || !m_context.interaction.canResizeSelection() ||
+        (preset != ScreenshotSelectionAspectRatioPreset::Free &&
+         screenshotSelectionAspectRatioHeightOverWidth(preset) <= 0.0)) {
+        return;
+    }
+    const bool changed = m_context.selection.setAspectRatioPreset(
+        preset, m_context.geometry.canvasBounds(),
+        snow_shot::presentation::kScreenshotSelectionMinimumSize);
+    if (!changed && (m_context.selection.aspectRatioPreset() != preset ||
+                     m_context.selection.aspectRatioLocked() !=
+                         (preset != ScreenshotSelectionAspectRatioPreset::Free))) {
+        return;
+    }
+    // Exact replacements clear the active preset while retaining the next capture's preference.
+    // An explicit choice must update that preference even when the active selection is unchanged.
+    m_context.persistSelectionAspectRatioPreference(m_context.selection.aspectRatioPreset(),
+                                                    m_context.selection.aspectRatioLocked());
+    if (!changed) {
+        return;
+    }
+    if (m_context.ui.updateOverlayState) {
+        m_context.ui.updateOverlayState();
+    }
+    if (m_context.ui.showSelectionToolbar) {
+        m_context.ui.showSelectionToolbar();
+    }
+    if (m_context.ui.moveToolbar) {
+        m_context.ui.moveToolbar();
     }
 }
 
@@ -126,6 +180,7 @@ void ScreenshotSelectionEditWorkflow::setColorPickerSuppressedForScreenshotUi(
 
 void ScreenshotSelectionEditWorkflow::applySelectionParams(
     const ScreenshotSelectionParams& params) {
+    static_cast<void>(m_context.interaction.cancelEffectDrag());
     const QRect bounds = selectionBounds();
     if (!m_context.selection.applyParams(params, bounds)) {
         if (!m_context.selection.hasPixelSelection()) {

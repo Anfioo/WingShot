@@ -20,6 +20,7 @@ pub struct EditorStyleDefaults {
     pub pen_highlight: ShapeStyle,
     pub rectangle_filter: FilterStyle,
     pub pen_filter: FilterStyle,
+    pub brush_eraser: crate::BrushEraserStyle,
     pub text: TextStyle,
     pub serial_number: SerialNumberStyle,
 }
@@ -137,6 +138,7 @@ pub fn editor_style_defaults() -> EditorStyleDefaults {
             stroke_width: 30.0,
             ..FilterStyle::default()
         },
+        brush_eraser: crate::BrushEraserStyle::default(),
         text: TextStyle {
             color: stroke,
             font_size: 30.0,
@@ -158,6 +160,7 @@ pub fn editor_style_defaults() -> EditorStyleDefaults {
         serial_number: SerialNumberStyle {
             number: 1,
             serial_number_type: SerialNumberType::OutlinedCircle,
+            numeric_type: snow_draw_engine_document::SerialNumberNumericType::Arabic,
             color: stroke,
             fill: ColorRgba8::default(),
             fill_style: FillStyle::Solid,

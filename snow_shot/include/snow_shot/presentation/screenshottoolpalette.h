@@ -1,9 +1,10 @@
 #ifndef SNOW_SHOT_PRESENTATION_SCREENSHOTTOOLPALETTE_H
 #define SNOW_SHOT_PRESENTATION_SCREENSHOTTOOLPALETTE_H
 
+#include "snow_shot/presentation/screenshotselectiondisplayunit.h"
 #include "icon_core.h"
 #include "widgets/control_scale.h"
-#include "snow_draw_engine_qt/snow_canvas_types.h"
+#include "snow_draw_engine_qt/snow_canvas_style_edit.h"
 #include "snow_shot/presentation/screenshotdefaultstyles.h"
 #include "snow_shot/image/screenshotregiongeometry.h"
 #include "snow_shot/presentation/screenshotgeometry.h"
@@ -43,7 +44,10 @@ class AdColorPicker;
 class AdPopover;
 class AdModal;
 class AdForm;
+class AdFormItem;
+class AdAlert;
 class AdInputNumber;
+class AdRadio;
 class AdRadioButtonGroup;
 class AdSelect;
 class AdSlider;
@@ -53,6 +57,7 @@ namespace snow_shot::presentation {
 class ScreenshotToolPaletteColorPresets;
 }
 
+class RecordingAudioGainPopover;
 class ScreenshotToolPaletteStyleControls;
 class ScreenshotToolbarMainPanel;
 class IconNumericValuePreviewButton;
@@ -88,6 +93,9 @@ class ScreenshotToolPalette final : public QWidget,
         Markdown,
         Html,
         AutoFilter,
+        Latex,
+        RectangleEraser,
+        BrushEraser,
     };
 
     enum class MoveToolPresentation {
@@ -237,6 +245,7 @@ class ScreenshotToolPalette final : public QWidget,
         bool showQrTool = false;
         bool showImageConversionTools = false;
         bool showScrollingScreenshotTool = false;
+        bool showGlobalCanvasActions = false;
         bool showSaveButton = false;
         bool saveButtonWithResultActions = false;
         bool copyButtonWithNeutralIcon = false;
@@ -266,6 +275,7 @@ class ScreenshotToolPalette final : public QWidget,
     QWidget* actionPanel() const;
     QWidget* stylePanel() const;
     QWidget* recordingExportSettingsPanel() const;
+    QWidget* recordingTrimPanel() const;
     QWidget* dragHandle() const;
     QWidget* trailingDragHandle() const;
     QSize contentSizeHint() const;
@@ -282,6 +292,8 @@ class ScreenshotToolPalette final : public QWidget,
     void resetStyleState();
     void setCreationStyleDefaults(const SnowCanvasStyleDefaults& defaults);
     [[nodiscard]] SnowCanvasStyleDefaults creationStyleDefaults() const;
+    void rememberStyleEdit(const SnowCanvasStyleEdit& edit);
+    void setStyleEditHandler(std::function<bool(const SnowCanvasStyleEdit&)> handler);
     bool setShadowMargins(const QMargins& margins);
     bool setPhysicalScale(qreal scale);
     bool setScaleContext(const adqt::widgets::AdControlScaleContext& context);
@@ -297,6 +309,7 @@ class ScreenshotToolPalette final : public QWidget,
     bool stepFilterIntensity(int direction);
     void setAutoFilterAvailable(bool available);
     bool stepPenFilterStrokeWidth(int direction);
+    bool stepBrushEraserStrokeWidth(int direction);
     bool stepWatermarkFontSize(int direction);
     bool stepRecordingStartDelay(int direction);
     void setStyleToolbarAboveMain(bool above);
@@ -307,16 +320,24 @@ class ScreenshotToolPalette final : public QWidget,
     void setActiveTool(Tool tool);
     void refreshConfirmShortcutHint();
     void refreshShortcutTooltips();
+    void setGlobalCanvasClickThrough(bool enabled);
+    [[nodiscard]] bool canActivateDrawingShortcut(const QString& toolId) const;
+    [[nodiscard]] bool canActivateScreenshotShortcut(const QString& actionId);
     [[nodiscard]] bool activateDrawingShortcut(const QString& toolId);
     [[nodiscard]] bool activateToolShortcut(Tool tool);
     [[nodiscard]] bool activateScreenshotShortcut(const QString& actionId);
     [[nodiscard]] bool activateRememberedDrawingTool();
-    void setCaptureCursorEnabled(bool enabled);
+    void setScrollingAutoScrollIntervalMs(int milliseconds);
+    [[nodiscard]] int scrollingAutoScrollIntervalMs() const;
+    void setCursorVisible(bool enabled);
+    void setCursorAvailable(bool available);
     void setScreenshotRegionType(ScreenshotRegionType type);
-    [[nodiscard]] bool captureCursorEnabled() const;
+    [[nodiscard]] bool cursorVisible() const;
+    void setSelectionDisplayUnit(ScreenshotSelectionDisplayUnit unit);
     void setSelectionToolbarHidden(bool hidden);
     [[nodiscard]] bool selectionToolbarHidden() const;
     void setRecaptureBusy(bool busy);
+    void setQrCodeState(bool available, bool visible, const QString& error = {});
     [[nodiscard]] bool recaptureBusy() const;
     void clearActiveTool();
     [[nodiscard]] std::optional<Tool> activeTool() const;
@@ -330,6 +351,8 @@ class ScreenshotToolPalette final : public QWidget,
     void setStyleToolbarState(const SnowCanvasStyleToolbarState& state);
     void setWatermarkConfig(const SnowCanvasWatermarkConfig& config);
     void setWatermarkTemplateModalOwnerWindow(QWidget* owner);
+    void setDrawTemplateCallbacks(std::function<QByteArray()> selectedPayload,
+                                  std::function<void(const QByteArray&)> insertPayload);
     void setSpotlightConfig(const SnowCanvasSpotlightConfig& config);
     void setSelectionOpacity(qreal opacity, bool mixed = false);
     void installWheelFilters(QObject* receiver, QWidget* scope = nullptr);
@@ -342,10 +365,21 @@ class ScreenshotToolPalette final : public QWidget,
     [[nodiscard]] RecordingBusyOperation recordingBusyOperation() const;
     [[nodiscard]] bool recordingBusy() const;
     void setRecordingDuration(qint64 durationMilliseconds);
+    void setRecordingTrimPanel(QWidget* panel, bool busy);
     void setRecordingMicrophoneEnabled(bool enabled);
     void setRecordingSystemAudioEnabled(bool enabled);
+    void setRecordingMicrophoneGainDb(int gainDb);
+    void setRecordingSystemAudioGainDb(int gainDb);
+    RecordingAudioGainPopover* recordingAudioGainPopover(bool microphone) const;
+    void closeRecordingAudioGainPopovers();
     void setRecordingOutputFormat(const QString& format);
     [[nodiscard]] QString recordingOutputFormat() const;
+    void setRecordingPostProcessingEnabled(bool enabled);
+    [[nodiscard]] bool recordingPostProcessingEnabled() const;
+    void setRecordingPostProcessingEffect(const QString& effect);
+    [[nodiscard]] QString recordingPostProcessingEffect() const;
+    void setRecordingProgressBarColor(const QColor& color);
+    [[nodiscard]] QColor recordingProgressBarColor() const;
     void setRecordingMouseTrailDurationMs(int value);
     [[nodiscard]] int recordingMouseTrailDurationMs() const;
     void setRecordingStartDelaySeconds(int seconds);
@@ -378,6 +412,7 @@ class ScreenshotToolPalette final : public QWidget,
     void setQrEnabled(bool enabled);
     void setQrBusy(bool busy);
     void setImageConversionEnabled(bool enabled);
+    void setLatexState(bool enabled, bool busy);
     void setImageConversionBusy(bool markdownBusy, bool htmlBusy);
     void setTableEditingState(bool available, bool canUndo, bool canRedo, bool canMerge,
                               bool canSplit, bool canReset);
@@ -414,14 +449,18 @@ class ScreenshotToolPalette final : public QWidget,
 #endif
 
   signals:
+    void globalCanvasClickThroughRequested();
+    void globalCanvasExitRequested();
     void undoRequested();
     void redoRequested();
     void moveRequested();
-    void captureCursorToggled(bool enabled);
+    void cursorVisibilityToggled(bool enabled);
     void recaptureRequested();
+    void qrCodeVisibilityRequested(bool visible);
     void screenshotRegionTypeRequested(int type);
     void addScreenshotRegionRequested();
     void subtractScreenshotRegionRequested();
+    void selectionDisplayUnitChanged(ScreenshotSelectionDisplayUnit unit);
     void selectionToolbarHiddenChanged(bool hidden);
     void selectRequested();
     void recordingExportSettingsVisibleChanged(bool visible);
@@ -433,6 +472,8 @@ class ScreenshotToolPalette final : public QWidget,
     void penHighlightRequested();
     void spotlightRequested();
     void eraserRequested();
+    void rectangleEraserRequested();
+    void brushEraserRequested();
     void filterRequested();
     void rectangleFilterRequested();
     void autoFilterRequested();
@@ -445,6 +486,7 @@ class ScreenshotToolPalette final : public QWidget,
     void textTranslationRequested();
     void tableRequested();
     void qrRequested();
+    void latexRequested();
     void markdownRequested();
     void htmlRequested();
     void imageConversionSettingsRequested();
@@ -468,6 +510,7 @@ class ScreenshotToolPalette final : public QWidget,
     void scrollingSelectionMoveUpdated(QPoint globalPosition);
     void scrollingSelectionMoveFinished();
     void scrollingAutoScrollChanged(bool enabled);
+    void scrollingAutoScrollIntervalMsChanged(int milliseconds);
     void screenRecordRequested();
     void serialNumberDecrementRequested();
     void serialNumberIncrementRequested();
@@ -483,7 +526,7 @@ class ScreenshotToolPalette final : public QWidget,
     void watermarkPreviewChanged(const SnowCanvasWatermarkConfig& config);
     void spotlightConfigChanged(const SnowCanvasSpotlightConfig& config);
     void spotlightPreviewChanged(const SnowCanvasSpotlightConfig& config);
-    void textStyleChanged(const SnowCanvasTextStyle& style);
+    void textStyleChanged(const SnowCanvasTextStyle& style, quint32 properties);
     void textStylePopupInteractionBegan();
     void textStylePopupInteractionEnded();
     void serialNumberStyleChanged(const SnowCanvasSerialNumberStyle& style);
@@ -506,15 +549,23 @@ class ScreenshotToolPalette final : public QWidget,
     void resetCanvasRequested();
     void visibleContentChanged();
     void recordingStartRequested();
+    void recordingSettingsRequested();
     void recordingStopRequested();
     void recordingPauseRequested();
     void recordingResumeRequested();
     void recordingMicrophoneToggled(bool enabled);
     void recordingSystemAudioToggled(bool enabled);
+    void recordingMicrophoneGainChanged(int gainDb);
+    void recordingSystemAudioGainChanged(int gainDb);
     void recordingOpenFolderRequested();
     void recordingCloseRequested();
     void recordingCopyRequested();
+    void recordingTrimRequested();
+    void recordingSaveRequested();
     void recordingOutputFormatChanged(const QString& format);
+    void recordingPostProcessingEnabledChanged(bool enabled);
+    void recordingPostProcessingEffectChanged(const QString& effect);
+    void recordingProgressBarColorChanged(const QColor& color);
     void recordingStartDelaySecondsChanged(int seconds);
     void recordingMouseTrailDurationMsChanged(int value);
     void recordingKeyboardSizeChanged(int value);
@@ -530,6 +581,12 @@ class ScreenshotToolPalette final : public QWidget,
     void materializedScope(QWidget* scope);
 
   private:
+    std::function<bool(const SnowCanvasStyleEdit&)> m_styleEditHandler;
+    [[nodiscard]] bool submitStyleEdit(const SnowCanvasStyleEdit& edit);
+    void notifyFilterStyleChanged(const SnowCanvasFilterStyle& style, quint32 properties);
+    void setFilterStrength(double strength);
+    void setPenFilterStrokeWidth(double width);
+    void setBrushEraserStrokeWidth(double width);
     void changeEvent(QEvent* event) override;
     bool eventFilter(QObject* watched, QEvent* event) override;
     void paintEvent(QPaintEvent* event) override;
@@ -545,10 +602,19 @@ class ScreenshotToolPalette final : public QWidget,
     void createSecondaryToolbarShell();
     void createMoveActionFamily();
     void createSelectionActionFamily();
+    void createDrawTemplateSelect();
+    void refreshDrawTemplateOptions();
+    void openCreateDrawTemplateModal();
+    void openDeleteDrawTemplateModal(int index);
+    void retranslateDrawTemplateUi();
     void createShowOriginalImageButton();
     void createTextRecognitionActionFamily();
+#if SNOW_SHOT_ENABLE_TABLE_RECOGNITION
     void createTableRecognitionActionFamily();
+#endif
+#if SNOW_SHOT_ENABLE_IMAGE_CONVERSION
     void createImageConversionActionFamily();
+#endif
     void createScrollingRecognitionActionFamily();
     void createStyleFamily(Tool tool);
     void registerStyleFamily(QWidget* controls, std::initializer_list<Tool> tools);
@@ -565,21 +631,27 @@ class ScreenshotToolPalette final : public QWidget,
     void addMainActionButtons(const Options& options, QBoxLayout* layout);
     void applyMainToolbarLayout(bool notify);
     adqt::widgets::AdButton* drawingToolButton(const QString& itemId) const;
+    adqt::widgets::AdButton* drawingItemButton(const QString& itemId) const;
     adqt::widgets::AdButton* drawingToolEntryButton(Tool tool) const;
     Tool rememberedDrawingMode(Tool tool) const;
     void rememberDrawingMode(Tool tool);
     void rememberLastUsedDrawingTool(Tool tool);
     void recordUserDrawingToolIntent(Tool tool);
     [[nodiscard]] bool drawingToolCanBeActivated(Tool tool) const;
+    [[nodiscard]] bool canActivateToolShortcut(Tool tool) const;
+    [[nodiscard]] adqt::widgets::AdButton* toolShortcutButton(Tool tool) const;
+    [[nodiscard]] std::optional<Tool> drawingShortcutTool(const QString& toolId) const;
     void clearDrawingToolGroups();
     void releaseDrawingToolGroupPopover(adqt::widgets::AdButton* trigger);
     bool activateToolFromToolbar(Tool tool, bool toggleVisibleButton = true);
     void activateDrawingTool(Tool tool);
-    [[nodiscard]] bool isRecordingUnavailableTool(Tool tool) const;
-    void refreshRecordingToolAvailability(adqt::widgets::AdButton* button, Tool tool,
-                                          const QString& label);
     [[nodiscard]] Tool drawingShortcutEntryTool(const QString& itemId, Tool fallback) const;
     void selectDrawingToolGroupEntry(Tool tool);
+    void selectDrawingItemGroupEntry(const QString& itemId);
+    bool activateDrawingItem(const QString& itemId, bool toggleVisibleButton = true);
+    [[nodiscard]] bool historyActionEnabled(const QString& itemId) const;
+    [[nodiscard]] bool canActivateHistoryItem(const QString& itemId) const;
+    [[nodiscard]] adqt::widgets::AdButton* screenshotShortcutButton(const QString& actionId);
     void refreshDrawingToolGroup(int groupIndex);
     void addRecordingControls(QBoxLayout* layout);
     void createRecordingExportSettingsToolbar();
@@ -591,6 +663,7 @@ class ScreenshotToolPalette final : public QWidget,
     void refreshRecordingExportSettingsText();
     void refreshRecordingEffectSettingsModalText();
     void refreshRecordingMouseOptions();
+    void refreshRecordingPostProcessingOptions();
     void refreshRecordingHighlightSwatch();
     bool activateTableQrTool(Tool tool, bool toggleVisibleButton = true);
     void setTableQrEntryTool(Tool tool);
@@ -712,8 +785,7 @@ class ScreenshotToolPalette final : public QWidget,
 
     struct DrawingToolGroup {
         QStringList itemIds;
-        QVector<Tool> tools;
-        Tool entryTool = Tool::Shape;
+        QString entryItemId;
         adqt::widgets::AdButton* trigger = nullptr;
         adqt::widgets::AdPopover* popover = nullptr;
         QVector<adqt::widgets::AdButton*> optionButtons;
@@ -764,6 +836,7 @@ class ScreenshotToolPalette final : public QWidget,
     QVector<QBoxLayout*> m_styleControlLayouts;
     QWidget* m_rectangleStyleControlsWidget = nullptr;
     QWidget* m_moveActionControls = nullptr;
+    QPointer<adqt::widgets::AdRadioButtonGroup> m_selectionDisplayUnitGroup;
     QWidget* m_lineStyleControlsWidget = nullptr;
     QWidget* m_freeDrawStyleControlsWidget = nullptr;
     QWidget* m_arrowStyleControlsWidget = nullptr;
@@ -775,6 +848,8 @@ class ScreenshotToolPalette final : public QWidget,
     QWidget* m_filterStyleControlsWidget = nullptr;
     QWidget* m_autoFilterStyleControlsWidget = nullptr;
     QWidget* m_penFilterStyleControlsWidget = nullptr;
+    QWidget* m_eraserStyleControlsWidget = nullptr;
+    QWidget* m_brushEraserStyleControlsWidget = nullptr;
     QWidget* m_watermarkStyleControlsWidget = nullptr;
     QWidget* m_activeStyleControlsWidget = nullptr;
     std::optional<Tool> m_activeStyleTool;
@@ -783,7 +858,7 @@ class ScreenshotToolPalette final : public QWidget,
     QSpacerItem* m_shapeStyleGroupSeparatorLeadingSpacing = nullptr;
     QSpacerItem* m_shapeStyleGroupSeparatorTrailingSpacing = nullptr;
     adqt::widgets::AdButton* m_moveButton = nullptr;
-    adqt::widgets::AdButton* m_captureCursorButton = nullptr;
+    adqt::widgets::AdButton* m_cursorButton = nullptr;
     adqt::widgets::AdButton* m_hideSelectionToolbarButton = nullptr;
     adqt::widgets::AdButton* m_recaptureButton = nullptr;
     adqt::widgets::AdButton* m_addRegionButton = nullptr;
@@ -799,6 +874,7 @@ class ScreenshotToolPalette final : public QWidget,
     adqt::widgets::AdButton* m_spotlightButton = nullptr;
     QVector<adqt::widgets::AdRadioButtonGroup*> m_highlightModeGroups;
     QVector<adqt::widgets::AdRadioButtonGroup*> m_filterModeGroups;
+    QVector<adqt::widgets::AdRadioButtonGroup*> m_eraserModeGroups;
     adqt::widgets::AdButton* m_eraserButton = nullptr;
     adqt::widgets::AdButton* m_filterButton = nullptr;
     adqt::widgets::AdButton* m_watermarkButton = nullptr;
@@ -809,6 +885,7 @@ class ScreenshotToolPalette final : public QWidget,
     adqt::widgets::AdButton* m_tableButton = nullptr;
     adqt::widgets::AdButton* m_tableOptionButton = nullptr;
     adqt::widgets::AdButton* m_qrButton = nullptr;
+    adqt::widgets::AdButton* m_latexButton = nullptr;
     adqt::widgets::AdButton* m_markdownButton = nullptr;
     adqt::widgets::AdButton* m_htmlButton = nullptr;
     adqt::widgets::AdButton* m_conversionSettingsButton = nullptr;
@@ -851,6 +928,10 @@ class ScreenshotToolPalette final : public QWidget,
     adqt::widgets::AdButton* m_recordOpenFolderButton = nullptr;
     adqt::widgets::AdButton* m_recordCloseButton = nullptr;
     adqt::widgets::AdButton* m_recordCopyButton = nullptr;
+    adqt::widgets::AdButton* m_recordTrimButton = nullptr;
+    adqt::widgets::AdButton* m_recordSaveButton = nullptr;
+    QPointer<QWidget> m_recordTrimPanel;
+    bool m_recordTrimBusy = false;
     adqt::widgets::AdSelect* m_recordOutputFormatSelect = nullptr;
     adqt::widgets::AdColorPicker* m_recordMouseTrailColorPicker = nullptr;
     adqt::widgets::AdColorPicker* m_recordMouseClickColorPicker = nullptr;
@@ -859,7 +940,17 @@ class ScreenshotToolPalette final : public QWidget,
     std::unique_ptr<snow_shot::presentation::ScreenshotToolPaletteColorPresets>
         m_recordMouseClickColorPresets;
     adqt::widgets::AdButton* m_recordKeyboardButton = nullptr;
+    adqt::widgets::AdButton* m_recordPostProcessingButton = nullptr;
+    adqt::widgets::AdPopover* m_recordPostProcessingPopover = nullptr;
+    QPointer<adqt::widgets::AdRadio> m_recordProgressBarRadio;
+    QPointer<adqt::widgets::AdRadio> m_recordPlaybackTimeRadio;
+    adqt::widgets::AdColorPicker* m_recordProgressBarColorPicker = nullptr;
+    // The controller reconciles palette state with recording preferences.
+    bool m_recordPlaybackTimeSelected = false;
+    bool m_recordPostProcessingEnabled = false;
+    QColor m_recordProgressBarColor{22, 119, 255};
     adqt::widgets::AdButton* m_recordSettingsButton = nullptr;
+    adqt::widgets::AdButton* m_recordPreferencesButton = nullptr;
     IconNumericValuePreviewButton* m_recordDelayButton = nullptr;
     adqt::widgets::AdModal* m_recordSettingsModal = nullptr;
     adqt::widgets::AdForm* m_recordSettingsForm = nullptr;
@@ -885,18 +976,33 @@ class ScreenshotToolPalette final : public QWidget,
     adqt::widgets::AdButton* m_cancelButton = nullptr;
     adqt::widgets::AdButton* m_copyButton = nullptr;
     adqt::widgets::AdButton* m_confirmButton = nullptr;
+    adqt::widgets::AdButton* m_globalCanvasClickThroughButton = nullptr;
+    adqt::widgets::AdButton* m_globalCanvasExitButton = nullptr;
     QLabel* m_selectionOpacityIcon = nullptr;
     adqt::widgets::AdSlider* m_selectionOpacitySlider = nullptr;
+    adqt::widgets::AdSelect* m_drawTemplateSelect = nullptr;
+    QPointer<adqt::widgets::AdModal> m_createDrawTemplateModal;
+    QPointer<adqt::widgets::AdModal> m_deleteDrawTemplateModal;
+    QPointer<adqt::widgets::AdButton> m_drawTemplateAddButton;
+    QPointer<QLabel> m_drawTemplateEmptyLabel;
+    QPointer<adqt::widgets::AdFormItem> m_drawTemplateNameItem;
+    QPointer<adqt::widgets::AdAlert> m_drawTemplateAlert;
+    int m_drawTemplateAlertKind = 0;
+    QVector<snow_shot::storage::DrawTemplate> m_drawTemplates;
+    QByteArray m_pendingDrawTemplatePayload;
+    QString m_deleteDrawTemplateName;
+    std::function<QByteArray()> m_selectedDrawTemplatePayload;
+    std::function<void(const QByteArray&)> m_insertDrawTemplatePayload;
     QVector<QWidget*> m_selectionActionControls;
     QVector<QWidget*> m_selectionAlignControls;
     QVector<QWidget*> m_selectionDistributeControls;
-    adqt::widgets::AdButton* m_resetCanvasButton = nullptr;
     QVector<QSpacerItem*> m_selectionActionSpacers;
     QVector<QSpacerItem*> m_textActionSpacers;
     QVector<QSpacerItem*> m_tableActionSpacers;
     std::optional<Tool> m_activeTool;
     Tool m_lastHighlightTool = Tool::PenHighlight;
     Tool m_lastFilterTool = Tool::PenFilter;
+    Tool m_lastEraserTool = Tool::Eraser;
     adqt::widgets::AdButton* m_activeToolButton = nullptr;
     QVector<QFrame*> m_styleSeparatorFrames;
     QVector<QFrame*> m_recordExportSettingsSeparators;
@@ -923,6 +1029,8 @@ class ScreenshotToolPalette final : public QWidget,
     bool m_selectionOpacityAvailable = false;
     bool m_selectionActionAvailabilityInitialized = false;
     bool m_scrollingScreenshotMode = false;
+    int m_scrollingAutoScrollIntervalMs = kScreenshotScrollingAutoScrollIntervalDefault;
+    IconNumericValuePreviewButton* m_scrollingAutoScrollIntervalEditor = nullptr;
     bool m_scrollingAutoScroll = false;
     adqt::widgets::AdButton* m_scrollingAutoScrollButton = nullptr;
     ScreenshotScrollingRecognitionMode m_scrollingRecognitionMode =
@@ -930,6 +1038,10 @@ class ScreenshotToolPalette final : public QWidget,
     RecordingSessionStatus m_recordingSession = RecordingSessionStatus::idle();
     bool m_recordingMicrophoneEnabled = false;
     bool m_recordingSystemAudioEnabled = true;
+    int m_recordingMicrophoneGainDb = 0;
+    int m_recordingSystemAudioGainDb = 0;
+    RecordingAudioGainPopover* m_recordMicrophoneGainPopover = nullptr;
+    RecordingAudioGainPopover* m_recordSystemAudioGainPopover = nullptr;
     bool m_recordExportSettingsVisible = false;
     QString m_recordingOutputFormat = QStringLiteral("mp4");
     int m_recordingStartDelaySeconds = 0;
@@ -940,10 +1052,16 @@ class ScreenshotToolPalette final : public QWidget,
     QColor m_recordingMouseClickColor = QColor(0, 0, 0, 0);
     bool m_recordingKeyboardVisible = false;
     bool m_recordingCursorVisible = true;
-    bool m_captureCursorEnabled = false;
+    bool m_cursorVisible = false;
+    bool m_cursorAvailable = true;
     ScreenshotRegionType m_screenshotRegionType = ScreenshotRegionType::Rectangle;
+    ScreenshotSelectionDisplayUnit m_selectionDisplayUnit = kDefaultScreenshotSelectionDisplayUnit;
     bool m_selectionToolbarHidden = false;
     bool m_recaptureBusy = false;
+    bool m_qrCodeAvailable = false;
+    bool m_qrCodeVisible = true;
+    QString m_qrCodeError;
+    adqt::widgets::AdButton* m_showQrCodeButton = nullptr;
     bool m_ocrEnabled = true;
     bool m_ocrBusy = false;
     bool m_tableEnabled = true;

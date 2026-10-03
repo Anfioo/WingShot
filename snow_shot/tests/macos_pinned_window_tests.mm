@@ -1,16 +1,19 @@
 #include "presentation/pinned/pinnedwindowplatform.h"
+#include "platform/macos/capturewindowlayers_p.h"
 #include "snow_shot/presentation/mousereleaseactioncontroller.h"
+#include "widgets/modal.h"
 #import <AppKit/AppKit.h>
 #import <CoreGraphics/CoreGraphics.h>
 #include <QApplication>
 #include <QElapsedTimer>
+#include <QEventLoop>
 #include <QMouseEvent>
 #include <QProcess>
-#include <QThread>
 #include <QTimer>
 #include <QLineEdit>
 #include <QInputMethodEvent>
 #include <QWindow>
+#include <QPushButton>
 #include <cstdio>
 #include <iostream>
 #include <optional>
@@ -24,12 +27,11 @@ void require(bool condition, const char* message) {
         throw std::runtime_error(message);
 }
 void events(int milliseconds = 50) {
-    QElapsedTimer timer;
-    timer.start();
-    while (timer.elapsed() < milliseconds) {
-        qApp->processEvents();
-        QThread::msleep(1);
-    }
+    // Drive the native event loop, including its idle boundary: processEvents()
+    // alone leaves Cocoa modal cleanup and deferred owner activation pending.
+    QEventLoop loop;
+    QTimer::singleShot(milliseconds, &loop, &QEventLoop::quit);
+    loop.exec();
 }
 class Receiver final : public QWidget {
   public:
@@ -105,9 +107,8 @@ void hiddenPlacementCommitsBeforeShow() {
             require(platform->applyStablePlacement(requested, screen),
                     "hidden placement must commit to the native window before verification");
             const auto actual = platform->placement();
-            QPoint expectedOrigin =
+            const QPoint expectedOrigin =
                 (QPointF(screen->geometry().topLeft()) + requested.position).toPoint();
-            expectedOrigin.setY(qMax(screen->availableGeometry().top(), expectedOrigin.y()));
             const QRect expected(expectedOrigin, requested.windowSize);
             require(actual && platform->windowGeometry() == expected &&
                         widget.geometry() == expected && !widget.isVisible(),
@@ -144,25 +145,94 @@ void auxiliaryOwnershipRequiresARealOwner() {
                 "unrelated transparent tools must retain native click-through");
     }
 
-    QWidget ownedChild(&pin, Qt::Tool);
+    QWidget ownedChild(&pin, Qt::Tool | Qt::WindowTransparentForInput);
     ownedChild.show();
-    require(auxiliaryPlatform(ownedChild) != nullptr,
-            "a QWidget-owned auxiliary must still receive its pin's policy");
+    using namespace snow_shot::platform::detail;
+    if (QGuiApplication::platformName() == QStringLiteral("cocoa")) {
+        require(captureLayer(ownedChild.windowHandle()).family == CaptureFamily::Pinned &&
+                    captureLayer(ownedChild.windowHandle()).valid(),
+                "a QWidget-owned auxiliary must inherit its pin's shared stacking policy");
+        require(reinterpret_cast<NSView*>(ownedChild.winId()).window.ignoresMouseEvents,
+                "inherited pin stacking must preserve a tool's native click-through policy");
+    }
     QWidget transient(nullptr, Qt::Tool);
     static_cast<void>(transient.winId());
     require(pin.windowHandle() != nullptr,
             "showing the owned child must create its owner's surface");
     transient.windowHandle()->setTransientParent(pin.windowHandle());
     transient.show();
-    require(auxiliaryPlatform(transient) != nullptr,
-            "a native transient auxiliary must still receive its pin's policy");
+    if (QGuiApplication::platformName() == QStringLiteral("cocoa")) {
+        require(captureLayer(transient.windowHandle()).family == CaptureFamily::Pinned &&
+                    captureLayer(transient.windowHandle()).valid(),
+                "a native transient auxiliary must inherit its pin's shared stacking policy");
+    }
     QWidget other;
     other.show();
     require(auxiliaryPlatform(other) == nullptr,
             "a created pin must not adopt an unrelated top-level window either");
+    transient.windowHandle()->setTransientParent(other.windowHandle());
+    if (QGuiApplication::platformName() == QStringLiteral("cocoa")) {
+        require(!captureLayer(transient.windowHandle()).valid() &&
+                    reinterpret_cast<NSView*>(transient.winId()).window.level < pinnedWindowLevel(),
+                "a pooled popup must release the pin's stacking policy when reparented");
+    }
+}
+
+void wakeNotificationsFollowAttachedPlatforms() {
+    QWidget firstWidget(nullptr, Qt::Tool | Qt::FramelessWindowHint);
+    QWidget secondWidget(nullptr, Qt::Tool | Qt::FramelessWindowHint);
+    firstWidget.winId();
+    secondWidget.winId();
+    auto first = createPinnedWindowPlatform(&firstWidget);
+    auto second = createPinnedWindowPlatform(&secondWidget);
+    require(first->attach() && second->attach(), "wake fixture platforms must attach");
+    int firstChanges = 0;
+    int secondChanges = 0;
+    first->environmentChanged = [&](bool) { ++firstChanges; };
+    second->environmentChanged = [&](bool) { ++secondChanges; };
+    const auto wake = [] {
+        [NSWorkspace.sharedWorkspace.notificationCenter
+            postNotificationName:NSWorkspaceDidWakeNotification
+                          object:nil];
+    };
+    require(first->attach() && second->attach(), "repeated attachment must succeed");
+    wake();
+    require(firstChanges == 1 && secondChanges == 1,
+            "a shared wake subscription must notify each attached platform exactly once");
+    first->detach();
+    firstChanges = 0;
+    secondChanges = 0;
+    wake();
+    require(firstChanges == 0 && secondChanges == 1,
+            "a detached native surface must leave the shared wake fanout");
+    for (int cycle = 0; cycle < 50; ++cycle) {
+        require(first->attach(), "recycled native surface must rejoin wake notifications");
+        first->detach();
+    }
+    require(first->attach(), "final wake reattachment must succeed");
+    firstChanges = 0;
+    secondChanges = 0;
+    first->environmentChanged = [&](bool) {
+        ++firstChanges;
+        second.reset();
+    };
+    // Reinsert the second platform after the first so a callback can destroy another subscriber
+    // before the fanout reaches it.
+    second->detach();
+    require(second->attach(), "wake callback destruction fixture must reattach");
+    firstChanges = 0;
+    secondChanges = 0;
+    wake();
+    require(firstChanges == 1 && secondChanges == 0 && !second,
+            "wake fanout must tolerate destruction of another subscriber during delivery");
+    first.reset();
+    firstChanges = 0;
+    wake();
+    require(firstChanges == 0, "destroyed native platforms must leave the shared wake fanout");
 }
 
 void nativePolicies(bool focus) {
+    wakeNotificationsFollowAttachedPlatforms();
     auxiliaryOwnershipRequiresARealOwner();
     hiddenPlacementCommitsBeforeShow();
     QWidget widget(nullptr, Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
@@ -186,6 +256,10 @@ void nativePolicies(bool focus) {
     require(!window.hasShadow, "pin must not use the native window shadow");
     widget.show();
     events();
+    require(window.level > CGWindowLevelForKey(kCGMainMenuWindowLevelKey) &&
+                window.level > CGWindowLevelForKey(kCGDockWindowLevelKey) &&
+                !window.hidesOnDeactivate,
+            "always-on-top pin must stay above the menu bar and Dock when inactive");
     QScreen* screen = widget.screen();
     PinnedPlacement placement{
         screen->name(), screen->serialNumber(),
@@ -215,14 +289,22 @@ void nativePolicies(bool focus) {
     require(platform->applyPlacement(edgePlacement, screen),
             "pin movement must remain valid at the menu-bar boundary");
     const auto constrained = platform->placement();
-    require(constrained && constrained->windowSize == edgePlacement.windowSize &&
-                constrained->position == QPointF(70, usableTop) &&
+    require(
+        constrained && constrained->windowSize == edgePlacement.windowSize &&
+            constrained->position == edgePlacement.position &&
+            widget.geometry().topLeft() ==
+                screen->geometry().topLeft() + constrained->position.toPoint(),
+        "topmost pins must overlap the menu bar with matching Qt geometry and placement readback");
+    auto dockPlacement = originalPlacement;
+    dockPlacement.position = QPointF(70, screen->geometry().height() - 20);
+    require(platform->applyPlacement(dockPlacement, screen),
+            "topmost pin placement must allow overlapping the Dock");
+    const auto dockActual = platform->placement();
+    require(dockActual && dockActual->position == dockPlacement.position &&
                 widget.geometry().topLeft() ==
-                    screen->geometry().topLeft() + constrained->position.toPoint(),
-            "native menu-bar constraints must be reflected in Qt geometry and placement readback");
+                    screen->geometry().topLeft() + dockPlacement.position.toPoint(),
+            "Dock overlap must preserve native and Qt geometry");
     require(platform->applyPlacement(originalPlacement, screen), "restore edge placement");
-    require(window.level == NSModalPanelWindowLevel && !window.hidesOnDeactivate,
-            "always-on-top pin must stay above floating tools and remain visible when inactive");
     QWidget floatingTool(nullptr, Qt::Tool | Qt::FramelessWindowHint);
     NSWindow* tool = reinterpret_cast<NSView*>(floatingTool.winId()).window;
     require(window.level > tool.level,
@@ -231,8 +313,14 @@ void nativePolicies(bool focus) {
             "disabling always-on-top must restore the normal window band");
     require(platform->attach() && window.level == NSNormalWindowLevel,
             "reattaching must preserve the always-on-top opt-out");
+    require(platform->applyPlacement(edgePlacement, screen),
+            "normal pins must still accept placement near the menu bar");
+    const auto normalPlacement = platform->placement();
+    require(normalPlacement && normalPlacement->position == QPointF(70, usableTop),
+            "disabling always-on-top must retain AppKit's normal menu-bar constraint");
     require(platform->setStaysOnTop(true) && window.level > tool.level,
             "re-enabling always-on-top must move the pin above floating tools");
+    require(platform->applyPlacement(originalPlacement, screen), "restore topmost placement");
     require((window.collectionBehavior & NSWindowCollectionBehaviorCanJoinAllSpaces) &&
                 (window.collectionBehavior & NSWindowCollectionBehaviorFullScreenAuxiliary),
             "pin must join desktop and full-screen Spaces");
@@ -263,7 +351,7 @@ void nativePolicies(bool focus) {
         auxiliary.show();
         events();
         NSWindow* panel = reinterpret_cast<NSView*>(auxiliary.winId()).window;
-        require(panel.level == NSModalPanelWindowLevel &&
+        require(panel.level == snow_shot::platform::detail::pinnedWindowLevel() &&
                     (panel.collectionBehavior & NSWindowCollectionBehaviorFullScreenAuxiliary) &&
                     window.keyWindow && editor.hasFocus(),
                 "passive auxiliary controls must share Space policy without taking focus");
@@ -285,7 +373,8 @@ void nativePolicies(bool focus) {
     require(platform->attach() && platform->setInputTransparent(true),
             "surface recreation must restore platform ownership");
     NSWindow* recreated = [reinterpret_cast<NSView*>(widget.winId()).window retain];
-    require(recreated.level == NSModalPanelWindowLevel && !recreated.hidesOnDeactivate,
+    require(recreated.level == snow_shot::platform::detail::pinnedWindowLevel() &&
+                !recreated.hidesOnDeactivate,
             "surface recreation must preserve the always-on-top native policy");
     int notifications = 0;
     platform->environmentChanged = [&](bool) { ++notifications; };
@@ -398,6 +487,100 @@ int delivery() {
             "dismissing a pin must own the release and not click the application underneath");
     return 0;
 }
+
+int modalDelivery(Qt::WindowModality modality = Qt::WindowModal) {
+    if (sessionLocked() || !CGPreflightPostEventAccess())
+        return 77;
+    CGEventRef initial = CGEventCreate(nullptr);
+    const CGPoint original = CGEventGetLocation(initial);
+    CFRelease(initial);
+    struct CursorRestore {
+        CGPoint position;
+        ~CursorRestore() {
+            CGWarpMouseCursorPosition(position);
+        }
+    } restore{original};
+    const auto pointer = [](CGEventType type, const QPoint& position) {
+        CGEventRef event = CGEventCreateMouseEvent(
+            nullptr, type, CGPointMake(position.x(), position.y()), kCGMouseButtonLeft);
+        CGEventPost(kCGHIDEventTap, event);
+        CFRelease(event);
+        events(80);
+    };
+    ControlledWindow pin;
+    pin.setWindowFlags(Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
+    pin.setGeometry(200, 200, 640, 480);
+    auto platform = createPinnedWindowPlatform(&pin);
+    pin.show();
+    require(platform->activate(), "pin must activate before opening its confirmation");
+    events();
+    adqt::widgets::AdModal modal(&pin);
+    modal.setMode(adqt::widgets::AdModal::Mode::Window);
+    modal.setWindowModality(modality);
+    modal.setPreset(adqt::widgets::AdModal::Preset::Confirm);
+    modal.setWindowTitle(QStringLiteral("Destroy pinned window"));
+    modal.setText(QStringLiteral("Destroy this pinned window?"));
+    modal.open();
+    events();
+    QWidget* surface = modal.acceptButton()->window();
+    NSWindow* nativePin = reinterpret_cast<NSView*>(pin.winId()).window;
+    NSWindow* nativeModal = reinterpret_cast<NSView*>(surface->winId()).window;
+    require(nativeModal.level >= nativePin.level,
+            "owned modals must remain above the elevated pin, including application modals");
+    require(nativeModal.animationBehavior == (modality == Qt::ApplicationModal
+                                                  ? NSWindowAnimationBehaviorDefault
+                                                  : NSWindowAnimationBehaviorDocumentWindow),
+            "elevating a movable confirmation must preserve its normal presentation animation");
+    if (modality == Qt::ApplicationModal) {
+        require(QApplication::activeModalWidget() == surface && NSApp.modalWindow == nativeModal,
+                "pin dialogs must retain native application modality and its presentation");
+    }
+    // AppKit activation is asynchronous. Deliver native input only after this
+    // fixture owns foreground focus, rather than relying on a fixed frame delay.
+    QElapsedTimer activation;
+    activation.start();
+    const auto ready = [&] {
+        return NSApp.keyWindow == nativeModal &&
+               NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier ==
+                   NSProcessInfo.processInfo.processIdentifier;
+    };
+    while (!ready() && activation.elapsed() < 3000)
+        events(1);
+    require(ready(), "the modal must receive foreground focus before native interaction");
+    require(!nativeModal.isSheet, "the confirmation must stay independently movable");
+    const QRect originalGeometry = pin.geometry();
+    const QPoint from = pin.mapToGlobal(QPoint(30, pin.height() - 30));
+    pointer(kCGEventMouseMoved, from);
+    pointer(kCGEventLeftMouseDown, from);
+    pointer(kCGEventLeftMouseDragged, from + QPoint(50, 30));
+    pointer(kCGEventLeftMouseUp, from + QPoint(50, 30));
+    require(pin.geometry() == originalGeometry, "a native drag must not move the modal's pin");
+    require(NSApp.keyWindow != nativePin, "clicking a blocked pin must not activate it");
+    const QPoint center = surface->mapToGlobal(surface->rect().center());
+    const NSPoint nativeCenter =
+        NSMakePoint(center.x(), NSMaxY(NSScreen.screens.firstObject.frame) - center.y());
+    require([NSWindow windowNumberAtPoint:nativeCenter
+                belowWindowWithWindowNumber:0] == nativeModal.windowNumber,
+            "clicking a blocked pin must not cover its confirmation");
+    const QPoint modalPosition = surface->pos();
+    const QPoint header = surface->mapToGlobal(QPoint(8, 8));
+    pointer(kCGEventMouseMoved, header);
+    pointer(kCGEventLeftMouseDown, header);
+    pointer(kCGEventLeftMouseDragged, header + QPoint(40, -25));
+    pointer(kCGEventLeftMouseUp, header + QPoint(40, -25));
+    require(surface->pos() == modalPosition + QPoint(40, -25) && pin.geometry() == originalGeometry,
+            "native dragging must move the confirmation independently of the blocked pin");
+    const QPoint cancel = modal.rejectButton()->mapToGlobal(modal.rejectButton()->rect().center());
+    pointer(kCGEventLeftMouseDown, cancel);
+    pointer(kCGEventLeftMouseUp, cancel);
+    require(!modal.isOpen(), "Cancel must receive native mouse input");
+    pointer(kCGEventLeftMouseDown, from);
+    pointer(kCGEventLeftMouseDragged, from + QPoint(50, 30));
+    pointer(kCGEventLeftMouseUp, from + QPoint(50, 30));
+    require(pin.geometry() == originalGeometry.translated(50, 30),
+            "canceling the confirmation must restore native pin dragging");
+    return 0;
+}
 } // namespace
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
@@ -418,6 +601,10 @@ int main(int argc, char** argv) {
                 auxiliaryOwnershipRequiresARealOwner();
             else if (app.arguments().contains(QStringLiteral("--delivery")))
                 result = delivery();
+            else if (app.arguments().contains(QStringLiteral("--application-modal-delivery")))
+                result = modalDelivery(Qt::ApplicationModal);
+            else if (app.arguments().contains(QStringLiteral("--modal-delivery")))
+                result = modalDelivery();
             else if (app.arguments().contains(QStringLiteral("--focus")) && sessionLocked()) {
                 std::cerr << "Cocoa focus qualification requires an unlocked desktop\n";
                 result = 77;

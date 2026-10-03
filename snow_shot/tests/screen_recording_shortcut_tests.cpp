@@ -437,16 +437,25 @@ void recordingControlShortcutsFollowButtonsAndSettings() {
     pressAll(*area.canvas());
     require(exports == 2 && pauses == 1 && resumes == 1 && copies == 2 && ends == 3,
             "paused shortcuts must export, resume, copy or end exactly once");
-    const int before = total();
+    const int beforeRepeat = total();
     pressAll(toolbar, true);
-    palette.setRecordingSession(ScreenshotToolPalette::RecordingSessionStatus::pausedStopping());
-    pressAll(toolbar);
+    require(total() == beforeRepeat, "key repeat must not trigger recording commands");
+    using Status = ScreenshotToolPalette::RecordingSessionStatus;
+    for (const auto status :
+         {Status::countingDown(), Status::starting(), Status::stopping(), Status::pausedStopping(),
+          Status::copying(), Status::pausedCopying()}) {
+        palette.setRecordingSession(status);
+        area.setDrawingBlocked(true);
+        const int beforeClose = ends;
+        const int beforeCommands = total() - ends;
+        pressAll(toolbar);
+        pressAll(area);
+        require(ends == beforeClose + 2 && total() - ends == beforeCommands,
+                "busy recording must allow exit from both windows while locking capture commands");
+    }
     palette.setRecordingSession(ScreenshotToolPalette::RecordingSessionStatus::paused());
-    area.setDrawingBlocked(true);
-    pressAll(area);
     area.setDrawingBlocked(false);
-    require(total() == before,
-            "busy operations and key repeat must not trigger recording commands");
+    const int before = total();
     QLineEdit editor(&toolbar);
     editor.setText(QStringLiteral("recording shortcut text"));
     editor.show();
@@ -584,6 +593,17 @@ void recordingShortcutsFollowBothWindowsAndConfiguredKeys() {
     require(area.focusPolicy() == Qt::StrongFocus &&
                 !area.testAttribute(Qt::WA_ShowWithoutActivating),
             "idle recording area must accept keyboard input for region editing");
+    auto* moveButton = area.findChild<QWidget*>(QStringLiteral("screenRecordingRegionDragHandle"));
+    require(moveButton && moveButton->isVisible() && !moveButton->isWindow() &&
+                moveButton->parentWidget() == &area,
+            "region editing must expose its child move button");
+    focus(area);
+    const int beforeRegionShortcut = shapes;
+    press(*moveButton, Qt::Key_F6);
+    require(shapes == beforeRegionShortcut + 1 &&
+                area.inputMode() == ScreenRecordingAreaWindow::InputMode::Drawing &&
+                !moveButton->isVisible(),
+            "drawing shortcuts from region controls must focus the canvas and hide the controls");
 
     for (QWidget* receiver : {static_cast<QWidget*>(&toolbar), static_cast<QWidget*>(&area),
                               static_cast<QWidget*>(canvas), palette->mainPanel()}) {

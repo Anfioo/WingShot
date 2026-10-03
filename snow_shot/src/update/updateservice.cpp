@@ -1,3 +1,4 @@
+#include "snow_shot/app/edition.h"
 #include "snow_shot/update/updateservice.h"
 
 #include <QCoreApplication>
@@ -130,9 +131,9 @@ struct UpdateService::Impl {
                 handshakeTimeout.stop();
                 handshakeComplete = false;
                 stdoutBuffer.clear();
-                activeOperation = Operation::None;
                 lifecycle = Lifecycle::Stopped;
                 if (intentional) {
+                    activeOperation = Operation::None;
                     launchPending();
                     return;
                 }
@@ -148,6 +149,7 @@ struct UpdateService::Impl {
                     unavailable(QCoreApplication::translate(
                         "UpdateErrors", "Could not contact the update coordinator"));
                 }
+                activeOperation = Operation::None;
                 if (finishedOperation == Operation::Probe) {
                     scheduleTimer.stop();
                     automaticCheckDue = false;
@@ -167,10 +169,10 @@ struct UpdateService::Impl {
                 !handshakeComplete) {
                 const Operation failedOperation = activeOperation;
                 const Trigger failedTrigger = activeTrigger;
-                activeOperation = Operation::None;
                 lifecycle = Lifecycle::Stopped;
                 unavailable(QCoreApplication::translate(
                     "UpdateErrors", "Could not launch the application update helper"));
+                activeOperation = Operation::None;
                 if (failedOperation == Operation::Probe) {
                     scheduleTimer.stop();
                     automaticCheckDue = false;
@@ -208,9 +210,9 @@ struct UpdateService::Impl {
 
     QString executablePath() const {
 #ifdef Q_OS_MACOS
-        return QDir(options.applicationDirectory).filePath(QStringLiteral("snow-shot-updater"));
+        return QDir(options.applicationDirectory).filePath(app::edition::updaterName());
 #else
-        return QDir(options.applicationDirectory).filePath(QStringLiteral("snow-shot-updater.exe"));
+        return QDir(options.applicationDirectory).filePath(app::edition::updaterName());
 #endif
     }
 
@@ -306,13 +308,14 @@ struct UpdateService::Impl {
                    activeTrigger == Trigger::PolicyChange) {
             armAutomaticInterval();
         }
-        if (activeOperation == Operation::Check && mode == u"download" &&
-            status.state == UpdateState::Available) {
+        if ((activeOperation == Operation::Check || activeOperation == Operation::Apply) &&
+            mode == u"download" && status.state == UpdateState::Available) {
             pendingOperation = Operation::Download;
             pendingTrigger = Trigger::PolicyChange;
         }
         queueDueAutomaticCheck();
         lifecycle = Lifecycle::ExpectedExit;
+        reportCompletion(outcome);
     }
 
     void spawn() {
@@ -321,6 +324,7 @@ struct UpdateService::Impl {
         }
         stopping = false;
         handedOff = false;
+        operationFinishedReported = false;
         preserveStatusOnExit = false;
         lifecycle = Lifecycle::Starting;
         handshakeComplete = false;
@@ -334,8 +338,10 @@ struct UpdateService::Impl {
             options.root,
             QStringLiteral("--cache"),
             options.cacheDirectory,
-            QStringLiteral("--base-url"),
-            options.baseUrl.toString(QUrl::FullyEncoded),
+            QStringLiteral("--github-api-url"),
+            options.githubApiUrl.toString(QUrl::FullyEncoded),
+            QStringLiteral("--gitee-api-url"),
+            options.giteeApiUrl.toString(QUrl::FullyEncoded),
             QStringLiteral("--parent"),
             QString::number(QCoreApplication::applicationPid()),
         };
@@ -558,11 +564,20 @@ struct UpdateService::Impl {
         stopProcess();
     }
 
+    void reportCompletion(const QString& outcome) {
+        if (stopping || activeOperation == Operation::None || operationFinishedReported) {
+            return;
+        }
+        operationFinishedReported = true;
+        emit q.operationFinished(operationName(activeOperation), outcome);
+    }
+
     void fail(const QString& error) {
         errorSource.clear();
         status.state = UpdateState::Failed;
         status.error = error;
         emit q.statusChanged();
+        reportCompletion(QStringLiteral("failed"));
     }
 
     void unavailable(const QString& error) {
@@ -570,6 +585,7 @@ struct UpdateService::Impl {
         status.state = UpdateState::Unavailable;
         status.error = error;
         emit q.statusChanged();
+        reportCompletion(QStringLiteral("failed"));
     }
 
     UpdateService& q;
@@ -595,6 +611,7 @@ struct UpdateService::Impl {
     bool helloSeen = false;
     bool stopping = false;
     bool handedOff = false;
+    bool operationFinishedReported = false;
     bool preserveStatusOnExit = false;
     bool cancelWhenRunning = false;
     bool automaticCheckDue = false;
@@ -606,7 +623,12 @@ UpdateService::UpdateService(Options options, QObject* parent)
     setObjectName(QStringLiteral("snowShotUpdateService"));
 }
 
-UpdateService::~UpdateService() = default;
+UpdateService::~UpdateService() {
+    // Reaping the helper can dispatch its last frames. Observers must not receive
+    // callbacks from a service whose dependent application objects are tearing down.
+    QObject::disconnect(this, nullptr, nullptr, nullptr);
+    m_impl.reset();
+}
 
 bool UpdateService::event(QEvent* event) {
     if (event->type() == QEvent::LanguageChange && !m_impl->errorSource.isEmpty()) {
@@ -619,6 +641,10 @@ bool UpdateService::event(QEvent* event) {
 
 const UpdateStatus& UpdateService::status() const {
     return m_impl->status;
+}
+bool UpdateService::busy() const {
+    return m_impl->process.state() != QProcess::NotRunning ||
+           m_impl->lifecycle != Lifecycle::Stopped || m_impl->pendingOperation != Operation::None;
 }
 
 void UpdateService::start() {

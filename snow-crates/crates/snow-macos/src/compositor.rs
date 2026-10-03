@@ -77,7 +77,10 @@ impl Compositor {
                 "GPU pool capacity must be 2..=16".into(),
             ));
         }
-        unsafe {
+        // Native constructors autorelease internal objects even when their
+        // returned handles are retained. Drain those references here so replacing
+        // a compositor does not retain its context until the capture worker exits.
+        objc2::rc::autoreleasepool(|_| unsafe {
             let (fourcc, color, space) = match format {
                 PixelFormat::Bgra8 => (
                     kCVPixelFormatType_32BGRA,
@@ -166,7 +169,7 @@ impl Compositor {
                 color,
                 color_space,
             })
-        }
+        })
     }
 
     /// Bit-exact detach of a same-size buffer into the output pool.
@@ -499,6 +502,42 @@ fn metal_texture(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn recreated_contexts_are_released_before_worker_pool_drains() {
+        std::thread::spawn(|| {
+            // A capture worker can have a pool spanning multiple compositor
+            // replacements. Each constructor must drain its own autoreleases.
+            objc2::rc::autoreleasepool(|_| {
+                let size = PixelSize::new(32, 18).unwrap();
+                for cache_intermediates in [true, false] {
+                    for _ in 0..3 {
+                        let mut compositor = Compositor::with_intermediate_cache(
+                            size,
+                            PixelFormat::Bgra8,
+                            4,
+                            cache_intermediates,
+                        )
+                        .expect("metal compositor");
+                        let context = objc2::rc::Weak::from_retained(&compositor.context);
+                        let frame = compositor
+                            .compose(&[], true)
+                            .expect("retained context renders");
+                        assert_eq!(frame.size(), size);
+                        drop(frame);
+                        drop(compositor);
+                        assert!(
+                            context.load().is_none(),
+                            "dropped compositor context outlived its owner"
+                        );
+                    }
+                }
+            });
+        })
+        .join()
+        .unwrap();
+    }
+
     #[test]
     fn rejects_overflowing_and_empty_layers() {
         let size = PixelSize::new(10, 10).unwrap();
@@ -538,6 +577,89 @@ mod tests {
             )
             .is_ok()
         );
+    }
+
+    #[test]
+    fn bitmap_overlays_preserve_top_left_rows_and_edge_clipping() {
+        let size = PixelSize::new(10, 8).unwrap();
+        let mut compositor = Compositor::new(size, PixelFormat::Bgra8, 4).unwrap();
+        // Padded rows with distinct colors also detect accidental stride assumptions.
+        let pixels = [
+            255, 0, 0, 255, 255, 0, 0, 255, 0, 0, 0, 0, 0, 255, 0, 255, 0, 255, 0, 255, 0, 0, 0, 0,
+            0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 0, 0,
+        ];
+        for (x, y) in [(2, 1), (9, 7)] {
+            // Exercise both ordinary effects and the multiply highlight uploader.
+            for highlight in [false, true] {
+                let background = compositor
+                    .compose_with_overlays(
+                        &[],
+                        &[RgbaOverlay {
+                            x: 0,
+                            y: 0,
+                            width: 10,
+                            height: 8,
+                            stride: 40,
+                            bytes: &[255; 320],
+                        }],
+                        true,
+                    )
+                    .unwrap();
+                let layer = Layer {
+                    image: &background,
+                    source: PixelRect {
+                        x: 0,
+                        y: 0,
+                        width: 10,
+                        height: 8,
+                    },
+                    destination: PixelRect {
+                        x: 0,
+                        y: 0,
+                        width: 10,
+                        height: 8,
+                    },
+                };
+                let overlays = [RgbaOverlay {
+                    x,
+                    y,
+                    width: 2,
+                    height: 3,
+                    stride: 12,
+                    bytes: &pixels,
+                }];
+                let frame = compositor
+                    .compose_with_highlight(
+                        &[layer],
+                        if highlight { &[] } else { &overlays },
+                        if highlight { &overlays } else { &[] },
+                        true,
+                    )
+                    .unwrap()
+                    .to_cpu_format(PixelFormat::Rgba8)
+                    .unwrap();
+                for py in 0..8usize {
+                    for px in 0..10usize {
+                        let offset = frame.planes[0].offset + py * frame.planes[0].stride + px * 4;
+                        let expected = if px >= x as usize
+                            && px < x as usize + 2
+                            && py >= y as usize
+                            && py < y as usize + 3
+                        {
+                            let row = py - y as usize;
+                            &pixels[row * 12..row * 12 + 4]
+                        } else {
+                            &[255; 4]
+                        };
+                        assert_eq!(
+                            &frame.bytes[offset..offset + 4],
+                            expected,
+                            "overlay ({x}, {y}), pixel ({px}, {py}), highlight={highlight}"
+                        );
+                    }
+                }
+            }
+        }
     }
 
     #[test]

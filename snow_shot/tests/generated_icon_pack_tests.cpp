@@ -6,6 +6,7 @@
 #include <QApplication>
 #include <QColor>
 #include <QImage>
+#include <QPainter>
 #include <QSet>
 #include <QStringList>
 #include <QXmlStreamReader>
@@ -94,10 +95,10 @@ void everySnowShotEntryRenders() {
     namespace icons = snow_shot::presentation::icons::custom;
     adqt::icons::IconRenderer renderer;
     const auto registered = icons::registerWith(renderer);
-    require(registered.ok(), "WingShot pack registration should succeed");
+    require(registered.ok(), "Snow Shot pack registration should succeed");
     const adqt::icons::IconPack* staticPack = icons::pack().staticPack();
-    require(staticPack != nullptr && staticPack->entryCount == 142,
-            "WingShot pack should contain all 142 project-owned assets");
+    require(staticPack != nullptr && staticPack->entryCount == 160,
+            "Snow Shot pack should contain all 160 project-owned assets");
 
     adqt::icons::IconRenderRequest request;
     request.logicalSize = QSize(32, 32);
@@ -113,18 +114,18 @@ void everySnowShotEntryRenders() {
     } capture;
     for (std::size_t index = 0; index < staticPack->entryCount; ++index) {
         const auto ref = icons::pack().icon(index);
-        require(ref.isValid(), "every WingShot pack entry should create a reference");
+        require(ref.isValid(), "every Snow Shot pack entry should create a reference");
         const QPixmap pixmap = renderer.renderIconPixmap(ref, request);
         require(!pixmap.isNull() && pixmap.size() == QSize(40, 40) &&
                     qFuzzyCompare(pixmap.devicePixelRatio(), 1.25),
-                "every WingShot pack entry should render at fractional DPR");
+                "every Snow Shot pack entry should render at fractional DPR");
         require(!alphaBounds(pixmap.toImage()).isEmpty(),
-                "every WingShot pack entry should have nonblank alpha bounds");
+                "every Snow Shot pack entry should have nonblank alpha bounds");
     }
     for (const auto& warning : renderWarnings)
         std::cerr << warning.toStdString() << '\n';
     require(renderWarnings.isEmpty(),
-            "every WingShot icon must render without missing images or undefined references");
+            "every Snow Shot icon must render without missing images or undefined references");
 }
 
 void recaptureIconUsesThemeColor() {
@@ -140,7 +141,10 @@ void recaptureIconUsesThemeColor() {
         for (int y = 0; y < image.height(); ++y) {
             for (int x = 0; x < image.width(); ++x) {
                 const QColor pixel = image.pixelColor(x, y);
-                require(pixel.alpha() != 255 || pixel.rgb() == color.rgb(),
+                // Fractional SVG transforms can round an opaque overlap by one color level.
+                require(pixel.alpha() != 255 || (std::abs(pixel.red() - color.red()) <= 1 &&
+                                                 std::abs(pixel.green() - color.green()) <= 1 &&
+                                                 std::abs(pixel.blue() - color.blue()) <= 1),
                         "Recapture must not retain any fixed SVG colors");
             }
         }
@@ -151,27 +155,27 @@ void projectIconColorsAndModelsArePreserved() {
     namespace icons = snow_shot::presentation::icons::custom;
     const QColor primary(0, 166, 90);
     const QColor brandPurple(0x92, 0x54, 0xde);
-    const auto logoRef = icons::brand::WingshotLogo(adqt::icons::IconColors::primary(primary));
+    const auto logoRef = icons::brand::SnowShotLogo(adqt::icons::IconColors::primary(primary));
     const auto logoMetadata = adqt::icons::describeIcon(logoRef);
-    require(logoMetadata.key.pack == QStringLiteral("wingshot") &&
+    require(logoMetadata.key.pack == QStringLiteral("snow-shot") &&
                 logoMetadata.key.variant == QStringLiteral("brand") &&
                 logoMetadata.colorModel == adqt::icons::IconColorModel::Monochrome,
-            "WingShot logo should be a project-owned hybrid monochrome reference");
+            "Snow Shot logo should be a project-owned hybrid monochrome reference");
     const QImage logo = render(logoRef, QSize(190, 34)).toImage();
     require(containsOpaqueColor(logo, brandPurple) && containsOpaqueColor(logo, primary),
-            "WingShot logo should preserve its fixed purple mark and themed text slot");
+            "Snow Shot logo should preserve its fixed purple mark and themed text slot");
 
     const auto opacityRef = icons::outlined::Opacity(adqt::icons::IconColors::primary(primary));
     const auto opacityMetadata = adqt::icons::describeIcon(opacityRef);
     const QImage opacity = render(opacityRef, QSize(32, 32)).toImage();
-    require(opacityMetadata.key.pack == QStringLiteral("wingshot") &&
+    require(opacityMetadata.key.pack == QStringLiteral("snow-shot") &&
                 opacityMetadata.key.name == QStringLiteral("opacity") &&
                 containsOpaqueColor(opacity, primary),
-            "opacity should render from the WingShot pack with its primary slot");
+            "opacity should render from the Snow Shot pack with its primary slot");
 
     const auto mouseRef = icons::outlined::Mouse(adqt::icons::IconColors::primary(primary));
     const auto mouseMetadata = adqt::icons::describeIcon(mouseRef);
-    require(mouseMetadata.key.pack == QStringLiteral("wingshot") &&
+    require(mouseMetadata.key.pack == QStringLiteral("snow-shot") &&
                 mouseMetadata.key.name == QStringLiteral("mouse") &&
                 containsOpaqueColor(render(mouseRef, QSize(32, 32)).toImage(), primary),
             "mouse should expose a tintable project-owned icon factory");
@@ -199,7 +203,44 @@ void projectIconColorsAndModelsArePreserved() {
     }
     require(appMetadata.colorModel == adqt::icons::IconColorModel::FullColor &&
                 opaqueColors.size() > 4,
-            "WingShot application icon should preserve full-color source pixels");
+            "Snow Shot application icon should preserve full-color source pixels");
+}
+
+void miniLogoPreservesTheWordmarkAndAddsRoundedVectorLettering() {
+    namespace icons = snow_shot::presentation::icons::custom;
+    const auto mini = icons::brand::SnowShotMiniLogo();
+    const auto svg = mini.descriptor()->svg;
+    require(svg.find("<text") == std::string_view::npos &&
+                svg.find("<image") == std::string_view::npos,
+            "Mini branding must scale without installed fonts or embedded raster images");
+    for (const QColor color : {QColor(32, 34, 38), QColor(240, 240, 242)}) {
+        const auto colors = adqt::icons::IconColors::primary(color);
+        for (const qreal scale : {1.0, 2.0, 3.0}) {
+            const QImage original =
+                render(icons::brand::SnowShotLogo(colors), QSize(95, 17), scale).toImage();
+            const QImage extended =
+                render(icons::brand::SnowShotMiniLogo(colors), QSize(137, 17), scale).toImage();
+            require(extended.copy(original.rect()) == original,
+                    "Mini must preserve the original Snow Shot artwork and its themed text");
+        }
+    }
+    for (const qreal scale : {1.0, 1.25, 1.5, 1.75, 2.0, 3.0}) {
+        const QImage image = render(mini, QSize(113, 14), scale).toImage();
+        int letterCount = 0;
+        bool previousColumnHasInk = false;
+        for (int x = qRound(image.width() * 99.0 / 137.0); x < image.width(); ++x) {
+            bool columnHasInk = false;
+            for (int y = 0; y < image.height(); ++y) {
+                columnHasInk |= image.pixelColor(x, y).alpha() >= 80;
+            }
+            if (columnHasInk && !previousColumnHasInk) {
+                ++letterCount;
+            }
+            previousColumnHasInk = columnHasInk;
+        }
+        require(letterCount == 4,
+                "all four Mini letters must remain separated at the small title bar size");
+    }
 }
 
 void ocrTranslateIconUsesTheSuppliedProjectAsset() {
@@ -209,7 +250,7 @@ void ocrTranslateIconUsesTheSuppliedProjectAsset() {
         icons::outlined::OcrTranslate(adqt::icons::IconColors::primary(primary));
     const auto translateMetadata = adqt::icons::describeIcon(translateRef);
     const QImage translate = render(translateRef, QSize(32, 32)).toImage();
-    require(translateMetadata.key.pack == QStringLiteral("wingshot") &&
+    require(translateMetadata.key.pack == QStringLiteral("snow-shot") &&
                 translateMetadata.key.name == QStringLiteral("ocr-translate") &&
                 containsOpaqueColor(translate, primary) && !alphaBounds(translate).isEmpty(),
             "OCR Translate should render the supplied project asset with its primary color");
@@ -221,10 +262,10 @@ void flipVerticalIconUsesTheRotatedProjectAsset() {
     const auto metadata = adqt::icons::describeIcon(ref);
     const QRect bounds = alphaBounds(render(ref, QSize(64, 64)).toImage());
 
-    require(metadata.key.pack == QStringLiteral("wingshot") &&
+    require(metadata.key.pack == QStringLiteral("snow-shot") &&
                 metadata.key.name == QStringLiteral("flip-vertical") &&
                 bounds.height() > bounds.width(),
-            "flip-vertical should use the rotated WingShot project asset");
+            "flip-vertical should use the rotated Snow Shot project asset");
 }
 
 void conversionIconsUseTheSuppliedProjectAssets() {
@@ -233,7 +274,7 @@ void conversionIconsUseTheSuppliedProjectAssets() {
         const auto colors = adqt::icons::IconColors::primary(tint);
         for (const auto& ref : {icons::Markdown(colors), icons::Html(colors)}) {
             const auto metadata = adqt::icons::describeIcon(ref);
-            require(metadata.key.pack == QStringLiteral("wingshot") &&
+            require(metadata.key.pack == QStringLiteral("snow-shot") &&
                         (metadata.key.name == QStringLiteral("markdown") ||
                          metadata.key.name == QStringLiteral("html")),
                     "conversion icons resolve to the supplied project vector assets");
@@ -355,11 +396,53 @@ void indentedTriangleCornersAreSymmetric() {
     }
 }
 
+void numericFormatIconsRenderAtToolbarSizes() {
+    namespace icons = snow_shot::presentation::icons::custom;
+    QImage preview(600, 240, QImage::Format_ARGB32_Premultiplied);
+    preview.fill(Qt::white);
+    QPainter painter(&preview);
+    const QColor backgrounds[] = {QColor("#ffffff"), QColor("#141414"), QColor("#e6f4ff"),
+                                  QColor("#f5f5f5")};
+    const QColor foregrounds[] = {QColor("#262626"), QColor("#f0f0f0"), QColor("#1677ff"),
+                                  QColor("#bfbfbf")};
+    for (int row = 0; row < 4; ++row) {
+        painter.fillRect(QRect(0, row * 60, 600, 60), backgrounds[row]);
+        const auto colors = adqt::icons::IconColors::primary(foregrounds[row]);
+        const QList<adqt::icons::IconRef> refs = {
+            icons::outlined::SequenceNumberNumericArabic(colors),
+            icons::outlined::SequenceNumberNumericRoman(colors),
+            icons::outlined::SequenceNumberNumericLowercaseLetters(colors),
+            icons::outlined::SequenceNumberNumericUppercaseLetters(colors),
+            icons::outlined::SequenceNumberNumericChinese(colors)};
+        for (int column = 0; column < refs.size(); ++column) {
+            const auto* descriptor = refs[column].descriptor();
+            require(descriptor != nullptr, "numeric icon is registered");
+            const QByteArray svg(descriptor->svg.data(),
+                                 static_cast<qsizetype>(descriptor->svg.size()));
+            require(svg.contains("0 0 1024 1024") && !svg.contains("<text"),
+                    "numeric icons use an Ant Design grid and vector paths");
+            for (qreal dpr : {1.0, 1.5, 2.0}) {
+                const QPixmap pixmap = render(refs[column], QSize(16, 16), dpr);
+                require(!pixmap.isNull() && opaquePixelCount(pixmap.toImage(), pixmap.rect()) > 0,
+                        "every numeric icon paints at normal and fractional DPI");
+            }
+            painter.drawPixmap(column * 120 + 24, row * 60 + 22,
+                               render(refs[column], QSize(16, 16)));
+            painter.drawPixmap(column * 120 + 60, row * 60 + 14,
+                               render(refs[column], QSize(32, 32)));
+        }
+    }
+    painter.end();
+    if (const auto path = qEnvironmentVariable("SNOW_SERIAL_NUMBER_ICON_PREVIEW"); !path.isEmpty())
+        require(preview.save(path), "save numeric icon inspection sheet");
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
     try {
+        numericFormatIconsRenderAtToolbarSizes();
         if (application.arguments().contains(QStringLiteral("--recapture-only"))) {
             recaptureIconUsesThemeColor();
             return 0;
@@ -378,6 +461,7 @@ int main(int argc, char** argv) {
         indentedTriangleCornersAreSymmetric();
         conversionIconsUseTheSuppliedProjectAssets();
         projectIconColorsAndModelsArePreserved();
+        miniLogoPreservesTheWordmarkAndAddsRoundedVectorLettering();
         ocrTranslateIconUsesTheSuppliedProjectAsset();
         scrollingIconsUseTheRequestedOrientations();
         flipVerticalIconUsesTheRotatedProjectAsset();

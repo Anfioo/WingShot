@@ -59,6 +59,8 @@ AppPermissions requiredPermissions(GlobalShortcutAction action, bool /*microphon
         return {P::Accessibility};
     case Action::OpenScreenRecordingFolder:
     case Action::OpenCaptureHistory:
+    case Action::GlobalCanvas:
+    case Action::SwitchWindowGroup:
     case Action::OpenPinToScreenManagement:
     case Action::OpenSettings:
     case Action::PinClipboardContent:
@@ -92,48 +94,7 @@ AppPermissionService::AppPermissionService(std::unique_ptr<AppPermissionBackend>
                                            QObject* parent)
     : QObject(parent), m_backend(std::move(backend)) {
     m_refreshTimer.setSingleShot(true);
-    connect(&m_refreshTimer, &QTimer::timeout, this, [this] {
-        const auto next = m_backend->query();
-        if (next != m_snapshot) {
-            for (const auto permission :
-                 {AppPermission::ScreenRecording, AppPermission::Accessibility,
-                  AppPermission::InputMonitoring, AppPermission::Microphone}) {
-                if (next.status(permission) != m_snapshot.status(permission)) {
-                    const char* status = "error";
-                    switch (next.status(permission)) {
-                    case AppPermissionStatus::Checking:
-                        status = "checking";
-                        break;
-                    case AppPermissionStatus::Granted:
-                        status = "granted";
-                        break;
-                    case AppPermissionStatus::Missing:
-                        status = "missing";
-                        break;
-                    case AppPermissionStatus::NotDetermined:
-                        status = "not-determined";
-                        break;
-                    case AppPermissionStatus::Denied:
-                        status = "denied";
-                        break;
-                    case AppPermissionStatus::Restricted:
-                        status = "restricted";
-                        break;
-                    case AppPermissionStatus::Error:
-                        break;
-                    }
-                    diagnostics::logEvent(
-                        QStringLiteral("snow_shot.permissions"),
-                        QStringLiteral("permission.changed"),
-                        {{QStringLiteral("operation"), appPermissionId(permission)},
-                         {QStringLiteral("status"), QString::fromLatin1(status)}});
-                }
-            }
-            m_snapshot = next;
-            emit changed();
-        }
-        emit refreshed();
-    });
+    connect(&m_refreshTimer, &QTimer::timeout, this, &AppPermissionService::refreshNow);
     m_pollTimer.setInterval(2000);
     m_pollTimer.setTimerType(Qt::CoarseTimer);
     connect(&m_pollTimer, &QTimer::timeout, this, &AppPermissionService::refresh);
@@ -156,7 +117,10 @@ AppPermissions AppPermissionService::takeStartupMissing() {
     return startupMissing();
 }
 bool AppPermissionService::allow(const AppPermissions& requirements,
-                                 const std::function<void(const AppPermissions&)>& blocked) const {
+                                 const std::function<void(const AppPermissions&)>& blocked) {
+    if (requirements.isEmpty())
+        return true;
+    refreshNow();
     const auto unavailable = missing(requirements);
     if (unavailable.isEmpty())
         return true;
@@ -177,7 +141,51 @@ void AppPermissionService::refresh() {
     if (!m_refreshTimer.isActive())
         m_refreshTimer.start(0);
 }
+void AppPermissionService::refreshNow() {
+    m_refreshTimer.stop();
+    const auto next = m_backend->query();
+    if (next != m_snapshot) {
+        for (const auto permission : {AppPermission::ScreenRecording, AppPermission::Accessibility,
+                                      AppPermission::InputMonitoring, AppPermission::Microphone}) {
+            if (next.status(permission) != m_snapshot.status(permission)) {
+                const char* status = "error";
+                switch (next.status(permission)) {
+                case AppPermissionStatus::Checking:
+                    status = "checking";
+                    break;
+                case AppPermissionStatus::Granted:
+                    status = "granted";
+                    break;
+                case AppPermissionStatus::Missing:
+                    status = "missing";
+                    break;
+                case AppPermissionStatus::NotDetermined:
+                    status = "not-determined";
+                    break;
+                case AppPermissionStatus::Denied:
+                    status = "denied";
+                    break;
+                case AppPermissionStatus::Restricted:
+                    status = "restricted";
+                    break;
+                case AppPermissionStatus::Error:
+                    break;
+                }
+                diagnostics::logEvent(QStringLiteral("snow_shot.permissions"),
+                                      QStringLiteral("permission.changed"),
+                                      {{QStringLiteral("operation"), appPermissionId(permission)},
+                                       {QStringLiteral("status"), QString::fromLatin1(status)}});
+            }
+        }
+        m_snapshot = next;
+        emit changed();
+    }
+    emit refreshed();
+}
 void AppPermissionService::request(AppPermission permission) {
+    if (requestPending())
+        return;
+    refreshNow();
     const auto status = m_snapshot.status(permission);
     if (requestPending() || m_snapshot.granted(permission) ||
         status == AppPermissionStatus::Checking || status == AppPermissionStatus::Restricted ||

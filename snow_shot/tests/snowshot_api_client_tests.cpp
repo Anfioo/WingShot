@@ -1,8 +1,11 @@
 #include "snow_shot/network/snowshotapiclient.h"
+#include "translation_test_support.h"
 #include "snow_shot/diagnostics/diagnostics.h"
+#include "snowimageqtcodec.h"
 
 #include <QCoreApplication>
 #include <QEventLoop>
+#include <QElapsedTimer>
 #include <QFile>
 #include <QImage>
 #include <QJsonArray>
@@ -19,6 +22,9 @@
 #include <QSemaphore>
 #include <QThreadPool>
 #include <QThread>
+#include <QUuid>
+
+#include <memory>
 
 #include <cstdlib>
 #include <iostream>
@@ -31,6 +37,10 @@ class SnowShotApiClientTestAccess {
     }
     static void timeout(SnowShotApiClient& client, int milliseconds) {
         client.m_tableTimeoutMs = milliseconds;
+        client.m_latexTimeoutMs = milliseconds;
+    }
+    static qsizetype customQueued(const SnowShotApiClient& client) {
+        return client.m_customChatQueue.size();
     }
 };
 
@@ -166,6 +176,99 @@ void tablePreparationIsAsynchronousAndLifetimeSafe() {
         completionLoop.exec();
     }
     require(completions == 1 && request.contains("/api/v1/table/extract") &&
+                request.contains("image/webp") && request.contains("RIFF") &&
+                request.contains("WEBP"),
+            "table preserves multipart WebP contract and completes once");
+}
+
+void latexPreparationIsAsynchronousAndLifetimeSafe() {
+    for (int scenario = 0; scenario < 6; ++scenario) {
+        QTcpServer server;
+        require(server.listen(QHostAddress::LocalHost), "table lifecycle server listens");
+        auto* client =
+            new SnowShotApiClient(QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort()));
+        auto* receiver = new QObject;
+        QSemaphore entered, release;
+        bool workerThread = false;
+        SnowShotApiClientTestAccess::prepare(*client, [&](const QImage&) {
+            workerThread = QThread::currentThread() != QCoreApplication::instance()->thread();
+            entered.release();
+            release.acquire();
+            return QByteArray();
+        });
+        if (scenario == 4) {
+            SnowShotApiClientTestAccess::timeout(*client, 1);
+        }
+        int completions = 0;
+        QEventLoop timeoutLoop;
+        QImage image(16, 16, QImage::Format_RGBA8888);
+        image.fill(Qt::white);
+        const auto token = client->extractLatex(image, receiver, [&](SnowShotLatexResult result) {
+            require(!result.succeeded(), "empty preparation or timeout must fail");
+            ++completions;
+            timeoutLoop.quit();
+            if (scenario == 5) {
+                delete client;
+                client = nullptr;
+            }
+        });
+        require(token != 0 && completions == 0, "table returns token before preparation completes");
+        require(entered.tryAcquire(1, 5000) && workerThread, "table encoding runs off UI thread");
+        bool heartbeat = false;
+        QEventLoop heartbeatLoop;
+        QTimer::singleShot(0, &heartbeatLoop, [&]() {
+            heartbeat = true;
+            heartbeatLoop.quit();
+        });
+        heartbeatLoop.exec();
+        require(heartbeat, "UI dispatch continues while encoder is blocked");
+        if (scenario == 1) {
+            client->cancel(token);
+        }
+        if (scenario == 2) {
+            delete receiver;
+            receiver = nullptr;
+        }
+        if (scenario == 3) {
+            delete client;
+            client = nullptr;
+        }
+        if (scenario == 4 && completions == 0) {
+            QTimer::singleShot(5000, &timeoutLoop, &QEventLoop::quit);
+            timeoutLoop.exec();
+            require(completions == 1, "deadline includes blocked preparation");
+        }
+        release.release();
+        require(QThreadPool::globalInstance()->waitForDone(5000), "table worker settles");
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
+        require(completions == ((scenario == 0 || scenario == 4 || scenario == 5) ? 1 : 0),
+                "cancelled or destroyed consumers receive no late callback");
+        require(!server.hasPendingConnections(), "failed or cancelled preparation never uploads");
+        delete receiver;
+        delete client;
+    }
+    QTcpServer server;
+    require(server.listen(QHostAddress::LocalHost), "table upload server listens");
+    SnowShotApiClient client(QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort()));
+    QImage image(16, 16, QImage::Format_RGBA8888);
+    image.fill(Qt::white);
+    int completions = 0;
+    QEventLoop completionLoop;
+    const auto token = client.extractLatex(image, &client, [&](SnowShotLatexResult result) {
+        require(result.succeeded(), "table response succeeds");
+        ++completions;
+        completionLoop.quit();
+    });
+    require(token != 0, "valid table request accepted");
+    const QByteArray body = R"({"data":{"latex":"x^2"}})";
+    const QByteArray request = waitForHttpRequest(
+        server, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: " +
+                    QByteArray::number(body.size()) + "\r\nConnection: close\r\n\r\n" + body);
+    if (completions == 0) {
+        QTimer::singleShot(5000, &completionLoop, &QEventLoop::quit);
+        completionLoop.exec();
+    }
+    require(completions == 1 && request.contains("/api/v1/latex/extract") &&
                 request.contains("image/webp") && request.contains("RIFF") &&
                 request.contains("WEBP"),
             "table preserves multipart WebP contract and completes once");
@@ -512,7 +615,10 @@ void apiClientUsesModelCatalogAndStreamingChatContracts() {
     }
     require(emptyFinished && emptyResult.succeeded() && emptyResult.models.size() == 1 &&
                 emptyResult.models.first().supportsVision,
-            "the network model catalog should retain visual models for presentation filtering");
+            "the network model catalog retains vision-capable chat models");
+    require(emptyClient.fallbackModel(false) == QStringLiteral("vision-model") &&
+                emptyClient.fallbackModel(true) == QStringLiteral("vision-model"),
+            "a vision-capable server model supports text and image workflows");
     auto* manager = client.findChild<QNetworkAccessManager*>();
     require(manager != nullptr && manager->proxy().type() == QNetworkProxy::NoProxy &&
                 manager->proxyFactory() == nullptr && !client.usesSystemProxy(),
@@ -712,6 +818,159 @@ void apiClientUsesModelCatalogAndStreamingChatContracts() {
 }
 } // namespace
 
+void customModelConcurrency() {
+    QTcpServer server;
+    require(server.listen(QHostAddress::LocalHost), "concurrency server listens");
+    QList<QTcpSocket*> requests;
+    QHash<QTcpSocket*, QByteArray> received;
+    QObject::connect(&server, &QTcpServer::newConnection, &server, [&]() {
+        while (server.hasPendingConnections()) {
+            auto* socket = server.nextPendingConnection();
+            QObject::connect(socket, &QTcpSocket::readyRead, &server, [&, socket]() {
+                auto& bytes = received[socket];
+                bytes += socket->readAll();
+                const qsizetype headerEnd = bytes.indexOf("\r\n\r\n");
+                if (headerEnd < 0 || requests.contains(socket))
+                    return;
+                qsizetype length = 0;
+                for (const auto& line : bytes.left(headerEnd).split('\n'))
+                    if (line.toLower().startsWith("content-length:"))
+                        length = line.mid(line.indexOf(':') + 1).trimmed().toLongLong();
+                if (bytes.size() >= headerEnd + 4 + length)
+                    requests.append(socket);
+            });
+        }
+    });
+    const auto waitUntil = [](auto predicate, const char* message) {
+        QElapsedTimer elapsed;
+        elapsed.start();
+        while (!predicate() && elapsed.elapsed() < 5000)
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
+        require(predicate(), message);
+    };
+    const auto respond = [&](int index) {
+        const QByteArray body =
+            "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}\n\ndata: [DONE]\n\n";
+        auto* socket = requests[index];
+        socket->write("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: " +
+                      QByteArray::number(body.size()) + "\r\nConnection: close\r\n\r\n" + body);
+        socket->flush();
+        socket->disconnectFromHost();
+    };
+    auto model = snow_shot::CustomAiModelConfiguration{
+        QUuid::createUuid().toString(QUuid::WithoutBraces),
+        QStringLiteral("First"),
+        QStringLiteral("http://127.0.0.1:%1/v1").arg(server.serverPort()),
+        {},
+        QStringLiteral("provider-first"),
+        true,
+        false,
+        1};
+    auto other = model;
+    other.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    other.name = QStringLiteral("Second");
+    other.model = QStringLiteral("provider-second");
+    other.concurrency = 2;
+    SnowShotApiClient client(QString{});
+    client.setCustomModels({model, other});
+    QObject receiver;
+    int completions = 0;
+    const auto start = [&](const QString& id, const QString& text) {
+        return client.streamTranslation(
+            {id, {}, {}, text}, &receiver, [](const QString&) {},
+            [&](SnowShotTranslationResult result) {
+                require(result.succeeded(), "queued request completes");
+                ++completions;
+            });
+    };
+    const auto first = start(model.selectionId(), QStringLiteral("first"));
+    const auto cancelled = start(model.selectionId(), QStringLiteral("cancelled"));
+    const auto third = start(model.selectionId(), QStringLiteral("third"));
+    require(first && cancelled && third, "first model requests accepted");
+    for (int i = 0; i < 3; ++i)
+        require(start(other.selectionId(), QString::number(i)) != 0,
+                "second model request accepted");
+    waitUntil(
+        [&] {
+            return requests.size() == 3 && SnowShotApiClientTestAccess::customQueued(client) == 3;
+        },
+        "each model fills only its own capacity");
+    QEventLoop settle;
+    QTimer::singleShot(100, &settle, &QEventLoop::quit);
+    settle.exec();
+    require(requests.size() == 3, "excess requests wait for capacity");
+    client.cancel(cancelled);
+    model.concurrency = 2;
+    const auto fingerprint = client.modelFingerprint(model.selectionId());
+    client.setCustomModels({model, other});
+    require(client.modelFingerprint(model.selectionId()) == fingerprint,
+            "concurrency changes preserve model identity");
+    waitUntil([&] { return requests.size() == 4; }, "raising limit starts queued request");
+    require(received[requests[3]].contains("third") && !received[requests[3]].contains("cancelled"),
+            "cancelled queued request is skipped in order");
+    model.concurrency = 1;
+    client.setCustomModels({model, other});
+    require(start(model.selectionId(), QStringLiteral("after decrease")) != 0,
+            "request after lowering limit queues");
+    respond(0);
+    waitUntil([&] { return completions == 1; }, "first model request completes");
+    require(requests.size() == 4 && SnowShotApiClientTestAccess::customQueued(client) == 2,
+            "lowering limit retains active work and delays new admission");
+    respond(1);
+    waitUntil([&] { return requests.size() == 5; }, "other model releases its own slot");
+    respond(3);
+    waitUntil([&] { return requests.size() == 6; }, "first model resumes below new limit");
+    require(received[requests[5]].contains("after decrease"),
+            "queued request starts after active count falls below new limit");
+    respond(2);
+    respond(4);
+    respond(5);
+    waitUntil([&] { return completions == 6; }, "all admitted requests complete");
+
+    const auto translation = start(model.selectionId(), QStringLiteral("before image"));
+    QImage image(16, 16, QImage::Format_RGBA8888);
+    image.fill(Qt::white);
+    require(client.streamImageConversion(
+                {model.selectionId(), image}, &receiver, [](const QString&) {},
+                [&](SnowShotImageConversionResult result) {
+                    require(result.succeeded(), "queued image conversion completes");
+                    ++completions;
+                }) != 0,
+            "image conversion accepted");
+    waitUntil(
+        [&] {
+            return requests.size() == 7 && SnowShotApiClientTestAccess::customQueued(client) == 1;
+        },
+        "image conversion shares translation capacity");
+    require(translation != 0, "translation before image accepted");
+    respond(6);
+    waitUntil([&] { return requests.size() == 8; }, "image starts after translation finishes");
+    require(received[requests[7]].contains("data:image/webp;base64,"),
+            "queued image body is retained");
+    respond(7);
+    waitUntil([&] { return completions == 8; }, "image and translation complete");
+
+    auto owner = std::make_unique<QObject>();
+    const auto owned = client.streamTranslation(
+        {model.selectionId(), {}, {}, QStringLiteral("owner")}, owner.get(), [](const QString&) {},
+        [](SnowShotTranslationResult) { require(false, "destroyed receiver must not complete"); });
+    require(owned != 0, "owned request accepted");
+    waitUntil([&] { return requests.size() == 9; }, "owned request starts");
+    require(client.streamTranslation(
+                {model.selectionId(), {}, {}, QStringLiteral("queued owner")}, owner.get(),
+                [](const QString&) {},
+                [](SnowShotTranslationResult) {
+                    require(false, "destroyed queued receiver must not complete");
+                }) != 0,
+            "owned queued request accepted");
+    waitUntil([&] { return SnowShotApiClientTestAccess::customQueued(client) == 1; },
+              "owned request queues");
+    owner.reset();
+    waitUntil([&] { return SnowShotApiClientTestAccess::customQueued(client) == 0; },
+              "destroyed receiver clears queue");
+    require(requests.size() == 9, "destroyed queued request never reaches provider");
+}
+
 void customModelsUseIndependentOpenAiConnections() {
     QTcpServer server;
     require(server.listen(QHostAddress::LocalHost), "custom API fixture listens");
@@ -725,15 +984,15 @@ void customModelsUseIndependentOpenAiConnections() {
     SnowShotApiClient client(QStringLiteral("http://127.0.0.1:1"));
     client.setCustomModels({model});
     require(client.cachedChatModels().size() == 1 &&
-                client.cachedChatModels().first().supportsTranslation() &&
-                client.cachedChatModels().first().supportsVision,
+                client.cachedChatModels().first().supportsVision &&
+                !client.cachedChatModels().first().supportsReasoning,
             "custom vision models support both workflows");
     require(!client.hasBuiltInModels(QStringLiteral("en_US")),
             "custom models do not populate builtin cache");
     require(client.fallbackModel(false) == model.selectionId() &&
                 client.fallbackModel(true) == model.selectionId(),
             "custom fallback works without builtin catalog");
-    for (int variant = 0; variant < 3; ++variant) {
+    for (int variant = 0; variant < 5; ++variant) {
         bool done = false;
         QString text;
         SnowShotTranslationResult result;
@@ -743,12 +1002,13 @@ void customModelsUseIndependentOpenAiConnections() {
             done = true;
             completion.quit();
         };
-        if (variant == 2) {
-            model.apiKey.clear();
-            client.setCustomModels({model});
-        }
+        model.apiKey = variant == 2 ? QString() : QStringLiteral("test-secret");
+        model.supportsReasoning = variant >= 3;
+        client.setCustomModels({model});
+        require(client.cachedChatModels().first().supportsReasoning == model.supportsReasoning,
+                "custom model catalog reflects reasoning support");
         SnowShotApiClient::RequestToken token = 0;
-        if (variant == 1) {
+        if (variant == 1 || variant == 4) {
             QImage image(16, 16, QImage::Format_RGBA8888);
             image.fill(Qt::white);
             token = client.streamImageConversion(
@@ -782,14 +1042,16 @@ void customModelsUseIndependentOpenAiConnections() {
         require(json.value(QStringLiteral("model")) == model.model &&
                     json.value(QStringLiteral("stream")).toBool(),
                 "wire request uses provider model ID and streaming");
-        require(!json.contains(QStringLiteral("enable_thinking")) &&
+        require(json.value(QStringLiteral("enable_thinking")).isBool() &&
+                    json.value(QStringLiteral("enable_thinking")).toBool() ==
+                        model.supportsReasoning &&
                     !json.contains(QStringLiteral("temperature")) &&
                     !json.contains(QStringLiteral("max_tokens")),
-                "custom requests omit provider-specific optional parameters");
+                "custom requests explicitly set reasoning and omit optional limits");
         require(!request.contains(model.selectionId().toUtf8()) &&
                     !request.contains("Display Name"),
                 "local identity is not sent to provider");
-        require(variant != 1 || request.contains("data:image/webp;base64,"),
+        require((variant != 1 && variant != 4) || request.contains("data:image/webp;base64,"),
                 "vision request includes image content");
         QObject::disconnect(&server, nullptr, nullptr, nullptr);
     }
@@ -905,6 +1167,12 @@ void customModelsUseIndependentOpenAiConnections() {
     client.setCustomModels({model});
     require(invalidations == 1 && client.modelFingerprint(model.selectionId()) != fingerprint,
             "key changes invalidate cached identity");
+    const auto reasoningFingerprint = client.modelFingerprint(model.selectionId());
+    model.supportsReasoning = false;
+    client.setCustomModels({model});
+    require(invalidations == 2 &&
+                client.modelFingerprint(model.selectionId()) != reasoningFingerprint,
+            "reasoning changes invalidate cached results");
     model.supportsVision = false;
     client.setCustomModels({model});
     QImage image(4, 4, QImage::Format_RGBA8888);
@@ -917,6 +1185,229 @@ void customModelsUseIndependentOpenAiConnections() {
                 {model.selectionId(), {}, {}, QStringLiteral("Hello")}, &client,
                 [](const QString&) {}, [](auto) {}) == 0,
             "deleted custom ID never routes to builtin service");
+}
+
+void latexUploadDimensions() {
+    struct Scenario {
+        QSize source;
+        QSize expected;
+    };
+    const Scenario scenarios[] = {
+        {{1344, 384}, {672, 192}}, {{2000, 100}, {672, 33}}, {{100, 1000}, {19, 192}},
+        {{672, 192}, {672, 192}},  {{160, 48}, {160, 48}},   {{4000, 1}, {672, 1}},
+        {{1, 4000}, {1, 192}},
+    };
+    for (const auto& scenario : scenarios) {
+        QTcpServer server;
+        require(server.listen(QHostAddress::LocalHost), "LaTeX sizing fixture listens");
+        SnowShotApiClient client(QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort()));
+        QImage source(scenario.source, QImage::Format_RGBA8888);
+        source.fill(Qt::white);
+        source.setDevicePixelRatio(2.0);
+        require(client.extractLatex(source, &client, [](SnowShotLatexResult) {}) != 0,
+                "LaTeX sizing request accepted");
+        const QByteArray request = waitForHttpRequest(
+            server, "HTTP/1.1 200 OK\r\nContent-Length: 24\r\nConnection: close\r\n\r\n"
+                    "{\"data\":{\"latex\":\"x^2\"}}");
+        const qsizetype start = request.indexOf("RIFF");
+        const qsizetype end = request.indexOf("\r\n--", start);
+        require(start >= 0 && end > start, "LaTeX multipart contains WebP data");
+        const QImage uploaded = snow_shot::image_codec::decode(
+            request.mid(start, end - start), snow::image::Format::webp, "latex.webp");
+        require(!uploaded.isNull() && uploaded.size() == scenario.expected,
+                "uploaded LaTeX pixels fit the worker limits without upscaling");
+        require(source.size() == scenario.source && source.devicePixelRatio() == 2.0,
+                "LaTeX preparation preserves the original image");
+    }
+}
+
+void latexResponseContracts() {
+    struct Scenario {
+        int status;
+        QByteArray body;
+        bool success;
+        QByteArray code;
+    };
+    const Scenario scenarios[] = {
+        {200, R"({"data":{"latex":"\\frac{a}{b} <x> & y\n+1"}})", true, {}},
+        {200, R"({"data":{"latex":" "}})", false, {}},
+        {200, R"({"data":{"latex":42}})", false, {}},
+        {200, "not json", false, {}},
+        {422, R"({"code":"no_formula","detail":"No formula"})", false, "no_formula"},
+        {503, R"({"code":"worker_busy","detail":"Busy"})", false, "worker_busy"},
+        {504, R"({"code":"deadline_exceeded","detail":"Timeout"})", false, "deadline_exceeded"},
+    };
+    for (const auto& scenario : scenarios) {
+        QTcpServer server;
+        require(server.listen(QHostAddress::LocalHost), "LaTeX fixture listens");
+        SnowShotApiClient client(QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort()));
+        QImage image(16, 16, QImage::Format_RGBA8888);
+        image.fill(Qt::white);
+        bool done = false;
+        SnowShotLatexResult result;
+        QEventLoop loop;
+        require(client.extractLatex(image, &client,
+                                    [&](SnowShotLatexResult value) {
+                                        result = std::move(value);
+                                        done = true;
+                                        loop.quit();
+                                    }) != 0,
+                "LaTeX request accepted");
+        const auto request = waitForHttpRequest(
+            server, "HTTP/1.1 " + QByteArray::number(scenario.status) +
+                        " Response\r\nContent-Type: application/json\r\nContent-Length: " +
+                        QByteArray::number(scenario.body.size()) + "\r\nConnection: close\r\n\r\n" +
+                        scenario.body);
+        if (!done) {
+            QTimer::singleShot(5000, &loop, &QEventLoop::quit);
+            loop.exec();
+        }
+        require(done && result.succeeded() == scenario.success &&
+                    result.httpStatus == scenario.status,
+                "LaTeX validates response and preserves status");
+        require(result.code == QString::fromLatin1(scenario.code), "LaTeX preserves problem code");
+        require(request.startsWith("POST /api/v1/latex/extract ") &&
+                    request.contains("name=\"image\"") &&
+                    request.contains("filename=\"latex.webp\"") && request.contains("image/webp") &&
+                    request.toLower().contains("x-request-id:"),
+                "LaTeX uploads the expected multipart contract");
+        if (scenario.success)
+            require(result.latex == QStringLiteral("\\frac{a}{b} <x> & y\n+1"),
+                    "source remains verbatim");
+    }
+}
+
+void customServerDefaultsAndValidation() {
+    const QByteArray previous = qgetenv("SNOW_SHOT_API_BASE_URL");
+    const bool wasSet = qEnvironmentVariableIsSet("SNOW_SHOT_API_BASE_URL");
+    qunsetenv("SNOW_SHOT_API_BASE_URL");
+    const QString buildDefault = SnowShotApiClient::configuredBaseUrl();
+    require(!buildDefault.isEmpty(), "build provides a server default");
+    qputenv("SNOW_SHOT_API_BASE_URL", " http://localhost:9876/dev/// ");
+    require(SnowShotApiClient::configuredBaseUrl() == QStringLiteral("http://localhost:9876/dev"),
+            "environment overrides build default and normalizes it");
+    require(SnowShotApiClient::configuredBaseUrl(QStringLiteral("https://example.test/service/")) ==
+                QStringLiteral("https://example.test/service"),
+            "saved server takes precedence");
+    SnowShotApiClient client(buildDefault);
+    int changes = 0;
+    QObject::connect(&client, &SnowShotApiClient::baseUrlChanged, &client, [&] { ++changes; });
+    require(!client.setBaseUrl(QStringLiteral("https://user@example.test")) &&
+                client.baseUrl() == buildDefault && changes == 0,
+            "invalid setter preserves server");
+    require(client.setBaseUrl(QStringLiteral(" https://example.test/prefix/// ")) &&
+                client.baseUrl() == QStringLiteral("https://example.test/prefix") && changes == 1,
+            "valid server is normalized and notified");
+    require(client.setBaseUrl(QStringLiteral("https://example.test/prefix/")) && changes == 1,
+            "equivalent server does not invalidate models");
+    if (wasSet)
+        qputenv("SNOW_SHOT_API_BASE_URL", previous);
+    else
+        qunsetenv("SNOW_SHOT_API_BASE_URL");
+}
+
+void requestsKeepTheirOriginalServer() {
+    const QByteArray response = "HTTP/1.1 503 Unavailable\r\nContent-Type: application/json\r\n"
+                                "Content-Length: 2\r\nConnection: close\r\n\r\n{}";
+    const QList<QByteArray> routes{"/api/v1/table/extract", "/api/v1/latex/extract",
+                                   "/api/v1/chat/completions", "/api/v1/chat/completions",
+                                   "/api/v2/chat/models"};
+    for (int kind = 0; kind < routes.size(); ++kind) {
+        QTcpServer original, replacement;
+        require(original.listen(QHostAddress::LocalHost) &&
+                    replacement.listen(QHostAddress::LocalHost),
+                "both routing fixtures listen");
+        const QString first = QStringLiteral("http://127.0.0.1:%1/old").arg(original.serverPort());
+        const QString second =
+            QStringLiteral("http://127.0.0.1:%1/new").arg(replacement.serverPort());
+        SnowShotApiClient client(first);
+        QObject receiver;
+        QImage image(16, 16, QImage::Format_RGBA8888);
+        image.fill(Qt::white);
+        QSemaphore entered, release;
+        if (kind == 0) {
+            SnowShotApiClientTestAccess::prepare(client, [&](const QImage& source) {
+                entered.release();
+                release.acquire();
+                return SnowShotApiClient::encodeWebp(source);
+            });
+        }
+        int completed = 0;
+        auto start = [&]() -> SnowShotApiClient::RequestToken {
+            if (kind == 0)
+                return client.extractTable(image, &receiver, [&](auto) { ++completed; });
+            if (kind == 1)
+                return client.extractLatex(image, &receiver, [&](auto) { ++completed; });
+            if (kind == 2) {
+                SnowShotTranslationRequest input;
+                input.model = QStringLiteral("general");
+                input.text = QStringLiteral("hello");
+                return client.streamTranslation(
+                    input, &receiver, [](const QString&) {}, [&](auto) { ++completed; });
+            }
+            if (kind == 3) {
+                SnowShotImageConversionRequest input;
+                input.model = QStringLiteral("vision");
+                input.image = image;
+                input.format = SnowShotImageConversionFormat::Markdown;
+                return client.streamImageConversion(
+                    input, &receiver, [](const QString&) {}, [&](auto) { ++completed; });
+            }
+            return client.fetchChatModels(QStringLiteral("en_US"), &receiver,
+                                          [&](auto) { ++completed; });
+        };
+        require(start() != 0, "original request accepted");
+        if (kind == 0)
+            require(entered.tryAcquire(1, 5000), "table preparation is pending before switch");
+        require(client.setBaseUrl(second), "server switches immediately");
+        release.release();
+        const QByteArray oldRequest = waitForHttpRequest(original, response);
+        require(oldRequest.startsWith((kind == 4 ? QByteArray("GET ") : QByteArray("POST ")) +
+                                      "/old" + routes[kind] + " "),
+                "in-flight requests preserve original server and path prefix");
+        translation_tests::waitUntil([&] { return completed == 1; }, "old request finishes");
+        require(start() != 0, "new request accepted");
+        release.release();
+        const QByteArray newRequest = waitForHttpRequest(replacement, response);
+        require(newRequest.startsWith((kind == 4 ? QByteArray("GET ") : QByteArray("POST ")) +
+                                      "/new" + routes[kind] + " "),
+                "subsequent requests use new server and path prefix");
+        translation_tests::waitUntil([&] { return completed == 2; },
+                                     "new request finishes without fallback");
+    }
+}
+
+void oldCatalogCannotReplaceNewServerModels() {
+    translation_tests::Server oldServer, newServer;
+    oldServer.holdModels = true;
+    newServer.models =
+        QJsonArray{QJsonObject{{QStringLiteral("model"), QStringLiteral("new-model")},
+                               {QStringLiteral("name"), QStringLiteral("New model")}}};
+    SnowShotApiClient client(oldServer.url());
+    QObject receiver;
+    bool oldDone = false, newDone = false;
+    SnowShotChatModelsResult lateResult;
+    require(client.fetchChatModels(QStringLiteral("en_US"), &receiver,
+                                   [&](auto result) {
+                                       lateResult = result;
+                                       oldDone = true;
+                                   }) != 0,
+            "start held catalog");
+    translation_tests::waitUntil([&] { return oldServer.modelRequests == 1; },
+                                 "old catalog pending");
+    require(client.setBaseUrl(newServer.url()), "switch to new catalog server");
+    require(client.fetchChatModels(QStringLiteral("en_US"), &receiver,
+                                   [&](auto) { newDone = true; }) != 0,
+            "start new catalog");
+    translation_tests::waitUntil([&] { return newDone; }, "new catalog loaded");
+    oldServer.respondModels();
+    translation_tests::waitUntil([&] { return oldDone; }, "old catalog completes late");
+    require(client.cachedChatModels().size() == 1 &&
+                client.cachedChatModels().first().id == QStringLiteral("new-model"),
+            "late response cannot repopulate current server cache");
+    require(lateResult.models.size() == 1 &&
+                lateResult.models.first().id == QStringLiteral("new-model"),
+            "late completion cannot publish an obsolete catalog to other consumers");
 }
 
 int main(int argc, char** argv) {
@@ -949,7 +1440,14 @@ int main(int argc, char** argv) {
     require(SnowShotApiClient::formatFailure(0, {}, QStringLiteral("  Connection\nfailed ")) ==
                 QStringLiteral("Connection failed"),
             "transport failures without a code should remain concise");
+    customServerDefaultsAndValidation();
+    requestsKeepTheirOriginalServer();
+    oldCatalogCannotReplaceNewServerModels();
     tablePreparationIsAsynchronousAndLifetimeSafe();
+    latexPreparationIsAsynchronousAndLifetimeSafe();
+    latexUploadDimensions();
+    latexResponseContracts();
+    customModelConcurrency();
     customModelsUseIndependentOpenAiConnections();
     apiClientUsesModelCatalogAndStreamingChatContracts();
     translationPromptPreservesEditorContract();

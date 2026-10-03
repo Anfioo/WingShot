@@ -588,6 +588,45 @@ void conversionSessionRoutesSourceAndClearsOldViews() {
             "session deactivation keeps completed source but not visible state");
 }
 
+void recognitionFileSnapshotTracksPartialConversionAndQrValues() {
+    using Mode = ScreenshotRecognitionSessionController::Mode;
+    ConversionServer server;
+    server.hold = true;
+    SnowShotApiClient api(server.url());
+    ScreenshotRecognitionWindow window(ScreenshotRecognitionWindowActions{});
+    ScreenshotRecognitionSessionActions actions;
+    actions.ensureContent = [&]() { return &window; };
+    ScreenshotRecognitionSessionController session(nullptr, nullptr, &api, actions);
+    session.setTarget({QStringLiteral("file-export"), sampleImage(), QRectF(0, 0, 240, 120)});
+    ScreenshotRecognitionResults results;
+    results.key = QStringLiteral("file-export");
+    results.qr =
+        ScreenshotQrRecognitionResult{{QStringLiteral("first"), QStringLiteral("second")}, {}};
+    session.seedRecognitionResults(results);
+    for (const auto mode : {Mode::Markdown, Mode::Html}) {
+        session.activate(mode);
+        const auto empty = session.fileExportSnapshot();
+        require(empty && empty->source.isEmpty(),
+                "conversion file snapshot identifies its format before source arrives");
+        until([&]() {
+            const auto snapshot = session.fileExportSnapshot();
+            return snapshot && snapshot->source == QStringLiteral("# Partial");
+        });
+        const auto snapshot = session.fileExportSnapshot();
+        require(snapshot && snapshot->kind == (mode == Mode::Markdown
+                                                   ? ScreenshotRecognitionFileKind::Markdown
+                                                   : ScreenshotRecognitionFileKind::Html),
+                "conversion file snapshot preserves active format and partial source");
+    }
+    session.activate(Mode::Qr);
+    const auto qr = session.fileExportSnapshot();
+    require(qr && qr->kind == ScreenshotRecognitionFileKind::Qr &&
+                qr->source == QStringLiteral("first\nsecond"),
+            "QR file snapshot joins all recognized values in order");
+    session.deactivate();
+    require(!session.fileExportSnapshot(), "inactive recognition must not route text save");
+}
+
 void conversionUsesRecognitionMessages() {
     using Mode = ScreenshotRecognitionSessionController::Mode;
     ConversionServer server;
@@ -766,6 +805,7 @@ void conversionToolbarMigration() {
                 migrated.positions.at(1) == QStringList{QStringLiteral("barcode-recognition"),
                                                         QStringLiteral("table-recognition"),
                                                         QStringLiteral("convert-to-markdown"),
+                                                        QStringLiteral("latex-recognition"),
                                                         QStringLiteral("convert-to-html")} &&
                 // quick-save always mirrors save-as-file: hiding the manual
                 // save hides its companion too.
@@ -812,11 +852,15 @@ void conversionToolbarMigration() {
     verify(previousGroupedDefault, defaults);
     auto customGrouped = previousGroupedDefault;
     customGrouped.positions.move(0, 1);
-    verify(customGrouped, customGrouped);
+    auto expectedCustomGrouped = customGrouped;
+    expectedCustomGrouped.positions[1].insert(3, QStringLiteral("latex-recognition"));
+    verify(customGrouped, expectedCustomGrouped);
     verify({}, defaults);
     auto customized = previousDefault;
     customized.positions.move(1, customized.positions.size() - 1);
-    verify(customized, customized);
+    auto expectedCustomized = customized;
+    expectedCustomized.positions.last().append(QStringLiteral("latex-recognition"));
+    verify(customized, expectedCustomized);
     auto qrHidden = original;
     qrHidden.positions[1].removeAll(QStringLiteral("barcode-recognition"));
     qrHidden.hidden.push_back(QStringLiteral("barcode-recognition"));
@@ -831,8 +875,9 @@ void conversionToolbarMigration() {
     recognitionHidden.hidden = {QStringLiteral("barcode-recognition"),
                                 QStringLiteral("table-recognition")};
     auto conversionsOnly = recognitionHidden;
-    conversionsOnly.positions.push_back(
-        {QStringLiteral("convert-to-html"), QStringLiteral("convert-to-markdown")});
+    conversionsOnly.positions.push_back({QStringLiteral("convert-to-html"),
+                                         QStringLiteral("convert-to-markdown"),
+                                         QStringLiteral("latex-recognition")});
     verify(recognitionHidden, conversionsOnly);
 }
 } // namespace
@@ -855,7 +900,155 @@ void runImageConversionTests() {
     conversionSourceNormalization();
     renderingCopyAndPersistence();
     conversionSessionRoutesSourceAndClearsOldViews();
+    recognitionFileSnapshotTracksPartialConversionAndQrValues();
     conversionUsesRecognitionMessages();
     previewThemesAndLongDocuments();
     conversionToolbarMigration();
+}
+
+void latexSessionRequestsAreIsolated() {
+    using Mode = ScreenshotRecognitionSessionController::Mode;
+    QTcpServer server;
+    require(server.listen(QHostAddress::LocalHost), "LaTeX session fixture listens");
+    int requests = 0;
+    bool hold = false;
+    bool fail = false;
+    QPointer<QTcpSocket> held;
+    QObject::connect(&server, &QTcpServer::newConnection, &server, [&]() {
+        auto* socket = server.nextPendingConnection();
+        auto bytes = std::make_shared<QByteArray>();
+        QObject::connect(socket, &QTcpSocket::readyRead, &server, [&, socket, bytes]() {
+            *bytes += socket->readAll();
+            const auto end = bytes->indexOf("\r\n\r\n");
+            if (end < 0 || socket->property("answered").toBool())
+                return;
+            qsizetype length = 0;
+            for (const auto& line : bytes->left(end).split('\n'))
+                if (line.toLower().startsWith("content-length:"))
+                    length = line.mid(line.indexOf(':') + 1).trimmed().toLongLong();
+            if (bytes->size() < end + 4 + length)
+                return;
+            socket->setProperty("answered", true);
+            ++requests;
+            if (hold) {
+                held = socket;
+                return;
+            }
+            const QByteArray body = fail ? R"({"code":"no_formula","detail":"No formula"})"
+                                         : R"({"data":{"latex":"x^2"}})";
+            socket->write(QByteArray("HTTP/1.1 ") + (fail ? "422 No Formula" : "200 OK") +
+                          "\r\nContent-Type: application/json\r\nContent-Length: " +
+                          QByteArray::number(body.size()) + "\r\nConnection: close\r\n\r\n" + body);
+            socket->disconnectFromHost();
+        });
+    });
+    auto api = std::make_unique<SnowShotApiClient>(
+        QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort()));
+    ScreenshotRecognitionSessionController session(nullptr, nullptr, api.get(), {});
+    const auto target = [&](const QString& key) {
+        session.setTarget({key, sampleImage(), QRectF(0, 0, 240, 120)});
+    };
+    target(QStringLiteral("success"));
+    session.activate(Mode::Latex);
+    until([&] { return !session.busy(Mode::Latex); });
+    require(requests == 1 && session.cachedRecognitionResults().latex.has_value(),
+            "successful LaTeX request caches result");
+    session.deactivate();
+    session.activate(Mode::Latex);
+    require(requests == 1 && !session.busy(), "cached reactivation does not upload");
+    fail = true;
+    target(QStringLiteral("retry"));
+    session.activate(Mode::Latex);
+    until([&] { return !session.busy(); });
+    require(!session.cachedRecognitionResults().latex &&
+                !session.workflowState().value(QStringLiteral("error")).toString().isEmpty(),
+            "failed recognition reports error without caching");
+    fail = false;
+    session.activate(Mode::Latex);
+    until([&] { return !session.busy(); });
+    require(requests == 3 && session.cachedRecognitionResults().latex.has_value(),
+            "reactivation retries a failed request");
+    hold = true;
+    target(QStringLiteral("old"));
+    session.activate(Mode::Latex);
+    until([&] { return held != nullptr; });
+    session.deactivate();
+    require(!session.active(), "mode exit retains no active result view");
+    target(QStringLiteral("new"));
+    held->write("HTTP/1.1 200 OK\r\nContent-Length: 24\r\n\r\n{\"data\":{\"latex\":\"old\"}}");
+    held->disconnectFromHost();
+    QCoreApplication::processEvents();
+    require(!session.cachedRecognitionResults().latex && !session.busy(),
+            "target changes cancel stale results");
+    held.clear();
+    session.activate(Mode::Latex);
+    until([&] { return held != nullptr; });
+    api.reset();
+    require(!session.busy() && !session.cachedRecognitionResults().latex,
+            "provider destruction releases pending recognition");
+}
+
+void runLatexRecognitionTests() {
+    latexSessionRequestsAreIsolated();
+    using Mode = ScreenshotRecognitionSessionController::Mode;
+    namespace layout = snow_shot::presentation::toolbar_layout;
+    using Kind = snow_shot::storage::ScreenshotToolbarLayoutKind;
+    const QString source = QStringLiteral("\\frac{a_b}{c^2} <x> & \\alpha\n+1");
+    ScreenshotRecognitionWindow window(ScreenshotRecognitionWindowActions{});
+    ScreenshotRecognitionSessionActions actions;
+    actions.ensureContent = [&]() { return &window; };
+    ScreenshotRecognitionSessionController session(nullptr, nullptr, nullptr, actions);
+    session.setTarget({QStringLiteral("latex-image"), sampleImage(), QRectF(0, 0, 240, 120)});
+    ScreenshotRecognitionResults seed;
+    seed.key = QStringLiteral("latex-image");
+    seed.latex = SnowShotLatexResult{source};
+    session.seedRecognitionResults(seed);
+    session.activate(Mode::Latex);
+    auto* browser = window.findChild<QTextBrowser*>(QStringLiteral("screenshotQrContents"));
+    require(browser && browser->isReadOnly() && browser->toPlainText() == source,
+            "LaTeX reuses QR's read-only view without interpreting source");
+    require(session.recognitionClipboardMimeData()->text() == source,
+            "LaTeX clipboard source is verbatim");
+    const auto file = session.fileExportSnapshot();
+    require(file && file->kind == ScreenshotRecognitionFileKind::Latex && file->source == source,
+            "LaTeX saves as text");
+    session.setShowOriginalImage(true);
+    require(session.showOriginalImage() && session.recognitionClipboardMimeData()->text() == source,
+            "original image toggle retains source");
+    session.activate(Mode::Latex);
+    require(!session.busy() &&
+                session.workflowResult().value(QStringLiteral("text")).toString() == source,
+            "reactivation reuses the cached source");
+    const auto snapshot = session.recognitionResultsSnapshot();
+    require(snapshot.latex && snapshot.visibleLatex, "snapshot preserves visible LaTeX result");
+    ScreenshotRecognitionSessionController pinned(nullptr, nullptr, nullptr, {});
+    pinned.setTarget({seed.key, sampleImage(), QRectF(0, 0, 240, 120)});
+    pinned.seedRecognitionResults(snapshot);
+    pinned.activate(Mode::Latex);
+    require(pinned.recognitionClipboardMimeData()->text() == source,
+            "pin transfer needs no API call");
+    session.setTarget({QStringLiteral("other"), sampleImage(), QRectF(0, 0, 240, 120)});
+    require(!session.cachedRecognitionResults().latex, "another target cannot reuse this formula");
+    for (const auto kind : {Kind::ActionTools, Kind::PinnedActionTools}) {
+        snow_shot::storage::ScreenshotToolbarLayout old;
+        old.positions = {{QStringLiteral("convert-to-html"), QStringLiteral("convert-to-markdown"),
+                          QStringLiteral("barcode-recognition")}};
+        const auto migrated = layout::normalizedLayout(old, kind);
+        require(migrated.positions.front().at(2) == QStringLiteral("latex-recognition"),
+                "migration inserts LaTeX immediately after Markdown");
+        snow_shot::storage::ScreenshotToolbarLayout previousDefault;
+        previousDefault.positions = {
+            {QStringLiteral("convert-to-html"), QStringLiteral("latex-recognition"),
+             QStringLiteral("convert-to-markdown"), QStringLiteral("barcode-recognition"),
+             QStringLiteral("table-recognition")}};
+        const auto updated = layout::normalizedLayout(previousDefault, kind);
+        require(updated.positions.front().at(1) == QStringLiteral("convert-to-markdown") &&
+                    updated.positions.front().at(2) == QStringLiteral("latex-recognition"),
+                "previous default moves LaTeX to Markdown's left in the reversed popup");
+        old.hidden = {QStringLiteral("latex-recognition")};
+        const auto hidden = layout::normalizedLayout(old, kind);
+        require(hidden.hidden.contains(QStringLiteral("latex-recognition")) &&
+                    !hidden.positions.front().contains(QStringLiteral("latex-recognition")),
+                "explicitly hidden LaTeX stays hidden");
+    }
 }

@@ -30,6 +30,8 @@ pub enum ActiveTool {
     SerialNumber,
     Spotlight,
     AutoFilter,
+    RectangleEraser,
+    BrushEraser,
 }
 
 impl ActiveTool {
@@ -41,12 +43,19 @@ impl ActiveTool {
     }
 
     pub(crate) const fn uses_stroke_cursor(self) -> bool {
-        matches!(self, Self::FreeDraw | Self::PenHighlight | Self::PenFilter)
+        matches!(
+            self,
+            Self::FreeDraw | Self::PenHighlight | Self::PenFilter | Self::BrushEraser
+        )
     }
 
     pub(crate) const fn is_filter(self) -> bool {
         match self {
-            Self::RectangleFilter | Self::PenFilter | Self::AutoFilter => true,
+            Self::RectangleFilter
+            | Self::PenFilter
+            | Self::AutoFilter
+            | Self::RectangleEraser
+            | Self::BrushEraser => true,
             Self::Select
             | Self::Shape
             | Self::Arrow
@@ -140,6 +149,8 @@ pub enum StyleToolbarSource {
     Watermark,
     DefaultSpotlight,
     SelectedSpotlight,
+    DefaultRectangleEraser,
+    DefaultBrushEraser,
 }
 
 impl StyleToolbarSource {
@@ -167,6 +178,19 @@ impl Default for FilterStyle {
         }
     }
 }
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct BrushEraserStyle {
+    pub stroke_width: f64,
+}
+
+impl Default for BrushEraserStyle {
+    fn default() -> Self {
+        Self { stroke_width: 30.0 }
+    }
+}
+
+pub const BRUSH_ERASER_STYLE_PROPERTY_STROKE_WIDTH: u32 = 1 << 0;
 
 pub const FILTER_STYLE_PROPERTY_TYPE: u32 = 1 << 0;
 pub const FILTER_STYLE_PROPERTY_STRENGTH: u32 = 1 << 1;
@@ -288,6 +312,7 @@ pub const TEXT_STYLE_MIXED_CORNER_RADII: u32 = 1 << 7;
 pub const TEXT_STYLE_MIXED_HORIZONTAL_ALIGN: u32 = 1 << 8;
 pub const TEXT_STYLE_MIXED_VERTICAL_ALIGN: u32 = 1 << 9;
 pub const TEXT_STYLE_MIXED_OPACITY: u32 = 1 << 10;
+pub const TEXT_STYLE_ALL_PROPERTIES: u32 = (1 << 11) - 1;
 
 pub const SERIAL_NUMBER_STYLE_MIXED_NUMBER: u32 = 1 << 0;
 pub const SERIAL_NUMBER_STYLE_MIXED_COLOR: u32 = 1 << 1;
@@ -299,6 +324,7 @@ pub const SERIAL_NUMBER_STYLE_MIXED_STROKE_WIDTH: u32 = 1 << 6;
 pub const SERIAL_NUMBER_STYLE_MIXED_STROKE_STYLE: u32 = 1 << 7;
 pub const SERIAL_NUMBER_STYLE_MIXED_OPACITY: u32 = 1 << 8;
 pub const SERIAL_NUMBER_STYLE_MIXED_TYPE: u32 = 1 << 9;
+pub const SERIAL_NUMBER_STYLE_MIXED_NUMERIC_TYPE: u32 = 1 << 10;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct HistoryState {
@@ -318,6 +344,7 @@ pub struct StyleToolbarState {
     pub shape_style_mixed: u32,
     pub filter_style: FilterStyle,
     pub filter_style_mixed: u32,
+    pub brush_eraser_style: BrushEraserStyle,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -436,12 +463,20 @@ pub fn selection_box_visible_for_members(
 pub struct EditorViewportState {
     pub surface: SurfaceSize,
     pub camera: Camera,
+    pub snap_guide_targets: SnapGuideTargets,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct SnapGuideTargets {
+    pub vertical_xs: [Option<f64>; 2],
+    pub horizontal_ys: [Option<f64>; 2],
 }
 
 impl Default for EditorViewportState {
     fn default() -> Self {
         Self {
             surface: SurfaceSize::default(),
+            snap_guide_targets: SnapGuideTargets::default(),
             camera: Camera {
                 center: Point::default(),
                 zoom: 1.0,

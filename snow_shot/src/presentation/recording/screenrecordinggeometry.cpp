@@ -1,4 +1,7 @@
 #include "screenrecordinggeometry.h"
+#include "snow_shot/presentation/screenshotgeometry.h"
+#include <QGuiApplication>
+#include <QScreen>
 
 #include <cmath>
 
@@ -15,6 +18,45 @@ qreal validScale(qreal scale) {
 } // namespace
 
 namespace snow_shot::presentation::recording {
+int screenRecordingMinimumExtent(qreal physicalScale) {
+    return qMax(1, static_cast<int>(std::ceil(10.0 / validScale(physicalScale))));
+}
+
+QRect screenRecordingNormalizedRegion(const QRect& region, const QRect& bounds,
+                                      qreal physicalScale) {
+    if (!region.isValid() || region.isEmpty())
+        return {};
+    const int minimum = screenRecordingMinimumExtent(physicalScale);
+    QRect result = region;
+    if (result.width() < minimum) {
+        result.setWidth(minimum);
+        if (bounds.isValid() && bounds.width() >= minimum)
+            result.moveLeft(
+                qBound(bounds.left(), result.left(), bounds.x() + bounds.width() - minimum));
+    }
+    if (result.height() < minimum) {
+        result.setHeight(minimum);
+        if (bounds.isValid() && bounds.height() >= minimum)
+            result.moveTop(
+                qBound(bounds.top(), result.top(), bounds.y() + bounds.height() - minimum));
+    }
+    return result;
+}
+
+QRect screenRecordingNormalizedRegion(const QRect& region) {
+#ifdef Q_OS_MACOS
+    QScreen* screen = QGuiApplication::screenAt(region.center());
+    if (!screen)
+        screen = QGuiApplication::primaryScreen();
+    return screenRecordingNormalizedRegion(region, screen ? screen->geometry() : QRect(),
+                                           screen ? screen->devicePixelRatio() : 1.0);
+#else
+    QScreen* screen = ScreenshotGeometryMapper::screenForPhysicalRect(region);
+    return screenRecordingNormalizedRegion(
+        region, screen ? ScreenshotGeometryMapper::physicalRectForScreen(*screen) : QRect());
+#endif
+}
+
 ScreenRecordingObservedGeometry screenRecordingObservedGeometry(const QRect& physicalClientRect,
                                                                 qreal physicalScale,
                                                                 const QMargins& physicalInsets) {

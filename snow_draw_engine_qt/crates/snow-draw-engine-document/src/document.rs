@@ -513,6 +513,8 @@ pub enum CanvasFilterType {
     Inversion,
     Emboss = 4,
     SmartErase = 5,
+    Brightness = 6,
+    RestoreBackground = 7,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
@@ -636,7 +638,8 @@ impl PenFilterData {
         stroke_width: f64,
         opacity: f64,
     ) -> Option<Self> {
-        if points.len() < 2
+        if points.is_empty()
+            || (points.len() < 2 && filter_type != CanvasFilterType::RestoreBackground)
             || points
                 .iter()
                 .any(|point| !point.x.is_finite() || !point.y.is_finite())
@@ -875,6 +878,8 @@ pub struct SerialNumberData {
     pub number: i64,
     #[serde(default, rename = "type")]
     pub serial_number_type: SerialNumberType,
+    #[serde(default)]
+    pub numeric_type: crate::SerialNumberNumericType,
     pub color: ColorRgba8,
     pub fill: ColorRgba8,
     pub fill_style: FillStyle,
@@ -1067,6 +1072,15 @@ pub struct Document {
 }
 
 impl ElementData {
+    /// Original-background restoration coverage cannot be selected or edited.
+    pub fn is_background_restore(&self) -> bool {
+        match self {
+            Self::Filter(f) => f.filter_type == CanvasFilterType::RestoreBackground,
+            Self::PenFilter(f) => f.filter_type == CanvasFilterType::RestoreBackground,
+            _ => false,
+        }
+    }
+
     pub fn is_smart_erase(&self) -> bool {
         match self {
             Self::Filter(f) => f.filter_type == CanvasFilterType::SmartErase,
@@ -1134,7 +1148,12 @@ impl Document {
                 .into_iter()
                 .flatten()
             {
-                if binding.element_id == element.id || !active_ids.contains(&binding.element_id) {
+                if binding.element_id == element.id
+                    || !active_ids.contains(&binding.element_id)
+                    || self
+                        .element(binding.element_id)
+                        .is_ok_and(|target| target.data.is_background_restore())
+                {
                     return Err(ErrorCode::InvalidArgument);
                 }
             }
@@ -1669,6 +1688,12 @@ impl Document {
             }
             Operation::InsertElement { id, meta, data } => {
                 validate_element_data(data)?;
+                self.validate_background_restore_bindings_for_data(data)?;
+                let relations_changed =
+                    element_data_has_relations(data) || self.has_arrow_bound_to_element(*id);
+                if data.is_background_restore() && relations_changed {
+                    return Err(ErrorCode::InvalidArgument);
+                }
                 let old_snapshot = self.element_change_snapshot(*id);
                 self.insert_element(
                     *id,
@@ -1688,17 +1713,21 @@ impl Document {
                     old_snapshot,
                     self.element_change_snapshot(*id),
                 );
-                if element_data_has_relations(data) || self.has_arrow_bound_to_element(*id) {
+                if relations_changed {
                     changes.relations_changed = true;
                 }
                 Ok(Operation::RemoveElement { id: *id })
             }
             Operation::UpdateElementData { id, data } => {
                 validate_element_data(data)?;
+                self.validate_background_restore_bindings_for_data(data)?;
                 let old_snapshot = self.element_change_snapshot(*id);
                 changes.note_existing_bounds(self, *id);
                 let element = self.lookup_mut(*id)?;
-                if element.meta.locked {
+                if element.meta.locked
+                    || element.data.is_background_restore()
+                    || data.is_background_restore()
+                {
                     return Err(ErrorCode::InvalidState);
                 }
                 let inverse_data = element.data.clone();
@@ -1726,6 +1755,9 @@ impl Document {
                 let old_snapshot = self.element_change_snapshot(*id);
                 changes.note_existing_bounds(self, *id);
                 let element = self.lookup_mut(*id)?;
+                if element.data.is_background_restore() {
+                    return Err(ErrorCode::InvalidState);
+                }
                 let inverse = element.meta;
                 element.meta = *meta;
                 changes.touch(*id);
@@ -1775,6 +1807,13 @@ impl Document {
                 element,
                 paint_index,
             } => {
+                validate_element_data(&element.data)?;
+                self.validate_background_restore_bindings_for_data(&element.data)?;
+                let relations_changed = element_data_has_relations(&element.data)
+                    || self.has_arrow_bound_to_element(element.id);
+                if element.data.is_background_restore() && relations_changed {
+                    return Err(ErrorCode::InvalidArgument);
+                }
                 let old_snapshot = self.element_change_snapshot(element.id);
                 self.insert_element(element.id, element.clone(), *paint_index)?;
                 changes.touch(element.id);
@@ -1785,9 +1824,7 @@ impl Document {
                     old_snapshot,
                     self.element_change_snapshot(element.id),
                 );
-                if element_data_has_relations(&element.data)
-                    || self.has_arrow_bound_to_element(element.id)
-                {
+                if relations_changed {
                     changes.relations_changed = true;
                 }
                 Ok(Operation::RemoveElement { id: element.id })
@@ -1892,6 +1929,26 @@ impl Document {
         let insert_at = paint_index.min(self.paint_order.len() as u32) as usize;
         self.paint_order
             .splice(insert_at..insert_at, moving.iter().copied());
+        Ok(())
+    }
+
+    fn validate_background_restore_bindings_for_data(
+        &self,
+        data: &ElementData,
+    ) -> Result<(), ErrorCode> {
+        if let ElementData::Arrow(arrow) = data {
+            for binding in [arrow.start_binding.as_ref(), arrow.end_binding.as_ref()]
+                .into_iter()
+                .flatten()
+            {
+                if self
+                    .element(binding.element_id)
+                    .is_ok_and(|target| target.data.is_background_restore())
+                {
+                    return Err(ErrorCode::InvalidArgument);
+                }
+            }
+        }
         Ok(())
     }
 

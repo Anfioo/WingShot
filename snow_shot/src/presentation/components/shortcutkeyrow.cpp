@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/components/shortcutkeyrow.h"
+#include "snow_shot/presentation/components/formfields.h"
 #include "widgets/detail/pointer_region.h"
 #include "snow_shot/presentation/shortcutdisplaytext.h"
 
@@ -18,6 +19,7 @@
 #include "widgets/modal.h"
 
 #include <algorithm>
+#include <cmath>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -25,6 +27,7 @@
 #include <QAbstractButton>
 #include <QEvent>
 #include <QFontMetrics>
+#include <QFontMetricsF>
 #include <QHBoxLayout>
 #include <QKeyEvent>
 #include <QLabel>
@@ -221,8 +224,8 @@ class ShortcutConfigInfoButton final : public adqt::widgets::AdButton {
 
     QSize sizeHint() const override {
         const adqt::widgets::detail::ButtonVisualStyle style = buttonVisualStyle();
-        const QFontMetrics fontMetrics(style.metrics.font);
-        const int textWidth = fontMetrics.horizontalAdvance(text());
+        const QFontMetricsF fontMetrics(style.metrics.font);
+        const int textWidth = static_cast<int>(std::ceil(fontMetrics.horizontalAdvance(text())));
         const int horizontalFrameWidth =
             (style.metrics.horizontalPadding + style.metrics.borderWidth) * 2;
         return QSize(horizontalFrameWidth + busyIndicatorSlotWidth(style.metrics) + textWidth +
@@ -275,40 +278,22 @@ class ShortcutConfigInfoButton final : public adqt::widgets::AdButton {
             painter.drawPath(buttonPath);
         }
 
-        const int contentInset = metrics.horizontalPadding + metrics.borderWidth;
-        const QRect contentRect =
-            rect().adjusted(contentInset, metrics.borderWidth, -contentInset, -metrics.borderWidth);
-        const int busySlotWidth = busyIndicatorSlotWidth(metrics);
-        const int availableTextWidth =
-            std::max(0, contentRect.width() - busySlotWidth - m_infoGap - m_info->width());
+        const ContentLayout layout = contentLayout(metrics);
         painter.setFont(metrics.font);
-        const QFontMetrics fontMetrics(metrics.font);
-        const QString displayText =
-            fontMetrics.elidedText(text(), Qt::ElideRight, availableTextWidth);
-        const int textWidth = fontMetrics.horizontalAdvance(displayText);
-        const int contentWidth = busySlotWidth + textWidth + m_infoGap + m_info->width();
-        const int startX =
-            contentRect.left() + std::max(0, (contentRect.width() - contentWidth) / 2);
-        const int textX = startX + busySlotWidth;
 
         QColor contentColor = state.text;
         if (busy()) {
             contentColor.setAlphaF(contentColor.alphaF() * 0.72F);
         }
 
-        if (busySlotWidth > 0) {
-            const int indicatorSide = busyIndicatorSide(metrics);
-            drawSpinner(painter,
-                        QRect(startX, (height() - indicatorSide) / 2, indicatorSide, indicatorSide),
-                        contentColor);
+        if (busy()) {
+            drawSpinner(painter, layout.spinnerRect, contentColor);
         }
 
         painter.setPen(contentColor);
-        painter.drawText(QRect(textX, contentRect.top(), textWidth, contentRect.height()),
-                         Qt::AlignLeft | Qt::AlignVCenter, displayText);
+        painter.drawText(layout.textRect, Qt::AlignLeft | Qt::AlignVCenter, layout.displayText);
 
-        m_info->setGeometry(textX + textWidth + m_infoGap, (height() - m_info->height()) / 2,
-                            m_info->width(), m_info->height());
+        m_info->setGeometry(layout.infoRect);
         m_info->setIconColor(contentColor);
         m_info->raise();
     }
@@ -350,24 +335,43 @@ class ShortcutConfigInfoButton final : public adqt::widgets::AdButton {
         m_info->setIconColor(infoColor);
     }
 
-    void syncInfoGeometry() {
-        const adqt::widgets::detail::ButtonVisualStyle style = buttonVisualStyle();
-        const auto& metrics = style.metrics;
+    struct ContentLayout {
+        QString displayText;
+        QRect spinnerRect;
+        QRect textRect;
+        QRect infoRect;
+    };
+
+    ContentLayout contentLayout(const adqt::widgets::detail::ButtonMetrics& metrics) const {
         const int contentInset = metrics.horizontalPadding + metrics.borderWidth;
         const QRect contentRect =
             rect().adjusted(contentInset, metrics.borderWidth, -contentInset, -metrics.borderWidth);
         const int busySlotWidth = busyIndicatorSlotWidth(metrics);
         const int availableTextWidth =
             std::max(0, contentRect.width() - busySlotWidth - m_infoGap - m_info->width());
-        const QFontMetrics fontMetrics(metrics.font);
+        const QFontMetricsF fontMetrics(metrics.font);
         const QString displayText =
             fontMetrics.elidedText(text(), Qt::ElideRight, availableTextWidth);
-        const int textWidth = fontMetrics.horizontalAdvance(displayText);
+        // Elision compares fractional advances, so round up both the requested
+        // width and the painted text slot to keep a fully fitting label intact.
+        const int textWidth =
+            static_cast<int>(std::ceil(fontMetrics.horizontalAdvance(displayText)));
         const int contentWidth = busySlotWidth + textWidth + m_infoGap + m_info->width();
-        const int textX =
+        const int startX =
             contentRect.left() + std::max(0, (contentRect.width() - contentWidth) / 2);
-        m_info->setGeometry(textX + textWidth + m_infoGap, (height() - m_info->height()) / 2,
-                            m_info->width(), m_info->height());
+        const int textX = startX + busySlotWidth;
+        const int indicatorSide = busyIndicatorSide(metrics);
+        return {
+            displayText,
+            QRect(startX, (height() - indicatorSide) / 2, indicatorSide, indicatorSide),
+            QRect(textX, contentRect.top(), textWidth, contentRect.height()),
+            QRect(textX + textWidth + m_infoGap, (height() - m_info->height()) / 2, m_info->width(),
+                  m_info->height()),
+        };
+    }
+
+    void syncInfoGeometry() {
+        m_info->setGeometry(contentLayout(buttonVisualStyle().metrics).infoRect);
         m_info->raise();
     }
 
@@ -396,10 +400,12 @@ class ShortcutKeyConfigContent final : public QWidget {
         std::function<snow_shot::presentation::GlobalShortcutValidationResult(
             const snow_shot::shortcuts::ShortcutBinding&)>
             shortcutValidator,
-        ShortcutKeyRowConfig::ValidationScope validationScope, QWidget* parent = nullptr)
+        ShortcutKeyRowConfig::ValidationScope validationScope, bool allowModifierOnlyAlt,
+        QWidget* parent = nullptr)
         : QWidget(parent), m_colorScheme(colorScheme),
           m_maxShortcutCount(std::max(1, maxShortcutCount)),
-          m_shortcutValidator(std::move(shortcutValidator)), m_validationScope(validationScope) {
+          m_shortcutValidator(std::move(shortcutValidator)), m_validationScope(validationScope),
+          m_allowModifierOnlyAlt(allowModifierOnlyAlt) {
         setObjectName(QStringLiteral("shortcutConfigContent"));
         setFocusPolicy(Qt::StrongFocus);
 
@@ -456,20 +462,32 @@ class ShortcutKeyConfigContent final : public QWidget {
     }
 
     snow_shot::shortcuts::ShortcutBindingList selectedShortcuts() const {
-        snow_shot::shortcuts::ShortcutBindingList bindings;
-        for (const KeyConfig& keyConfig : m_keyConfigs) {
-            if (keyConfig.binding.portableText.isEmpty()) {
-                continue;
+        return collectShortcuts(false);
+    }
+
+    snow_shot::shortcuts::ShortcutBindingList draftShortcuts() const {
+        return collectShortcuts(true);
+    }
+
+    void setDraftShortcuts(const snow_shot::shortcuts::ShortcutBindingList& shortcuts) {
+        if (draftShortcuts() == shortcuts) {
+            return;
+        }
+        stopRecording();
+        m_keyConfigs.clear();
+        for (const auto& shortcut : shortcuts) {
+            if (m_keyConfigs.size() >= m_maxShortcutCount) {
+                break;
             }
-            const bool duplicate =
-                std::any_of(bindings.cbegin(), bindings.cend(), [&keyConfig](const auto& existing) {
-                    return snow_shot::shortcuts::bindingsConflict(existing, keyConfig.binding);
-                });
-            if (!duplicate) {
-                bindings.push_back(keyConfig.binding);
+            if (!shortcut.portableText.isEmpty()) {
+                m_keyConfigs.push_back({shortcut, m_nextConfigIndex++});
             }
         }
-        return bindings;
+        if (m_keyConfigs.isEmpty()) {
+            m_keyConfigs.push_back({{}, m_nextConfigIndex++});
+            m_recordingConfigIndex = m_keyConfigs.first().index;
+        }
+        rebuildKeyConfigRows();
     }
 
     bool canAcceptDialog() const {
@@ -487,7 +505,39 @@ class ShortcutKeyConfigContent final : public QWidget {
         ensureKeyboardGrabbed();
     }
 
+    void retranslateUi() {
+        m_addButton->setText(QObject::tr("Add key config"));
+        if (!m_validationMessage.isEmpty()) {
+            m_validationMessage = shortcutValidationMessage(m_rejectedValidation,
+                                                            m_rejectedShortcut, m_validationScope);
+        }
+        rebuildKeyConfigRows();
+    }
+
     std::function<void(bool)> acceptanceAvailabilityChanged;
+    std::function<void(const QString&)> validationFeedbackChanged;
+    std::function<void()> draftValueChanged;
+
+  private:
+    snow_shot::shortcuts::ShortcutBindingList collectShortcuts(bool includePending) const {
+        snow_shot::shortcuts::ShortcutBindingList bindings;
+        for (const KeyConfig& keyConfig : m_keyConfigs) {
+            const auto& shortcut = includePending && keyConfig.index == m_recordingConfigIndex
+                                       ? m_pendingShortcut
+                                       : keyConfig.binding;
+            if (shortcut.portableText.isEmpty()) {
+                continue;
+            }
+            const bool duplicate =
+                std::any_of(bindings.cbegin(), bindings.cend(), [&shortcut](const auto& existing) {
+                    return snow_shot::shortcuts::bindingsConflict(existing, shortcut);
+                });
+            if (!duplicate) {
+                bindings.push_back(shortcut);
+            }
+        }
+        return bindings;
+    }
 
   protected:
     void hideEvent(QHideEvent* event) override {
@@ -512,6 +562,15 @@ class ShortcutKeyConfigContent final : public QWidget {
             return;
         }
 
+        if (m_allowModifierOnlyAlt && event->key() == Qt::Key_Alt && event->isAutoRepeat()) {
+            event->accept();
+            return;
+        }
+
+        m_altTapPending =
+            m_allowModifierOnlyAlt && event->key() == Qt::Key_Alt &&
+            (event->modifiers() == Qt::NoModifier || event->modifiers() == Qt::AltModifier) &&
+            !event->isAutoRepeat();
         if (m_printScreenRecorder == nullptr || !m_printScreenRecorder->handleKeyEvent(*event)) {
             recordKeyEvent(*event);
             rebuildKeyConfigRows();
@@ -523,6 +582,12 @@ class ShortcutKeyConfigContent final : public QWidget {
         if (m_recordingConfigIndex >= 0) {
             if (m_printScreenRecorder != nullptr) {
                 m_printScreenRecorder->handleKeyEvent(*event);
+            }
+            if (m_allowModifierOnlyAlt && m_altTapPending && event->key() == Qt::Key_Alt &&
+                !event->isAutoRepeat()) {
+                m_altTapPending = false;
+                recordKeyEvent(*event, true);
+                rebuildKeyConfigRows();
             }
             event->accept();
             return;
@@ -644,6 +709,7 @@ class ShortcutKeyConfigContent final : public QWidget {
         }
 
         m_recordingConfigIndex = configIndex;
+        m_altTapPending = false;
         m_pendingShortcut = {};
         m_rejectedShortcut = {};
         m_validationMessage.clear();
@@ -679,6 +745,7 @@ class ShortcutKeyConfigContent final : public QWidget {
     void stopRecording() {
         releaseInputCapture();
         m_recordingConfigIndex = -1;
+        m_altTapPending = false;
         m_pendingShortcut = {};
         m_rejectedShortcut = {};
         m_validationMessage.clear();
@@ -704,11 +771,11 @@ class ShortcutKeyConfigContent final : public QWidget {
         }
     }
 
-    void recordKeyEvent(const QKeyEvent& event) {
+    void recordKeyEvent(const QKeyEvent& event, bool modifierOnlyAltRelease = false) {
         if (m_printScreenRecorder != nullptr) {
             m_printScreenRecorder->cancelPendingCapture();
         }
-        if (isModifierOnlyKey(event.key())) {
+        if (isModifierOnlyKey(event.key()) && !modifierOnlyAltRelease) {
             m_pendingShortcut = {};
             m_rejectedShortcut = {};
             m_validationMessage.clear();
@@ -718,7 +785,8 @@ class ShortcutKeyConfigContent final : public QWidget {
         const bool allowModifierOnlyShift =
             m_validationScope == ShortcutKeyRowConfig::ValidationScope::ScreenshotShortcut;
         const snow_shot::shortcuts::ShortcutBinding shortcut =
-            snow_shot::shortcuts::bindingFromKeyEvent(event, allowModifierOnlyShift);
+            snow_shot::shortcuts::bindingFromKeyEvent(event, allowModifierOnlyShift,
+                                                      m_allowModifierOnlyAlt);
         snow_shot::presentation::GlobalShortcutValidationResult validation{
             shortcut.portableText,
             !shortcut.portableText.isEmpty(),
@@ -751,6 +819,7 @@ class ShortcutKeyConfigContent final : public QWidget {
 
         m_pendingShortcut = {};
         m_rejectedShortcut = shortcut;
+        m_rejectedValidation = validation;
         m_validationMessage = shortcutValidationMessage(validation, shortcut, m_validationScope);
     }
 
@@ -788,6 +857,16 @@ class ShortcutKeyConfigContent final : public QWidget {
     }
 
     void notifyShortcutAvailabilityChanged() {
+        const auto draft = draftShortcuts();
+        if (m_lastReportedDraft != draft) {
+            m_lastReportedDraft = draft;
+            if (draftValueChanged) {
+                draftValueChanged();
+            }
+        }
+        if (validationFeedbackChanged) {
+            validationFeedbackChanged(m_validationMessage);
+        }
         if (acceptanceAvailabilityChanged) {
             acceptanceAvailabilityChanged(canAcceptDialog());
         }
@@ -827,8 +906,10 @@ class ShortcutKeyConfigContent final : public QWidget {
     adqt::widgets::AdButton* m_addButton = nullptr;
     std::unique_ptr<snow_shot::shortcuts::ShortcutRecorder> m_printScreenRecorder;
     QVector<KeyConfig> m_keyConfigs;
+    snow_shot::shortcuts::ShortcutBindingList m_lastReportedDraft;
     snow_shot::shortcuts::ShortcutBinding m_pendingShortcut;
     snow_shot::shortcuts::ShortcutBinding m_rejectedShortcut;
+    snow_shot::presentation::GlobalShortcutValidationResult m_rejectedValidation;
     QString m_validationMessage;
     int m_maxShortcutCount = 2;
     int m_recordingConfigIndex = -1;
@@ -839,6 +920,8 @@ class ShortcutKeyConfigContent final : public QWidget {
         m_shortcutValidator;
     ShortcutKeyRowConfig::ValidationScope m_validationScope =
         ShortcutKeyRowConfig::ValidationScope::GlobalShortcut;
+    bool m_allowModifierOnlyAlt = false;
+    bool m_altTapPending = false;
 };
 
 } // namespace
@@ -863,6 +946,7 @@ ShortcutKeyRow::ShortcutKeyRow(
       m_resumeGlobalShortcuts(config.resumeGlobalShortcuts) {
     m_showRegistrationStatus = config.showRegistrationStatus;
     m_validationScope = config.validationScope;
+    m_allowModifierOnlyAlt = config.allowModifierOnlyAlt;
     if (m_registrationState.shortcuts.isEmpty() && !config.shortcuts.isEmpty()) {
         m_registrationState.shortcuts = config.shortcuts;
     }
@@ -1056,10 +1140,11 @@ void ShortcutKeyRow::syncDelayUnderline() {
 void ShortcutKeyRow::openShortcutConfigDialog() {
     QWidget* const hostWindow = window();
     auto* modal = new adqt::widgets::AdModal(this);
-    auto* content =
-        new ShortcutKeyConfigContent(m_registrationState.shortcuts, m_colorScheme,
-                                     m_maxShortcutCount, m_shortcutValidator, m_validationScope);
+    auto* content = new ShortcutKeyConfigContent(m_registrationState.shortcuts, m_colorScheme,
+                                                 m_maxShortcutCount, m_shortcutValidator,
+                                                 m_validationScope, m_allowModifierOnlyAlt);
     const QPointer<ShortcutKeyConfigContent> contentGuard(content);
+    const QPointer<ShortcutKeyRow> rowGuard(this);
     std::optional<quint64> suspension;
     if (m_validationScope == ShortcutKeyRowConfig::ValidationScope::GlobalShortcut &&
         m_suspendGlobalShortcuts) {
@@ -1090,7 +1175,57 @@ void ShortcutKeyRow::openShortcutConfigDialog() {
     modal->setRejectText(tr("Cancel"));
     modal->setStandardButtons(adqt::widgets::AdModal::StandardButton::Ok |
                               adqt::widgets::AdModal::StandardButton::Cancel);
-    modal->setContentWidget(content);
+    namespace fields = snow_shot::presentation::components::form_fields;
+    fields::Metadata metadata;
+    metadata.id = QStringLiteral("shortcutConfiguration");
+    auto* form = new adqt::widgets::AdForm;
+    fields::configureForm(form);
+    fields::CustomBinding binding;
+    binding.control = content;
+    binding.focusWidget = content;
+    binding.readValue = [contentGuard]() -> QVariant {
+        return QVariant::fromValue(contentGuard ? contentGuard->draftShortcuts()
+                                                : snow_shot::shortcuts::ShortcutBindingList());
+    };
+    binding.writeValue = [contentGuard](const QVariant& value) {
+        if (contentGuard) {
+            contentGuard->setDraftShortcuts(
+                value.value<snow_shot::shortcuts::ShortcutBindingList>());
+        }
+    };
+    binding.retranslate = [contentGuard, rowGuard, modal] {
+        if (rowGuard) {
+            modal->setWindowTitle(tr("Key configuration for \"%1\"")
+                                      .arg(rowGuard->m_titleLabel != nullptr
+                                               ? rowGuard->m_titleLabel->text()
+                                               : QString()));
+            modal->setAcceptText(tr("OK"));
+            modal->setRejectText(tr("Cancel"));
+        }
+        if (contentGuard) {
+            contentGuard->retranslateUi();
+        }
+    };
+    fields::Options fieldOptions;
+    fieldOptions.parent = form;
+    fieldOptions.form = form;
+    fieldOptions.commitPolicy = fields::CommitPolicy::Explicit;
+    const auto shortcutField = fields::custom(metadata, std::move(binding), fieldOptions);
+    content->setObjectName(QStringLiteral("shortcutConfigContent"));
+    const QPointer<fields::FormField> fieldGuard(shortcutField.field);
+    form->setInitialValues(form->values());
+    form->resetFields();
+    content->draftValueChanged = [fieldGuard] {
+        if (fieldGuard) {
+            fieldGuard->notifyEdited();
+        }
+    };
+    content->validationFeedbackChanged = [fieldGuard](const QString& message) {
+        if (fieldGuard) {
+            fieldGuard->setFeedback(message.isEmpty() ? QStringList() : QStringList{message});
+        }
+    };
+    modal->setContentWidget(form);
     content->acceptanceAvailabilityChanged = [modal](bool available) {
         if (modal->acceptButton() != nullptr) {
             modal->acceptButton()->setEnabled(available);
@@ -1098,7 +1233,7 @@ void ShortcutKeyRow::openShortcutConfigDialog() {
     };
 
     connect(modal, &adqt::widgets::AdModal::closeRequested, modal,
-            [modal, contentGuard](adqt::widgets::AdModal::CloseReason reason) {
+            [modal, contentGuard, fieldGuard](adqt::widgets::AdModal::CloseReason reason) {
                 if (reason != adqt::widgets::AdModal::CloseReason::OkAction) {
                     modal->reject();
                     return;
@@ -1109,6 +1244,9 @@ void ShortcutKeyRow::openShortcutConfigDialog() {
                         return;
                     }
                     contentPtr->commitPendingShortcut();
+                    if (fieldGuard) {
+                        fieldGuard->notifyCommitted();
+                    }
                     modal->accept();
                 }
             });

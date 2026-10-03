@@ -1,6 +1,7 @@
 #ifndef SNOW_SHOT_PRESENTATION_GLOBALMOUSETYPES_H
 #define SNOW_SHOT_PRESENTATION_GLOBALMOUSETYPES_H
 
+#include "snow_shot/globalmouseactivationkeys.h"
 #include <QMetaType>
 #include <QFlags>
 #include <optional>
@@ -16,15 +17,7 @@ enum class GlobalMouseModifier { Control = 1, Alt = 2, Shift = 4, Super = 8, Com
 Q_DECLARE_FLAGS(GlobalMouseModifiers, GlobalMouseModifier)
 Q_DECLARE_OPERATORS_FOR_FLAGS(GlobalMouseModifiers)
 
-inline QStringList globalMouseActivationKeys() {
-#ifdef Q_OS_MACOS
-    return {QStringLiteral("command"), QStringLiteral("control"), QStringLiteral("option"),
-            QStringLiteral("shift")};
-#else
-    return {QStringLiteral("windows"), QStringLiteral("ctrl"), QStringLiteral("alt"),
-            QStringLiteral("shift")};
-#endif
-}
+using snow_shot::globalMouseActivationKeys;
 inline std::optional<GlobalMouseModifier> globalMouseModifier(const QString& key) {
 #ifdef Q_OS_MACOS
     if (key == u"command")

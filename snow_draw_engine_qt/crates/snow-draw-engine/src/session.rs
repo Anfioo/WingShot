@@ -7,8 +7,8 @@ use snow_draw_engine_model::DocumentModel;
 use crate::engine::EngineConfig as RuntimeEngineConfig;
 use crate::{Engine, history::HistoryStore};
 
-pub const DOCUMENT_SESSION_SCHEMA_VERSION: u32 = 5;
-pub const DOCUMENT_HISTORY_SCHEMA_VERSION: u32 = 5;
+pub const DOCUMENT_SESSION_SCHEMA_VERSION: u32 = 6;
+pub const DOCUMENT_HISTORY_SCHEMA_VERSION: u32 = 6;
 pub const MAX_DOCUMENT_SESSION_BYTES: usize = 16 * 1024 * 1024;
 
 #[derive(Serialize, Deserialize)]
@@ -29,20 +29,83 @@ struct DocumentHistory {
     history: HistoryStore,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DocumentSessionRef<'a> {
+    schema_version: u32,
+    document: &'a Document,
+    history: &'a HistoryStore,
+    editor: PersistedEditorSession,
+    session_config_seeded: bool,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DocumentHistoryRef<'a> {
+    schema_version: u32,
+    document: &'a Document,
+    history: &'a HistoryStore,
+}
+
+#[derive(Default)]
+struct BoundedSessionWriter {
+    bytes: Vec<u8>,
+    exceeded: bool,
+}
+
+impl std::io::Write for BoundedSessionWriter {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        if bytes.len() > MAX_DOCUMENT_SESSION_BYTES.saturating_sub(self.bytes.len()) {
+            self.exceeded = true;
+            return Err(std::io::Error::other("document session capacity exceeded"));
+        }
+        let required = self.bytes.len() + bytes.len();
+        if required > self.bytes.capacity() {
+            let capacity = required
+                .max(self.bytes.capacity().saturating_mul(2))
+                .clamp(4096, MAX_DOCUMENT_SESSION_BYTES);
+            self.bytes.reserve_exact(capacity - self.bytes.len());
+        }
+        self.bytes.extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+fn serialize_bounded(value: &impl Serialize) -> Result<Vec<u8>, ErrorCode> {
+    let mut output = BoundedSessionWriter::default();
+    serde_json::to_writer(&mut output, value).map_err(|_| {
+        if output.exceeded {
+            ErrorCode::InvalidState
+        } else {
+            ErrorCode::Internal
+        }
+    })?;
+    Ok(output.bytes)
+}
+
 impl Engine {
+    pub fn serialize_selected_element_ids(&self) -> Result<Vec<u8>, ErrorCode> {
+        serialize_bounded(&self.selected_ids())
+    }
+
+    pub fn serialize_selected_draw_template(&self) -> Result<Vec<u8>, ErrorCode> {
+        let template = self.editor.selected_draw_template(&self.model)?;
+        serialize_bounded(&template)
+    }
+
     pub fn serialize_document_session(&self) -> Result<Vec<u8>, ErrorCode> {
-        let session = DocumentSession {
+        let session = DocumentSessionRef {
             schema_version: DOCUMENT_SESSION_SCHEMA_VERSION,
-            document: self.model.document().clone(),
-            history: self.history.clone(),
+            document: self.model.document(),
+            history: &self.history,
             editor: self.editor.persisted(),
             session_config_seeded: self.session_config_seeded,
         };
-        let bytes = serde_json::to_vec(&session).map_err(|_| ErrorCode::Internal)?;
-        if bytes.len() > MAX_DOCUMENT_SESSION_BYTES {
-            return Err(ErrorCode::InvalidState);
-        }
-        Ok(bytes)
+        serialize_bounded(&session)
     }
 
     #[cfg(test)]
@@ -77,16 +140,12 @@ impl Engine {
     }
 
     pub fn serialize_document_history(&self) -> Result<Vec<u8>, ErrorCode> {
-        let history = DocumentHistory {
+        let history = DocumentHistoryRef {
             schema_version: DOCUMENT_HISTORY_SCHEMA_VERSION,
-            document: self.model.document().clone(),
-            history: self.history.clone(),
+            document: self.model.document(),
+            history: &self.history,
         };
-        let bytes = serde_json::to_vec(&history).map_err(|_| ErrorCode::Internal)?;
-        if bytes.len() > MAX_DOCUMENT_SESSION_BYTES {
-            return Err(ErrorCode::InvalidState);
-        }
-        Ok(bytes)
+        serialize_bounded(&history)
     }
 
     #[cfg(test)]
@@ -142,6 +201,31 @@ mod tests {
         WatermarkConfig, WatermarkTemplateApplicationTime,
     };
     use snow_draw_engine_editor::ActiveTool;
+
+    #[test]
+    fn serialization_rejects_growth_before_exceeding_capacity() {
+        use std::io::Write;
+        let mut writer = BoundedSessionWriter::default();
+        let block = [b'x'; 4096];
+        for _ in 0..MAX_DOCUMENT_SESSION_BYTES / block.len() {
+            writer.write_all(&block).unwrap();
+        }
+        assert_eq!(writer.bytes.len(), MAX_DOCUMENT_SESSION_BYTES);
+        assert!(writer.write_all(b"x").is_err());
+        assert_eq!(writer.bytes.len(), MAX_DOCUMENT_SESSION_BYTES);
+        assert!(writer.bytes.capacity() <= MAX_DOCUMENT_SESSION_BYTES);
+        assert!(writer.exceeded);
+        assert_eq!(
+            serialize_bounded(&writer.bytes).unwrap_err(),
+            ErrorCode::InvalidState
+        );
+        let mut irregular = BoundedSessionWriter::default();
+        irregular
+            .write_all(&writer.bytes[..MAX_DOCUMENT_SESSION_BYTES / 2 + 1])
+            .unwrap();
+        irregular.write_all(b"x").unwrap();
+        assert!(irregular.bytes.capacity() <= MAX_DOCUMENT_SESSION_BYTES);
+    }
 
     #[test]
     fn document_session_round_trips_and_rejects_invalid_payloads() {
@@ -206,6 +290,14 @@ mod tests {
         engine.history.undo(&mut engine.model).unwrap();
 
         let bytes = engine.serialize_document_session().unwrap();
+        let legacy = DocumentSession {
+            schema_version: DOCUMENT_SESSION_SCHEMA_VERSION,
+            document: engine.model.document().clone(),
+            history: engine.history.clone(),
+            editor: engine.editor.persisted(),
+            session_config_seeded: engine.session_config_seeded,
+        };
+        assert_eq!(bytes, serde_json::to_vec(&legacy).unwrap());
         let restored = Engine::from_serialized_document_session(&bytes).unwrap();
         assert_eq!(restored.model.document(), engine.model.document());
         assert_eq!(restored.history, engine.history);
@@ -273,12 +365,49 @@ mod tests {
             (CanvasFilterType::Grayscale, "Grayscale"),
             (CanvasFilterType::Inversion, "Inversion"),
             (CanvasFilterType::Emboss, "Emboss"),
+            (CanvasFilterType::Brightness, "Brightness"),
         ] {
             assert_eq!(
                 serde_json::to_value(filter_type).unwrap(),
                 serde_json::Value::String(representation.to_owned())
             );
         }
+    }
+
+    #[test]
+    fn brightness_document_and_editor_session_round_trip_preserves_filter_variants() {
+        assert_eq!(CanvasFilterType::Brightness as u32, 6);
+        let mut config = RuntimeEngineConfig::default();
+        config.style_defaults.editor.rectangle_filter.filter_type = CanvasFilterType::Brightness;
+        config.style_defaults.editor.rectangle_filter.strength = 0.75;
+        config.style_defaults.editor.pen_filter.filter_type = CanvasFilterType::Brightness;
+        config.style_defaults.editor.pen_filter.strength = 0.75;
+        let mut engine = Engine::new(config);
+
+        let brightness_id = engine.model.allocate_element_id();
+        let mut transaction = Transaction::new("brightness filter");
+        transaction.insert_filter(
+            brightness_id,
+            ElementMeta::default(),
+            FilterData {
+                filter_type: CanvasFilterType::Brightness,
+                strength: 0.75,
+                ..FilterData::default()
+            },
+        );
+        engine.model.apply_transaction(transaction).unwrap();
+
+        let bytes = engine.serialize_document_session().unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        let serialized = json.to_string();
+        assert!(serialized.matches("\"Brightness\"").count() >= 3);
+
+        let restored = Engine::from_serialized_document_session(&bytes).unwrap();
+        assert_eq!(
+            restored.model.filter(brightness_id).unwrap().filter_type,
+            CanvasFilterType::Brightness
+        );
+        assert_eq!(restored.editor.persisted(), engine.editor.persisted());
     }
 
     #[test]
@@ -501,8 +630,14 @@ mod tests {
         let history = engine.serialize_document_history().unwrap();
         let session_json: serde_json::Value = serde_json::from_slice(&session).unwrap();
         let history_json: serde_json::Value = serde_json::from_slice(&history).unwrap();
-        assert_eq!(session_json["schemaVersion"], 5);
-        assert_eq!(history_json["schemaVersion"], 5);
+        assert_eq!(
+            session_json["schemaVersion"],
+            DOCUMENT_SESSION_SCHEMA_VERSION
+        );
+        assert_eq!(
+            history_json["schemaVersion"],
+            DOCUMENT_HISTORY_SCHEMA_VERSION
+        );
         assert_eq!(
             Engine::from_serialized_document_session(&session)
                 .unwrap()

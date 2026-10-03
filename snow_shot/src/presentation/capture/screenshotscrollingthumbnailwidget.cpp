@@ -9,7 +9,10 @@
 #include <QPaintEvent>
 #include <QResizeEvent>
 #include <QScrollBar>
+#include <QScopedValueRollback>
+#include <QSignalBlocker>
 #include <QWheelEvent>
+#include <QtMath>
 
 #include <algorithm>
 #include <cmath>
@@ -63,25 +66,46 @@ ScreenshotScrollingThumbnailWidget::ScreenshotScrollingThumbnailWidget(QWidget& 
     setMouseTracking(true);
     setFocusPolicy(Qt::NoFocus);
 
-    m_scrollBar = new adqt::widgets::AdScrollBar(Qt::Vertical, this);
+    createScrollBar();
+    updateWidgetMetrics();
+}
+
+void ScreenshotScrollingThumbnailWidget::createScrollBar() {
+    delete m_scrollBar;
+    // AdScrollBar fixes the cross-axis size in its constructor; changing the base orientation
+    // leaves those constraints attached to the old axis.
+    m_scrollBar =
+        new adqt::widgets::AdScrollBar(horizontal(m_mode) ? Qt::Horizontal : Qt::Vertical, this);
     m_scrollBar->setFocusPolicy(Qt::NoFocus);
     m_scrollBar->setSingleStep(24);
     m_scrollBar->setPageStep(120);
     m_scrollBar->hide();
-    connect(m_scrollBar, &QScrollBar::valueChanged, this, [this]() { update(); });
-    updateWidgetMetrics();
+    m_scrollBar->installEventFilter(this);
+    connect(m_scrollBar, &QScrollBar::valueChanged, this, [this]() {
+        updateHover();
+        update();
+    });
+}
+
+void ScreenshotScrollingThumbnailWidget::releaseNativeSurface() {
+    hide();
+    destroy(true, true);
 }
 
 void ScreenshotScrollingThumbnailWidget::reset() {
+    clearHover();
     cancelDrag();
     m_previewTiles.clear();
     m_previewExtent = 0;
     m_tileDirection = TileDirection::None;
     m_sourceSize = {};
+    if (!m_captureViewportSizeConfigured) {
+        m_captureViewportSize = {};
+    }
     m_highlightedRows = {};
     m_captureImageExtent = 0;
-    m_trimTop = 0;
-    m_trimBottom = 0;
+    m_trim->top = 0;
+    m_trim->bottom = 0;
     if (m_scrollBar != nullptr) {
         m_scrollBar->setRange(0, 0);
         m_scrollBar->setValue(0);
@@ -105,8 +129,19 @@ bool ScreenshotScrollingThumbnailWidget::event(QEvent* event) {
     if (event->type() == QEvent::Hide || event->type() == QEvent::WindowDeactivate ||
         event->type() == QEvent::UngrabMouse) {
         cancelDrag();
+        clearHover();
+    } else if (event->type() == QEvent::Move) {
+        clearHover();
     }
     return QWidget::event(event);
+}
+
+bool ScreenshotScrollingThumbnailWidget::eventFilter(QObject* watched, QEvent* event) {
+    if (watched == m_scrollBar && event->type() == QEvent::Enter &&
+        m_dragHandle == DragHandle::None) {
+        clearHover();
+    }
+    return QWidget::eventFilter(watched, event);
 }
 
 void ScreenshotScrollingThumbnailWidget::setRecognitionMode(
@@ -116,9 +151,7 @@ void ScreenshotScrollingThumbnailWidget::setRecognitionMode(
     }
     reset();
     m_mode = mode;
-    if (m_scrollBar != nullptr) {
-        m_scrollBar->setOrientation(horizontal(m_mode) ? Qt::Horizontal : Qt::Vertical);
-    }
+    createScrollBar();
     updateWidgetMetrics();
 }
 
@@ -132,6 +165,20 @@ void ScreenshotScrollingThumbnailWidget::setMaximumPreviewExtent(int extent) {
         return;
     }
     m_maximumPreviewExtent = clamped;
+    updateWidgetMetrics();
+}
+
+void ScreenshotScrollingThumbnailWidget::setCaptureViewportSize(const QSize& size) {
+    const QSize viewport = size.isEmpty() ? QSize() : size;
+    m_captureViewportSizeConfigured = !viewport.isEmpty();
+    if (m_captureViewportSize == viewport) {
+        return;
+    }
+    clearHover();
+    m_captureViewportSize = viewport;
+    if (!viewport.isEmpty()) {
+        m_captureImageExtent = horizontal(m_mode) ? viewport.width() : viewport.height();
+    }
     updateWidgetMetrics();
 }
 
@@ -149,7 +196,7 @@ void ScreenshotScrollingThumbnailWidget::setStitchedImage(const QImage& previewI
 
     const int oldExtent = sourceExtent();
     const int oldCross = horizontal(m_mode) ? m_sourceSize.height() : m_sourceSize.width();
-    const int oldTrimEnd = m_trimBottom;
+    const int oldTrimEnd = m_trim->bottom;
     if (!previewImage.isNull()) {
         if (replacePreviewImage || change == ScreenshotScrollingStitchChange::Initial ||
             change == ScreenshotScrollingStitchChange::Replaced) {
@@ -167,8 +214,12 @@ void ScreenshotScrollingThumbnailWidget::setStitchedImage(const QImage& previewI
     m_sourceSize = sourceSize;
     const int currentExtent = sourceExtent();
     const int currentCross = horizontal(m_mode) ? sourceSize.height() : sourceSize.width();
+    if (m_captureViewportSize.isEmpty()) {
+        m_captureViewportSize = sourceSize;
+    }
     if (change == ScreenshotScrollingStitchChange::Initial || m_captureImageExtent <= 0) {
-        m_captureImageExtent = currentExtent;
+        m_captureImageExtent =
+            horizontal(m_mode) ? m_captureViewportSize.width() : m_captureViewportSize.height();
     }
 
     const int highlightExtent = std::min(m_captureImageExtent, currentExtent);
@@ -192,21 +243,22 @@ void ScreenshotScrollingThumbnailWidget::setStitchedImage(const QImage& previewI
                          change == ScreenshotScrollingStitchChange::PrependedLeft;
     const bool canPreserveTrim = oldExtent > 0 && oldCross == currentCross;
     if (canPreserveTrim && append) {
-        m_trimTop = std::clamp(m_trimTop, 0, std::max(0, currentExtent - 1));
-        m_trimBottom = currentExtent;
+        m_trim->top = std::clamp(m_trim->top, 0, std::max(0, currentExtent - 1));
+        m_trim->bottom = currentExtent;
     } else if (canPreserveTrim && prepend) {
-        m_trimTop = 0;
-        m_trimBottom = std::clamp(oldTrimEnd + std::max(0, addedRows), 1, currentExtent);
+        m_trim->top = 0;
+        m_trim->bottom = std::clamp(oldTrimEnd + std::max(0, addedRows), 1, currentExtent);
     } else {
-        m_trimTop = 0;
-        m_trimBottom = currentExtent;
+        m_trim->top = 0;
+        m_trim->bottom = currentExtent;
     }
-    if (m_trimBottom <= m_trimTop) {
-        m_trimTop = 0;
-        m_trimBottom = currentExtent;
+    if (m_trim->bottom <= m_trim->top) {
+        m_trim->top = 0;
+        m_trim->bottom = currentExtent;
     }
 
-    updateWidgetMetrics();
+    const QSignalBlocker blocker(m_scrollBar);
+    updateWidgetMetrics(false);
     if (m_scrollBar != nullptr) {
         if (append) {
             m_scrollBar->setValue(m_scrollBar->maximum());
@@ -214,6 +266,7 @@ void ScreenshotScrollingThumbnailWidget::setStitchedImage(const QImage& previewI
             m_scrollBar->setValue(0);
         }
     }
+    updateHover();
     update();
 }
 
@@ -245,7 +298,7 @@ void ScreenshotScrollingThumbnailWidget::replacePreview(const QImage& image) {
             m_previewExtent = 0;
             return;
         }
-        m_previewTiles.push_back({std::move(tile), 0, span});
+        m_previewTiles.push_back({std::move(tile), 0, span, start});
         m_previewExtent += span;
     }
 }
@@ -275,6 +328,7 @@ void ScreenshotScrollingThumbnailWidget::discardPreviewFront(int span) {
             m_previewTiles.pop_front();
         } else {
             tile.firstSpan += remaining;
+            tile.firstPosition += remaining;
             tile.spanCount -= remaining;
             remaining = 0;
         }
@@ -331,7 +385,11 @@ void ScreenshotScrollingThumbnailWidget::appendPreview(const QImage& image) {
             if (tile.isNull()) {
                 return;
             }
-            m_previewTiles.push_back({std::move(tile), 0, 0});
+            const qint64 firstPosition =
+                m_previewTiles.empty()
+                    ? 0
+                    : m_previewTiles.back().firstPosition + m_previewTiles.back().spanCount;
+            m_previewTiles.push_back({std::move(tile), 0, 0, firstPosition});
         }
         PreviewTile& tile = m_previewTiles.back();
         const int destinationStart = tile.firstSpan + tile.spanCount;
@@ -367,7 +425,9 @@ void ScreenshotScrollingThumbnailWidget::prependPreview(const QImage& image) {
             if (tile.isNull()) {
                 return;
             }
-            m_previewTiles.push_front({std::move(tile), kPreviewTileSpan, 0});
+            const qint64 firstPosition =
+                m_previewTiles.empty() ? 0 : m_previewTiles.front().firstPosition;
+            m_previewTiles.push_front({std::move(tile), kPreviewTileSpan, 0, firstPosition});
         }
         PreviewTile& tile = m_previewTiles.front();
         const int span = std::min(tile.firstSpan, remaining);
@@ -376,6 +436,7 @@ void ScreenshotScrollingThumbnailWidget::prependPreview(const QImage& image) {
         copyPreviewSpan(normalized, sourceStart, tile.image, destinationStart, span, m_mode);
         tile.firstSpan = destinationStart;
         tile.spanCount += span;
+        tile.firstPosition -= span;
         remaining -= span;
         m_previewExtent += span;
     }
@@ -385,20 +446,41 @@ void ScreenshotScrollingThumbnailWidget::drawPreviewTiles(QPainter& painter,
                                                           const QRectF& imageTarget,
                                                           const QRectF& visibleRect) const {
     SNOW_SCROLL_DETAIL_SCOPE(ThumbnailTilePaint);
-    int previewStart = 0;
-    for (const PreviewTile& tile : m_previewTiles) {
-        const QRectF target = horizontal(m_mode)
-                                  ? QRectF(imageTarget.left() + previewStart, imageTarget.top(),
-                                           tile.spanCount, imageTarget.height())
-                                  : QRectF(imageTarget.left(), imageTarget.top() + previewStart,
-                                           imageTarget.width(), tile.spanCount);
+    if (visibleRect.isEmpty()) {
+        return;
+    }
+    const qreal tileScale = (horizontal(m_mode) ? imageTarget.width() : imageTarget.height()) /
+                            static_cast<qreal>(m_previewExtent);
+    const qint64 firstPosition = m_previewTiles.front().firstPosition;
+    const qreal targetStart = horizontal(m_mode) ? imageTarget.left() : imageTarget.top();
+    const qreal visibleStart = horizontal(m_mode) ? visibleRect.left() : visibleRect.top();
+    const qreal visibleEnd = horizontal(m_mode) ? visibleRect.right() : visibleRect.bottom();
+    const qreal firstVisibleSpan =
+        static_cast<qreal>(firstPosition) + (visibleStart - targetStart) / tileScale;
+    const qreal lastVisibleSpan =
+        static_cast<qreal>(firstPosition) + (visibleEnd - targetStart) / tileScale;
+    auto iterator = std::lower_bound(m_previewTiles.begin(), m_previewTiles.end(), firstVisibleSpan,
+                                     [](const PreviewTile& tile, qreal position) {
+                                         return static_cast<qreal>(tile.firstPosition +
+                                                                   tile.spanCount) <= position;
+                                     });
+    for (; iterator != m_previewTiles.end() &&
+           static_cast<qreal>(iterator->firstPosition) < lastVisibleSpan;
+         ++iterator) {
+        const PreviewTile& tile = *iterator;
+        const qreal previewStart = static_cast<qreal>(tile.firstPosition - firstPosition);
+        const QRectF target =
+            horizontal(m_mode)
+                ? QRectF(imageTarget.left() + previewStart * tileScale, imageTarget.top(),
+                         tile.spanCount * tileScale, imageTarget.height())
+                : QRectF(imageTarget.left(), imageTarget.top() + previewStart * tileScale,
+                         imageTarget.width(), tile.spanCount * tileScale);
         if (target.intersects(visibleRect)) {
             const QRectF source = horizontal(m_mode)
                                       ? QRectF(tile.firstSpan, 0, tile.spanCount, kThumbnailExtent)
                                       : QRectF(0, tile.firstSpan, kThumbnailExtent, tile.spanCount);
             painter.drawImage(target, tile.image, source);
         }
-        previewStart += tile.spanCount;
     }
 }
 
@@ -436,14 +518,22 @@ qsizetype ScreenshotScrollingThumbnailWidget::previewAllocatedBytesForTesting() 
 QRect ScreenshotScrollingThumbnailWidget::highlightedRowsForTesting() const {
     return m_highlightedRows;
 }
+
+QRectF ScreenshotScrollingThumbnailWidget::hoverPreviewRectForTesting() const {
+    return m_hoverPreviewRect;
+}
+
+QRect ScreenshotScrollingThumbnailWidget::hoverSourceRectForTesting() const {
+    return m_hoverSourceRect;
+}
 #endif
 
 int ScreenshotScrollingThumbnailWidget::trimTop() const {
-    return m_trimTop;
+    return m_trim->top;
 }
 
 int ScreenshotScrollingThumbnailWidget::trimBottom() const {
-    return m_trimBottom;
+    return m_trim->bottom;
 }
 
 QRect ScreenshotScrollingThumbnailWidget::previewRect() const {
@@ -451,13 +541,31 @@ QRect ScreenshotScrollingThumbnailWidget::previewRect() const {
 }
 
 qreal ScreenshotScrollingThumbnailWidget::imageScale() const {
-    return hasPreview() && sourceExtent() > 0
-               ? static_cast<qreal>(m_previewExtent) / static_cast<qreal>(sourceExtent())
-               : 1.0;
+    const int sourceCross = horizontal(m_mode) ? m_sourceSize.height() : m_sourceSize.width();
+    if (!hasPreview() || sourceCross <= 0) {
+        return 1.0;
+    }
+    const qreal crossScale = static_cast<qreal>(kThumbnailExtent) / sourceCross;
+    const int captureExtent =
+        horizontal(m_mode) ? m_captureViewportSize.width() : m_captureViewportSize.height();
+    return captureExtent > 0
+               ? std::min(crossScale, static_cast<qreal>(m_maximumPreviewExtent) / captureExtent)
+               : crossScale;
+}
+
+QRectF ScreenshotScrollingThumbnailWidget::imageTargetRect() const {
+    const qreal scale = imageScale();
+    const qreal viewportExtent = horizontal(m_mode) ? width() : height();
+    const qreal maximumOffset = std::max(0.0, sourceExtent() * scale - viewportExtent);
+    const qreal offset = m_scrollBar != nullptr
+                             ? std::min(static_cast<qreal>(m_scrollBar->value()), maximumOffset)
+                             : 0.0;
+    const QPointF origin = horizontal(m_mode) ? QPointF(-offset, 0) : QPointF(0, -offset);
+    return QRectF(origin, QSizeF(m_sourceSize) * scale);
 }
 
 int ScreenshotScrollingThumbnailWidget::scaledImageExtent() const {
-    return hasPreview() ? m_previewExtent : 0;
+    return hasPreview() ? qCeil(sourceExtent() * imageScale()) : 0;
 }
 
 int ScreenshotScrollingThumbnailWidget::sourceExtent() const {
@@ -469,48 +577,55 @@ int ScreenshotScrollingThumbnailWidget::previewPosition(const QPointF& position)
 }
 
 int ScreenshotScrollingThumbnailWidget::handlePosition(int sourcePosition) const {
-    const int offset = m_scrollBar != nullptr ? m_scrollBar->value() : 0;
-    const QRect viewport = previewRect();
-    int position = (horizontal(m_mode) ? viewport.left() : viewport.top()) +
-                   qRound(static_cast<qreal>(sourcePosition) * imageScale()) - offset;
+    const QRectF target = imageTargetRect();
+    const qreal origin = horizontal(m_mode) ? target.left() : target.top();
+    const qreal position = origin + static_cast<qreal>(sourcePosition) * imageScale();
     if (hasPreview() && sourcePosition == sourceExtent()) {
-        --position;
+        // Match the rounded-up widget extent before selecting the last pixel of the image.
+        return qCeil(position) - 1;
     }
-    return position;
+    return qRound(position);
 }
 
 int ScreenshotScrollingThumbnailWidget::sourcePositionForPreviewPosition(int position) const {
     if (!hasPreview()) {
         return 0;
     }
-    const int offset = m_scrollBar != nullptr ? m_scrollBar->value() : 0;
     const qreal scale = imageScale();
     if (scale <= 0.0) {
         return 0;
     }
-    const QRect viewport = previewRect();
-    const int start = horizontal(m_mode) ? viewport.left() : viewport.top();
-    return std::clamp(qRound(static_cast<qreal>(position - start + offset) / scale), 0,
-                      sourceExtent());
+    const QRectF target = imageTargetRect();
+    const qreal start = horizontal(m_mode) ? target.left() : target.top();
+    return std::clamp(qRound((position - start) / scale), 0, sourceExtent());
 }
 
 bool ScreenshotScrollingThumbnailWidget::isTrimHandleAtPosition(int position) const {
-    return hasPreview() && (std::abs(position - handlePosition(m_trimTop)) <= kHandleHitRadius ||
-                            std::abs(position - handlePosition(m_trimBottom)) <= kHandleHitRadius);
+    return hasPreview() &&
+           (std::abs(position - handlePosition(m_trim->top)) <= kHandleHitRadius ||
+            std::abs(position - handlePosition(m_trim->bottom)) <= kHandleHitRadius);
 }
 
-void ScreenshotScrollingThumbnailWidget::updateWidgetMetrics() {
+void ScreenshotScrollingThumbnailWidget::updateWidgetMetrics(bool refreshHover) {
     SNOW_SCROLL_DETAIL_SCOPE(ThumbnailMetrics);
+    const QScopedValueRollback<bool> metricsGuard(m_updatingMetrics, true);
     const int extent = std::max(1, std::min(m_maximumPreviewExtent, scaledImageExtent()));
-    setFixedSize(horizontal(m_mode) ? QSize(extent, kThumbnailExtent)
-                                    : QSize(kThumbnailExtent, extent));
+    const int sourceCross = horizontal(m_mode) ? m_sourceSize.height() : m_sourceSize.width();
+    const int crossExtent =
+        hasPreview() ? std::max(1, qCeil(sourceCross * imageScale())) : kThumbnailExtent;
+    setFixedSize(horizontal(m_mode) ? QSize(extent, crossExtent) : QSize(crossExtent, extent));
     const int maximum = std::max(0, scaledImageExtent() - extent);
     if (m_scrollBar != nullptr) {
+        const QSignalBlocker blocker(m_scrollBar);
         m_scrollBar->setRange(0, maximum);
         m_scrollBar->setPageStep(extent);
         m_scrollBar->setVisible(maximum > 0);
     }
     updateScrollBarGeometry();
+    if (refreshHover) {
+        updateHover();
+    }
+    update();
 }
 
 void ScreenshotScrollingThumbnailWidget::updateScrollBarGeometry() {
@@ -528,12 +643,8 @@ void ScreenshotScrollingThumbnailWidget::paintEvent(QPaintEvent* event) {
     }
 
     const QRect viewport = previewRect();
-    const int offset = m_scrollBar != nullptr ? m_scrollBar->value() : 0;
     const qreal scale = imageScale();
-    const QRectF imageTarget = horizontal(m_mode) ? QRectF(viewport.left() - offset, viewport.top(),
-                                                           scaledImageExtent(), kThumbnailExtent)
-                                                  : QRectF(viewport.left(), viewport.top() - offset,
-                                                           kThumbnailExtent, scaledImageExtent());
+    const QRectF imageTarget = imageTargetRect();
     painter.save();
     painter.setClipRect(viewport);
     drawPreviewTiles(painter, imageTarget, viewport);
@@ -552,34 +663,41 @@ void ScreenshotScrollingThumbnailWidget::paintEvent(QPaintEvent* event) {
         painter.restore();
     }
 
-    if (m_trimTop > 0) {
+    if (m_trim->top > 0) {
         const QRectF mask = horizontal(m_mode) ? QRectF(imageTarget.left(), imageTarget.top(),
-                                                        m_trimTop * scale, imageTarget.height())
+                                                        m_trim->top * scale, imageTarget.height())
                                                : QRectF(imageTarget.left(), imageTarget.top(),
-                                                        imageTarget.width(), m_trimTop * scale);
+                                                        imageTarget.width(), m_trim->top * scale);
         painter.fillRect(mask, QColor(0, 0, 0, 178));
     }
-    if (m_trimBottom < sourceExtent()) {
+    if (m_trim->bottom < sourceExtent()) {
         const QRectF mask =
             horizontal(m_mode)
-                ? QRectF(imageTarget.left() + m_trimBottom * scale, imageTarget.top(),
-                         (sourceExtent() - m_trimBottom) * scale, imageTarget.height())
-                : QRectF(imageTarget.left(), imageTarget.top() + m_trimBottom * scale,
-                         imageTarget.width(), (sourceExtent() - m_trimBottom) * scale);
+                ? QRectF(imageTarget.left() + m_trim->bottom * scale, imageTarget.top(),
+                         (sourceExtent() - m_trim->bottom) * scale, imageTarget.height())
+                : QRectF(imageTarget.left(), imageTarget.top() + m_trim->bottom * scale,
+                         imageTarget.width(), (sourceExtent() - m_trim->bottom) * scale);
         painter.fillRect(mask, QColor(0, 0, 0, 178));
     }
-    drawTrimHandle(painter, handlePosition(m_trimTop), true);
-    drawTrimHandle(painter, handlePosition(m_trimBottom), false);
+    if (!m_hoverPreviewRect.isEmpty()) {
+        painter.fillRect(m_hoverPreviewRect, QColor(22, 119, 255, 64));
+    }
+    drawTrimHandle(painter, handlePosition(m_trim->top), true);
+    drawTrimHandle(painter, handlePosition(m_trim->bottom), false);
     painter.restore();
 }
 
 void ScreenshotScrollingThumbnailWidget::resizeEvent(QResizeEvent* event) {
     QWidget::resizeEvent(event);
     updateScrollBarGeometry();
+    if (!m_updatingMetrics) {
+        updateHover();
+    }
 }
 
 void ScreenshotScrollingThumbnailWidget::leaveEvent(QEvent* event) {
     if (m_dragHandle == DragHandle::None) {
+        clearHover();
         unsetCursor();
     }
     QWidget::leaveEvent(event);
@@ -591,12 +709,14 @@ void ScreenshotScrollingThumbnailWidget::mousePressEvent(QMouseEvent* event) {
         return;
     }
     const int position = previewPosition(event->position());
-    const int headDistance = std::abs(position - handlePosition(m_trimTop));
-    const int tailDistance = std::abs(position - handlePosition(m_trimBottom));
+    const int headDistance = std::abs(position - handlePosition(m_trim->top));
+    const int tailDistance = std::abs(position - handlePosition(m_trim->bottom));
     if (isTrimHandleAtPosition(position)) {
         m_dragHandle = headDistance <= tailDistance ? DragHandle::Head : DragHandle::Tail;
+        m_hoverPosition = event->position();
         setCursor(horizontal(m_mode) ? Qt::SizeHorCursor : Qt::SizeVerCursor);
         grabMouse();
+        updateHover();
         event->accept();
         return;
     }
@@ -614,9 +734,16 @@ void ScreenshotScrollingThumbnailWidget::mouseMoveEvent(QMouseEvent* event) {
     }
     updateCursorForPosition(position);
     if (m_dragHandle == DragHandle::None) {
+        if (event->buttons() == Qt::NoButton) {
+            m_hoverPosition = event->position();
+            updateHover();
+        } else {
+            clearHover();
+        }
         QWidget::mouseMoveEvent(event);
         return;
     }
+    m_hoverPosition = event->position();
     updateTrimFromPosition(position);
     event->accept();
 }
@@ -628,6 +755,8 @@ void ScreenshotScrollingThumbnailWidget::mouseReleaseEvent(QMouseEvent* event) {
         m_dragHandle = DragHandle::None;
         releaseMouse();
         updateCursorForPosition(position);
+        m_hoverPosition = event->position();
+        updateHover();
         event->accept();
         return;
     }
@@ -662,6 +791,69 @@ void ScreenshotScrollingThumbnailWidget::updateCursorForPosition(int position) {
     }
 }
 
+void ScreenshotScrollingThumbnailWidget::clearHover() {
+    m_hoverPosition.reset();
+    setHoverRect({}, {});
+}
+
+void ScreenshotScrollingThumbnailWidget::setHoverRect(const QRectF& preview, const QRect& source,
+                                                      bool cropping) {
+    if (m_hoverPreviewRect != preview) {
+        const QRectF dirty = m_hoverPreviewRect.united(preview).adjusted(-1.0, -1.0, 1.0, 1.0);
+        m_hoverPreviewRect = preview;
+        update(dirty.toAlignedRect());
+    }
+    if (m_hoverSourceRect != source || m_cropPreviewActive != cropping) {
+        m_hoverSourceRect = source;
+        m_cropPreviewActive = cropping;
+        emit hoverSourceRectChanged(source, cropping);
+    }
+}
+
+void ScreenshotScrollingThumbnailWidget::updateHover() {
+    const bool cropping = m_dragHandle != DragHandle::None;
+    if ((!m_hoverPosition && !cropping) || !hasPreview() || m_captureViewportSize.isEmpty() ||
+        m_sourceSize.isEmpty()) {
+        setHoverRect({}, {});
+        return;
+    }
+    const QRectF imageTarget = imageTargetRect();
+    const qreal scale = imageScale();
+    if (cropping) {
+        const int boundary = m_dragHandle == DragHandle::Head ? m_trim->top : m_trim->bottom;
+        const int captureExtent =
+            horizontal(m_mode) ? m_captureViewportSize.width() : m_captureViewportSize.height();
+        const int start = boundary - captureExtent / 2;
+        const QPoint sourceOrigin = horizontal(m_mode) ? QPoint(start, 0) : QPoint(0, start);
+        const QRect source(sourceOrigin, m_captureViewportSize);
+        setHoverRect(QRectF(imageTarget.topLeft() + QPointF(sourceOrigin) * scale,
+                            QSizeF(m_captureViewportSize) * scale),
+                     source, true);
+        return;
+    }
+    const QPointF position = *m_hoverPosition;
+    const QRectF visible = imageTarget.intersected(QRectF(previewRect()));
+    if (!visible.contains(position) || (m_scrollBar != nullptr && m_scrollBar->isVisible() &&
+                                        QRectF(m_scrollBar->geometry()).contains(position))) {
+        setHoverRect({}, {});
+        return;
+    }
+
+    const QSize sourceSize(std::min(m_captureViewportSize.width(), m_sourceSize.width()),
+                           std::min(m_captureViewportSize.height(), m_sourceSize.height()));
+    const QSizeF previewSize = QSizeF(sourceSize) * scale;
+    // Clamp in the visible viewport first: a scrolled thumbnail must not select hidden rows.
+    const qreal left = std::clamp(position.x() - previewSize.width() / 2.0, visible.left(),
+                                  std::max(visible.left(), visible.right() - previewSize.width()));
+    const qreal top = std::clamp(position.y() - previewSize.height() / 2.0, visible.top(),
+                                 std::max(visible.top(), visible.bottom() - previewSize.height()));
+    const QPoint sourceOrigin(std::clamp(qRound((left - imageTarget.left()) / scale), 0,
+                                         m_sourceSize.width() - sourceSize.width()),
+                              std::clamp(qRound((top - imageTarget.top()) / scale), 0,
+                                         m_sourceSize.height() - sourceSize.height()));
+    setHoverRect(QRectF(QPointF(left, top), previewSize), QRect(sourceOrigin, sourceSize));
+}
+
 void ScreenshotScrollingThumbnailWidget::updateTrimFromPosition(int position) {
     if (!hasPreview() || m_dragHandle == DragHandle::None) {
         return;
@@ -678,11 +870,12 @@ void ScreenshotScrollingThumbnailWidget::updateTrimFromPosition(int position) {
     }
     const int sourcePosition = sourcePositionForPreviewPosition(position);
     if (m_dragHandle == DragHandle::Head) {
-        m_trimTop = std::clamp(sourcePosition, 0, std::max(0, m_trimBottom - 1));
+        m_trim->top = std::clamp(sourcePosition, 0, std::max(0, m_trim->bottom - 1));
     } else {
-        m_trimBottom =
-            std::clamp(sourcePosition, std::min(sourceExtent(), m_trimTop + 1), sourceExtent());
+        m_trim->bottom =
+            std::clamp(sourcePosition, std::min(sourceExtent(), m_trim->top + 1), sourceExtent());
     }
+    updateHover();
     update();
 }
 
@@ -722,4 +915,10 @@ void ScreenshotScrollingThumbnailWidget::drawTrimHandle(QPainter& painter, int p
     painter.drawRoundedRect(
         QRectF(viewport.center().x() - kHandleTabExtent / 2, tabTop, kHandleTabExtent, tabHeight),
         2.0, 2.0);
+}
+
+void ScreenshotScrollingThumbnailWidget::setTrimModel(
+    std::shared_ptr<ScreenshotScrollingTrimRange> trim) {
+    m_trim = std::move(trim);
+    update();
 }

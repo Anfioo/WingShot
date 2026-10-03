@@ -18,6 +18,7 @@ const QString modelKey = QStringLiteral("screenshot_translation/model");
 const QString providerKey = QStringLiteral("screenshot_translation/provider");
 const QString providerConfigKey = QStringLiteral("screenshot_translation/provider_config");
 const QString customKey = QStringLiteral("api_configuration/custom_models");
+const QString textKey = QStringLiteral("api_configuration/text_translation");
 const QString proxyKey = QStringLiteral("network/proxy");
 
 TranslationProviderConfig providerConfigFromJson(const QJsonValue& value) {
@@ -34,6 +35,8 @@ QJsonValue providerConfigToJson(const TranslationProviderConfig& config) {
                        {QStringLiteral("baseUrl"), config.baseUrl},
                        {QStringLiteral("model"), config.model}};
 }
+
+const QString serverKey = QStringLiteral("api_configuration/server_url");
 } // namespace
 
 TranslationService& TranslationService::forClient(SnowShotApiClient& client,
@@ -53,14 +56,22 @@ TranslationService::TranslationService(SnowShotApiClient& client,
     : QObject(&client), m_client(&client), m_settings(&settings), m_locale(std::move(locale)),
       m_defaultTarget(defaultTranslationTargetLanguage(m_locale)) {
     client.setCustomModels(customAiModelsFromJson(settings.value(customKey)));
+    client.setTextTranslationConfigurations(
+        textTranslationConfigurationsFromJson(settings.value(textKey)));
     client.setUseSystemProxy(settings.value(proxyKey).toString() == QStringLiteral("system"));
     connect(&settings, &QObject::destroyed, this, [this] { delete this; });
     connect(&settings, &storage::ConfigurationStore::valueChanged, this,
             [this](const QString& key, const QJsonValue&) {
                 if (m_client == nullptr || m_settings == nullptr)
                     return;
-                if (key == customKey) {
+                if (key == serverKey) {
+                    static_cast<void>(m_client->setBaseUrl(SnowShotApiClient::configuredBaseUrl(
+                        m_settings->value(serverKey).toString())));
+                } else if (key == customKey) {
                     m_client->setCustomModels(customAiModelsFromJson(m_settings->value(customKey)));
+                } else if (key == textKey) {
+                    m_client->setTextTranslationConfigurations(
+                        textTranslationConfigurationsFromJson(m_settings->value(textKey)));
                 } else if (key == proxyKey) {
                     m_client->setUseSystemProxy(m_settings->value(proxyKey).toString() ==
                                                 QStringLiteral("system"));
@@ -76,6 +87,10 @@ TranslationService::TranslationService(SnowShotApiClient& client,
                     emit modelInvalidated(id);
                 }
             });
+    connect(&client, &SnowShotApiClient::baseUrlChanged, this, [this] {
+        m_client->cancel(std::exchange(m_modelsToken, 0));
+        refreshModels(true);
+    });
     connect(&client, &SnowShotApiClient::chatModelsChanged, this,
             [this] { publishModels(!loadingModels()); });
     connect(&client, &QObject::destroyed, this, [this] {
@@ -173,11 +188,7 @@ TranslationProvider* TranslationService::activeAdapter() {
 void TranslationService::publishModels(bool resolveSelection) {
     if (m_client == nullptr)
         return;
-    m_models.clear();
-    for (const auto& model : m_client->cachedChatModels()) {
-        if (model.supportsTranslation())
-            m_models.append(model);
-    }
+    m_models = m_client->cachedChatModels();
     // Select renders a header for each contiguous group. Keep custom and server general
     // models together while preserving their order within each translation category.
     std::stable_partition(m_models.begin(), m_models.end(), [](const auto& model) {
@@ -186,10 +197,13 @@ void TranslationService::publishModels(bool resolveSelection) {
     const auto reason =
         m_modelInvalidationPending ? ChangeReason::ModelInvalidated : ChangeReason::Catalog;
     const int index = translationModelIndex(m_models, m_preferences.modelId);
-    const bool missingCustom = m_preferences.modelId.startsWith(QStringLiteral("custom:")) &&
-                               !m_client->isCustomModel(m_preferences.modelId);
+    const bool missingCustom = (m_preferences.modelId.startsWith(QStringLiteral("custom:")) &&
+                                !m_client->isCustomModel(m_preferences.modelId)) ||
+                               (m_preferences.modelId.startsWith(QStringLiteral("translation:")) &&
+                                !m_client->isTextTranslation(m_preferences.modelId));
     const bool localDefault = m_preferences.modelId.isEmpty() && index >= 0 &&
-                              m_client->isCustomModel(m_models.at(index).id);
+                              (m_client->isCustomModel(m_models.at(index).id) ||
+                               m_client->isTextTranslation(m_models.at(index).id));
     if ((resolveSelection || missingCustom || localDefault) && (index >= 0 || missingCustom)) {
         const QString resolved = index >= 0 ? m_models.at(index).id : QString();
         if (resolved != m_preferences.modelId && m_settings != nullptr) {
@@ -262,6 +276,15 @@ TranslationJob* TranslationService::createJob(const QStringList& texts, QObject*
     return new TranslationJob(*this, texts, owner);
 }
 
+TranslationJob* TranslationService::createJob(const QStringList& texts,
+                                              const TranslationPreferences& preferences,
+                                              QObject* owner) {
+    auto* job = new TranslationJob(*this, texts, owner);
+    job->m_preferences = preferences;
+    job->m_fixedPreferences = true;
+    return job;
+}
+
 TranslationJob::TranslationJob(TranslationService& service, const QStringList& texts,
                                QObject* owner)
     : QObject(owner), m_service(&service), m_client(service.m_client),
@@ -319,8 +342,10 @@ void TranslationJob::retry() {
         fail(tr("Translation service is unavailable"));
         return;
     }
-    const bool changed = m_preferences != m_service->preferences() || m_state == State::Invalidated;
-    m_preferences = m_service->preferences();
+    const bool changed = (!m_fixedPreferences && m_preferences != m_service->preferences()) ||
+                         m_state == State::Invalidated;
+    if (!m_fixedPreferences)
+        m_preferences = m_service->preferences();
     for (auto& unit : m_units) {
         if (changed) {
             unit.text.clear();
@@ -370,6 +395,10 @@ void TranslationJob::prepare() {
             m_service->refreshModels();
             return;
         }
+        if (m_fixedPreferences && !m_preferences.modelId.isEmpty()) {
+            fail(m_service->errorText());
+            return;
+        }
         const int index = translationModelIndex(models, m_service->preferences().modelId);
         if (index < 0) {
             fail(m_service->errorText());
@@ -399,6 +428,15 @@ void TranslationJob::pump() {
             m_result = result;
         if (result.httpStatus == 429) {
             m_rateLimited = true;
+            if (m_client != nullptr && m_client->isTextTranslation(m_preferences.modelId)) {
+                // Requests waiting in the provider queue must not continue spending
+                // quota after this job is throttled. Retry preserves completed units.
+                const auto requests = std::exchange(m_requests, {});
+                for (auto it = requests.cbegin(); it != requests.cend(); ++it) {
+                    m_client->cancel(it.value());
+                    m_units[it.key()].state = State::Failed;
+                }
+            }
             for (auto& pending : m_units)
                 if (pending.state == State::Idle)
                     pending.state = State::Failed;
@@ -411,7 +449,13 @@ void TranslationJob::pump() {
         m_units[index].text += delta;
         emit unitChanged(index);
     };
-    for (int index = 0; index < m_units.size() && m_requests.size() < 4 && !m_rateLimited;
+    const int maxConcurrent =
+        (m_jobAdapter == nullptr && m_client != nullptr &&
+         m_client->isTextTranslation(m_preferences.modelId))
+            ? 16
+            : 4;
+    for (int index = 0;
+         index < m_units.size() && m_requests.size() < maxConcurrent && !m_rateLimited;
          ++index) {
         auto& unit = m_units[index];
         if (unit.state != State::Idle)

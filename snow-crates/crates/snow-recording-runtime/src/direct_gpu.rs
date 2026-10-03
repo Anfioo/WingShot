@@ -82,7 +82,7 @@ pub(super) fn prepare(
     );
     let mut settings = config.streaming_config();
     settings.output_path = path.0.clone();
-    settings.audio = None;
+    settings.audio.clear();
     diagnostics.stage = Some("encoder_startup".into());
     if let Some(name) = snow_d3d11::h264_encoder(device.identity().vendor) {
         diagnostics.encoder_attempts.push(name.into());
@@ -143,7 +143,7 @@ pub(super) fn prepare(
     }
     drop(media);
     diagnostics.stage = None;
-    state.trail.clear();
+    state.input_effects.trail.clear();
     compositor.overlay_upload_bytes = 0;
     Ok(Some((stream, compositor, device)))
 }
@@ -487,9 +487,12 @@ impl GpuVisualCompositor {
             index = 1 - index;
         }
         self.tiles.clear();
-        state.trail.set_lifetime_ms(config.mouse_trail_duration_ms);
+        state
+            .input_effects
+            .trail
+            .set_lifetime_ms(config.mouse_trail_duration_ms);
         if config.mouse_trail_rgba[3] != 0 {
-            state.trail.observe(
+            state.input_effects.trail.observe(
                 cursor
                     .filter(|cursor| cursor.visible)
                     .map(|cursor| (cursor.x, cursor.y)),
@@ -498,21 +501,23 @@ impl GpuVisualCompositor {
                 timestamp,
             );
             state
+                .input_effects
                 .trail
                 .draw_to(&mut self.tiles, timestamp, config.mouse_trail_rgba);
         } else {
-            state.trail.clear();
+            state.input_effects.trail.clear();
         }
         while state
+            .input_effects
             .clicks
             .front()
             .is_some_and(|click| timestamp.saturating_sub(click.timestamp_ms) > CLICK_ANIMATION_MS)
         {
-            state.clicks.pop_front();
+            state.input_effects.clicks.pop_front();
         }
         snow_recording_effects::mouse_effects::draw_clicks_to(
             &mut self.tiles,
-            &state.clicks,
+            &state.input_effects.clicks,
             timestamp,
             config.mouse_click_rgba,
             source_size,
@@ -533,16 +538,7 @@ impl GpuVisualCompositor {
         if config.show_cursor
             && let Some(cursor) = cursor
         {
-            let shape = match &cursor.shape {
-                CursorShapeState::Embedded(shape) => {
-                    state
-                        .cursor_shapes
-                        .insert(shape.shape_id.get(), shape.clone());
-                    Some(shape.clone())
-                }
-                CursorShapeState::Cached(id) => state.cursor_shapes.get(&id.get()).cloned(),
-                CursorShapeState::Unavailable => None,
-            };
+            let shape = resolve_cursor_shape(&mut state.cursor_shape, cursor).cloned();
             if cursor.visible
                 && let Some(shape) = shape
             {
@@ -551,16 +547,8 @@ impl GpuVisualCompositor {
             }
         }
         self.tiles.clear();
-        if let Some(keyboard) = state.keyboard.as_mut() {
-            while state
-                .pending_keys
-                .front()
-                .is_some_and(|event| event.at_ms <= timestamp)
-            {
-                keyboard
-                    .model
-                    .event(state.pending_keys.pop_front().expect("pending key"));
-            }
+        state.input_effects.advance_keys(timestamp);
+        if let Some(keyboard) = state.input_effects.keyboard.as_mut() {
             keyboard
                 .draw_to(&mut self.tiles, timestamp)
                 .map_err(gpu_error)?;
@@ -788,6 +776,9 @@ mod tests {
 
     fn config(path: PathBuf, backend: CaptureBackendKind) -> DirectRecordingConfig {
         DirectRecordingConfig {
+            audio_mode: Default::default(),
+            system_audio_gain_db: 0,
+            microphone_gain_db: 0,
             excluded_windows: Default::default(),
             excluded_processes: Default::default(),
             loop_animated_images: true,
@@ -806,6 +797,7 @@ mod tests {
             maximum_height: None,
             codec: VideoCodec::H264,
             preset: VideoEncodingSpeed::VeryFast,
+            quality: 80,
             prefer_hardware_encoder: true,
             enable_microphone: false,
             enable_system_audio: false,
@@ -898,9 +890,9 @@ mod tests {
         let mut cpu_state = VisualCompositor::new(size);
         let mut gpu_state = VisualCompositor::new(size);
         for state in [&mut cpu_state, &mut gpu_state] {
-            state.keyboard = Some(KeyboardOverlay::new(size, Box::new(Rasterizer)));
+            state.input_effects.keyboard = Some(KeyboardOverlay::new(size, Box::new(Rasterizer)));
             for (at_ms, down) in [(0, true), (150, false)] {
-                state.pending_keys.push_back(KeyEvent {
+                state.input_effects.pending_keys.push_back(KeyEvent {
                     at_ms,
                     key: 65,
                     down,
@@ -908,7 +900,7 @@ mod tests {
                     modifiers: vec![],
                 });
             }
-            state.clicks.push_back(RenderClick {
+            state.input_effects.clicks.push_back(RenderClick {
                 timestamp_ms: 50,
                 x: 160,
                 y: 150,
@@ -1218,7 +1210,7 @@ mod tests {
                         shape: CursorShapeState::Embedded(shape.clone()),
                     };
                     let mut expected = reference.clone();
-                    draw_cursor(&mut expected, size, source, &sample, &mut HashMap::new());
+                    draw_cursor(&mut expected, size, source, &sample, &mut None);
                     compositor.cursor(&background, &sample, &shape, source)?;
                     unsafe {
                         device

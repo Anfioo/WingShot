@@ -7,6 +7,7 @@
 #include <QEventLoop>
 #include <QMimeData>
 #include <QTimer>
+#include <QUrl>
 #include <cstring>
 #include <cstdlib>
 #include <iostream>
@@ -31,6 +32,37 @@ struct ScreenshotClipboardPayloadTestAccess {
 };
 
 namespace {
+class ClipboardRestorer final {
+  public:
+    ClipboardRestorer() : m_saved(std::make_unique<QMimeData>()) {
+        const auto* current = QApplication::clipboard()->mimeData();
+        if (!current)
+            return;
+        for (const auto& format : current->formats())
+            m_saved->setData(format, current->data(format));
+        if (current->hasImage())
+            m_saved->setImageData(current->imageData());
+        if (current->hasUrls())
+            m_saved->setUrls(current->urls());
+    }
+    ~ClipboardRestorer() {
+        QApplication::clipboard()->setMimeData(m_saved.release());
+        QApplication::processEvents();
+        // Qt owns the restored OLE data object. Materialize it before this test
+        // application exits so the user's clipboard survives process teardown.
+        using FlushClipboard = HRESULT(WINAPI*)();
+        const auto module = GetModuleHandleW(L"ole32.dll");
+        const auto flush =
+            module ? reinterpret_cast<FlushClipboard>(GetProcAddress(module, "OleFlushClipboard"))
+                   : nullptr;
+        if (flush && FAILED(flush()))
+            std::cerr << "Failed to flush the restored clipboard\n";
+    }
+
+  private:
+    std::unique_ptr<QMimeData> m_saved;
+};
+
 void require(bool condition, const char* message) {
     if (!condition)
         throw std::runtime_error(message);
@@ -125,7 +157,7 @@ void payloadsPreservePixels() {
                     auto rows = snow_shot::image_codec::srgbRowSource(source);
                     const QByteArray png = snow_shot::image_codec::encodePng(rows);
                     auto direct = ScreenshotClipboardService::prepareImage(source);
-                    auto reused = ScreenshotClipboardService::prepare(rows, png);
+                    auto reused = ScreenshotClipboardService::prepareEncoded(rows, png);
                     require(direct.isValid() && reused.isValid(), "payload preparation failed");
                     require(reused.pngBytes().constData() == png.constData(),
                             "pre-encoded PNG was copied or re-encoded");
@@ -143,7 +175,10 @@ void payloadsPreservePixels() {
     tagged.setColorSpace(QColorSpace::SRgbLinear);
     auto payload = ScreenshotClipboardService::prepareImage(tagged);
     const QImage expected = tagged.convertedToColorSpace(QColorSpace::SRgb);
-    comparePixels(expected, QImage::fromData(payload.pngBytes(), "PNG"));
+    const QImage decoded = QImage::fromData(payload.pngBytes(), "PNG");
+    require(decoded.colorSpace() == QColorSpace(QColorSpace::SRgb),
+            "clipboard PNG must declare its canonical sRGB pixels");
+    comparePixels(expected, decoded);
     verifyDib(expected, ScreenshotClipboardPayloadTestAccess::dib(payload));
     auto rows = snow_shot::image_codec::srgbRowSource(tagged);
     rows.cancellationRequested = [] { return true; };
@@ -151,7 +186,7 @@ void payloadsPreservePixels() {
     rows.cancellationRequested = {};
     rows.readRows = [](int, int, qsizetype, uchar*, qsizetype) { return false; };
     require(!ScreenshotClipboardService::prepare(rows).isValid(), "failed encoding was accepted");
-    require(!ScreenshotClipboardService::prepare(rows, payload.pngBytes()).isValid(),
+    require(!ScreenshotClipboardService::prepareEncoded(rows, payload.pngBytes()).isValid(),
             "failed fallback read was accepted");
 }
 
@@ -239,6 +274,7 @@ int main(int argc, char** argv) {
             QTimer::singleShot(120000, &application, &QApplication::quit);
             return application.exec();
         }
+        const ClipboardRestorer preserveClipboard;
         payloadsPreservePixels();
         publishAndReadThroughQt();
         corruptEncodedImageRetainsNativeBitmap();

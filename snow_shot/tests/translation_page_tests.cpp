@@ -1,5 +1,7 @@
+#include "physical_key_test_support.h"
 #include "translation_test_support.h"
 #include "snow_shot/presentation/components/screenshottranslationsettingsdialog.h"
+#include "snow_shot/presentation/components/formfields.h"
 #include "widgets/modal.h"
 
 #include "snow_shot/presentation/components/contentcardwidget.h"
@@ -58,6 +60,7 @@ using namespace translation_tests;
 using namespace adqt::widgets;
 namespace settings = snow_shot::presentation::settings;
 namespace styles = snow_shot::presentation::styles;
+namespace form_fields = snow_shot::presentation::components::form_fields;
 
 namespace {
 template <typename T> T* child(QObject& owner, const char* name) {
@@ -67,9 +70,9 @@ template <typename T> T* child(QObject& owner, const char* name) {
 }
 
 void key(QWidget* widget, int value, Qt::KeyboardModifiers modifiers = Qt::NoModifier) {
-    QKeyEvent press(QEvent::KeyPress, value, modifiers);
+    PhysicalKeyEvent press(QEvent::KeyPress, value, modifiers);
     QApplication::sendEvent(widget, &press);
-    QKeyEvent release(QEvent::KeyRelease, value, modifiers);
+    PhysicalKeyEvent release(QEvent::KeyRelease, value, modifiers);
     QApplication::sendEvent(widget, &release);
     flushEvents();
 }
@@ -104,6 +107,21 @@ void sharedServiceSelectors() {
             "select shared custom model");
     auto* modal = snow_shot::presentation::createScreenshotTranslationSettingsDialog(service, &page,
                                                                                      &page, {});
+    int sharedEdits = 0;
+    int sharedCommits = 0;
+    const auto watchSharedFields = [&](AdModal* editor) {
+        const auto fields = editor->contentWidget()->findChildren<form_fields::FormField*>();
+        require(fields.size() == 4, "screenshot settings uses four shared fields");
+        for (auto* field : fields) {
+            require(!field->item()->isTouched() && !field->item()->isDirty(),
+                    "screenshot settings initializes a clean AdForm baseline");
+            QObject::connect(field, &form_fields::FormField::valueEdited, editor,
+                             [&sharedEdits] { ++sharedEdits; });
+            QObject::connect(field, &form_fields::FormField::valueCommitted, editor,
+                             [&sharedCommits] { ++sharedCommits; });
+        }
+    };
+    watchSharedFields(modal);
     auto* pageSelect = child<AdSelect>(page, "translationService");
     auto* screenshotSelect =
         child<AdSelect>(*modal->contentWidget(), "screenshotTranslationService");
@@ -142,10 +160,12 @@ void sharedServiceSelectors() {
         }
     }
     const auto options = pageSelect->options();
-    require(options.size() == 3 && options[0].value == QStringLiteral("general") &&
-                options[1].value == model.selectionId() && options[0].group == options[1].group &&
-                options[2].value == QStringLiteral("specialist"),
-            "custom models share the server general model group");
+    require(options.size() == 4 && options[0].value == QStringLiteral("general") &&
+                options[1].value == QStringLiteral("vision") &&
+                options[2].value == model.selectionId() && options[0].group == options[1].group &&
+                options[1].group == options[2].group &&
+                options[3].value == QStringLiteral("specialist"),
+            "both selectors show server vision-capable general models alongside custom models");
     require(service.savePreferences(
                 {QStringLiteral("en"), QStringLiteral("fr"), QStringLiteral("specialist")}),
             "change shared preferences while the settings dialog is open");
@@ -162,6 +182,9 @@ void sharedServiceSelectors() {
     require(pageSelect->currentValue() == screenshotSelect->currentValue() &&
                 pageSelect->currentValue().toString() == QStringLiteral("general"),
             "both views resolve the same fallback after deletion");
+    require(
+        sharedEdits == 0 && sharedCommits == 0,
+        "catalog changes and external preferences must not report shared user edits or commits");
     screenshotSelect->setCurrentValue(QStringLiteral("specialist"));
     require(service.savePreferences(
                 {QStringLiteral("en"), QStringLiteral("de"), QStringLiteral("general")}),
@@ -171,6 +194,24 @@ void sharedServiceSelectors() {
             "an uncommitted dialog edit remains local until OK");
     modal->reject();
     flushEvents();
+    require(sharedEdits == 1 && sharedCommits == 0 &&
+                service.preferences().modelId == QStringLiteral("general"),
+            "cancelling a model draft must not commit it or replace shared preferences");
+    sharedEdits = 0;
+    modal = snow_shot::presentation::createScreenshotTranslationSettingsDialog(service, &page,
+                                                                               &page, {});
+    watchSharedFields(modal);
+    child<AdSelect>(*modal->contentWidget(), "screenshotTranslationService")
+        ->setCurrentValue(QStringLiteral("specialist"));
+    child<AdSelect>(*modal->contentWidget(), "screenshotTranslationTargetLanguage")
+        ->setCurrentValue(QStringLiteral("ja"));
+    require(sharedEdits == 2 && sharedCommits == 0,
+            "screenshot preference edits remain local until OK");
+    modal->acceptButton()->click();
+    flushEvents();
+    require(sharedCommits == 2 && service.preferences().modelId == QStringLiteral("specialist") &&
+                service.preferences().targetLanguage == QStringLiteral("ja"),
+            "successful screenshot save commits only changed shared fields once");
     require(configuration.setValue(customKey, previousModels), "restore custom models");
     require(
         snow_shot::storage::ScreenshotTranslationSettings().setConfiguration(previousPreferences),
@@ -496,7 +537,7 @@ void editorAndShortcutBehavior() {
     source->setPlainText(boundary + QStringLiteral("overflow"));
     require(source->toPlainText() == boundary, "limit counts code points without splitting emoji");
     source->moveCursor(QTextCursor::End);
-    QKeyEvent typed(QEvent::KeyPress, Qt::Key_X, Qt::NoModifier, QStringLiteral("x"));
+    PhysicalKeyEvent typed(QEvent::KeyPress, Qt::Key_X, Qt::NoModifier, QStringLiteral("x"));
     QApplication::sendEvent(source, &typed);
     require(source->toPlainText() == boundary, "typing cannot exceed the Unicode limit");
     source->selectAll();
@@ -547,6 +588,17 @@ void editorAndShortcutBehavior() {
     key(&owner, Qt::Key_C, Qt::ControlModifier);
     require(QApplication::clipboard()->text() == result->toPlainText(),
             "active page shortcuts also work with focus outside its editors");
+#ifdef Q_OS_MACOS
+    QApplication::clipboard()->setText(QStringLiteral("physical copy sentinel"));
+    QKeyEvent wrongCopy(QEvent::KeyPress, Qt::Key_C, Qt::ControlModifier, 1, 9, 0);
+    QApplication::sendEvent(&owner, &wrongCopy);
+    require(QApplication::clipboard()->text() == QStringLiteral("physical copy sentinel"),
+            "a C legend at physical V must not trigger result copy");
+    QKeyEvent physicalCopy(QEvent::KeyPress, Qt::Key_Q, Qt::ControlModifier, 1, 8, 0);
+    QApplication::sendEvent(&owner, &physicalCopy);
+    require(QApplication::clipboard()->text() == result->toPlainText(),
+            "physical C must copy the result across layout changes");
+#endif
     result->selectAll();
     const QString selected = result->textCursor().selectedText();
     server.delta(0, QStringLiteral("世界！\n\nSecond paragraph."));
@@ -769,7 +821,7 @@ void navigationThemesLanguagesAndGeometry() {
     settings::SettingsRuntimeSession runtime(settings::builtInSettingsRegistry(), backend);
     MainWindow window(settings::builtInSettingsRegistry(), runtime);
     window.setAttribute(Qt::WA_DeleteOnClose, false);
-    window.resize(900, 556);
+    window.resize(900, 640);
     window.show();
     auto* card = window.findChild<ContentCardWidget*>();
     auto* sidebar = window.findChild<SidebarWidget*>();
@@ -783,9 +835,12 @@ void navigationThemesLanguagesAndGeometry() {
             translationRow = row;
         }
     }
-    require(translationRow > 0 && model->index(translationRow - 1, 0).data(role).toString() ==
-                                      QStringLiteral("/history"),
-            "Translation follows Screenshot history in navigation");
+    require(translationRow >= 2 &&
+                model->index(translationRow - 2, 0).data(role).toString() ==
+                    QStringLiteral("/history") &&
+                model->index(translationRow - 1, 0).data(role).toString() ==
+                    QStringLiteral("/pin-to-screen-management"),
+            "Translation follows Screenshot history and Pin to Screen Management in navigation");
     card->setCurrentRoute(QStringLiteral("/tools/translation"));
     auto* page = window.findChild<TranslationPageWidget*>();
     require(page != nullptr && card->currentSections().isEmpty() &&
@@ -835,7 +890,7 @@ void navigationThemesLanguagesAndGeometry() {
                         "a keyboard-layout refresh must update fixed translation shortcuts");
                 for (const bool collapsed : {false, true}) {
                     sidebar->setCollapsed(collapsed);
-                    for (const QSize size : {QSize(900, 556), QSize(512, 316), QSize(1200, 900)}) {
+                    for (const QSize size : {QSize(900, 640), QSize(512, 316), QSize(1200, 900)}) {
                         window.resize(size);
                         flushEvents();
                         flushEvents();
@@ -925,7 +980,7 @@ void navigationThemesLanguagesAndGeometry() {
             }
         }
         sidebar->setCollapsed(false);
-        window.resize(900, 556);
+        window.resize(900, 640);
         styles::ThemeManager::instance().setThemeAppearance(styles::ThemeAppearance::Light);
         flushEvents();
     };

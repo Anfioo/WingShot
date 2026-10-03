@@ -597,6 +597,16 @@ void leftClick() {
             "could not send a left click");
 }
 
+void scrollThumbnailToTop(const RECT& bounds) {
+    moveCursorWithInput((bounds.left + bounds.right) / 2, (bounds.top + bounds.bottom) / 2);
+    INPUT wheel{};
+    wheel.type = INPUT_MOUSE;
+    wheel.mi.mouseData = WHEEL_DELTA * 10;
+    wheel.mi.dwFlags = MOUSEEVENTF_WHEEL;
+    require(SendInput(1, &wheel, sizeof(wheel)) == 1,
+            "could not scroll the thumbnail to its head crop handle");
+}
+
 void dragSelect500By500() {
     moveCursor(kSelectionLeft, kSelectionTop);
 
@@ -1137,6 +1147,10 @@ int main(int argc, char* argv[]) {
             return 0;
         }
 
+        // The thumbnail follows the latest stitched rows while scrolling. Its head
+        // crop handle is above the viewport until the preview is scrolled to top.
+        scrollThumbnailToTop(thumbnailBounds);
+        std::this_thread::sleep_for(250ms);
         const bool thumbnailVisibleBeforeClicks =
             thumbnailTrimControlVisible(kThumbnailBeforeClicksFile, thumbnailBounds);
         std::cout << "thumbnail crop control before clicks: "

@@ -4,6 +4,17 @@ std::uint64_t SnowCanvasCustomRenderer::contentRevision() const {
     return 0;
 }
 
+std::uint64_t SnowCanvasCustomRenderer::originalBackgroundRevision() const {
+    return contentRevision();
+}
+
+void SnowCanvasCustomRenderer::clearRenderState() {}
+
+std::optional<SnowCanvasFilterRenderReference>
+SnowCanvasCustomRenderer::filterRenderReference() const {
+    return std::nullopt;
+}
+
 void SnowCanvasCustomRenderer::renderBeforeCanvas(QPainter& painter,
                                                   const SnowCanvasRenderContext& context) {
     Q_UNUSED(painter);
@@ -14,4 +25,9 @@ void SnowCanvasCustomRenderer::renderAfterCanvas(QPainter& painter,
                                                  const SnowCanvasRenderContext& context) {
     Q_UNUSED(painter);
     Q_UNUSED(context);
+}
+
+void SnowCanvasCustomRenderer::renderOriginalBackground(QPainter& painter,
+                                                        const SnowCanvasRenderContext& context) {
+    renderBeforeCanvas(painter, context);
 }

@@ -39,6 +39,8 @@ class QHideEvent;
 class QVBoxLayout;
 namespace adqt::widgets {
 class AdButton;
+class AdImageViewer;
+class AdImageListModel;
 class AdDateRangePicker;
 class AdPagination;
 class AdPopconfirm;
@@ -106,8 +108,10 @@ class ScreenshotHistoryPageWidget final : public QWidget {
     void hideEvent(QHideEvent* event) override;
 
   private:
+    void updateSkinBackgrounds();
     void rebuildFilteredRecords(bool resetPage);
     void rebuildEntries();
+    void rebuildPreview();
     void updateHeader();
     void updateSelectionBar();
     void clearSelection();
@@ -158,9 +162,13 @@ class ScreenshotHistoryPageWidget final : public QWidget {
     QSet<QString> m_selectedRecordIds;
     QHash<QString, std::optional<snow_shot::storage::CaptureHistoryAssetSet>> m_resolvedAssets;
     snow_shot::presentation::styles::ThemeColorScheme m_colorScheme;
+    qreal m_backgroundOpacity = 1.0;
     bool m_active = false;
     bool m_dirty = true;
     bool m_refreshQueued = false;
+    adqt::widgets::AdImageViewer* m_previewViewer = nullptr;
+    adqt::widgets::AdImageListModel* m_previewModel = nullptr;
+    QHash<QString, int> m_previewRows;
     bool m_updatingPagination = false;
     quint64 m_assetGeneration = 0;
     quint64 m_resultGeneration = 0;

@@ -8,6 +8,7 @@
 #include <QFlags>
 #include <QHash>
 #include <QMetaObject>
+#include <QPoint>
 #include <QPointer>
 #include <QRect>
 #include <QScrollBar>
@@ -51,6 +52,8 @@ class OverlayPopupControllerDelegate {
                                            qreal arrowCenterCoord) = 0;
   virtual bool popupReleaseOnHide() const { return false; }
   virtual void popupReleaseSurface() {}
+  virtual bool popupHasSurfaceShowGuard() const { return false; }
+  virtual bool popupSurfaceCanShow() const { return true; }
 };
 
 class OverlayPopupController final : public QObject, private PopupInteractionOwner {
@@ -108,7 +111,7 @@ class OverlayPopupController final : public QObject, private PopupInteractionOwn
   void popupContentChanged(bool emitSignal = true);
   void refreshVisiblePopup();
   void invalidatePopupGeometry();
-
+  void nativeSurfaceChanged();
 
  signals:
   void popupVisibleChanged(bool value);
@@ -142,6 +145,7 @@ class OverlayPopupController final : public QObject, private PopupInteractionOwn
   QPoint cursorGlobalPos() const;
   bool triggerContainsGlobalPos(const QPoint& globalPos) const;
   bool hoverRegionContainsGlobalPos(const QPoint& globalPos, const QWidget* target) const;
+  const QWidget* resolvedHoverTarget(const QPoint& globalPos, const QWidget* target) const;
   void handleHoverEvent(QObject* watched, QEvent* event);
   void transitionHover(bool inside);
   void scheduleHoverReconcile();
@@ -156,7 +160,6 @@ class OverlayPopupController final : public QObject, private PopupInteractionOwn
   void schedulePopupRelayout(bool extendFrameTail);
   void cancelPopupRelayout();
   void refreshGeometryFrameSync();
-  bool shouldSkipQueuedRelayoutSync() const;
   void resetGeometrySyncSnapshot();
   void markAnchorScrollWatchersDirty();
   void refreshAnchorScrollBarWatchers();
@@ -167,7 +170,8 @@ class OverlayPopupController final : public QObject, private PopupInteractionOwn
   void setPopupVisibleInternal(bool visible, bool emitSignal);
   void finishPopupVisibilityUpdate();
   void syncPreparedPopupVisibility();
-  bool syncPopupGeometry(bool prepareLayout = true);
+  void applySurfaceVisibility(QWidget* popup, bool shouldShow, bool raiseWhenShowing);
+  bool syncPopupGeometry();
   bool popupUsesInWindowLayer() const;
   bool popupUsesTopLevelToolLayer() const;
   void syncPopupTooltipRoute();
@@ -208,6 +212,8 @@ class OverlayPopupController final : public QObject, private PopupInteractionOwn
 
   enum class HoverState { Outside, WaitingToOpen, Inside, WaitingToClose };
   HoverState hoverState_ = HoverState::Outside;
+  QPointer<QWidget> lastHoverEventWindow_;
+  QPoint lastHoverEventPosition_;
   quint64 hoverGeneration_ = 0;
   bool hoverReconcileQueued_ = false;
   bool focusTriggerActive_ = false;
@@ -221,6 +227,7 @@ class OverlayPopupController final : public QObject, private PopupInteractionOwn
   bool triggerKeyPressActive_ = false;
   bool closingFromHost_ = false;
   bool updatingPopupVisible_ = false;
+  bool applyingSurfaceVisibility_ = false;
   std::optional<bool> pendingPopupVisible_;
   bool pendingPopupVisibleEmitSignal_ = false;
   bool popupRelayoutQueued_ = false;

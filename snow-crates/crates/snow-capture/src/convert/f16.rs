@@ -37,8 +37,13 @@ const SDR_REFERENCE_WHITE_NITS: f32 = 80.0;
 const SDR_OUTPUT_WHITE_NITS: f32 = 100.0;
 const SDR_OUTPUT_BLACK_NITS: f32 = 0.1;
 const HDR_INPUT_BLACK_NITS: f32 = 0.001;
-const SDR_IDENTITY_EPS: f32 = 1e-3;
 const EPSILON: f32 = 1e-6;
+// Retain the original SDR identity tolerance. Finish the smooth handoff within
+// the existing output-white headroom (100/80); the HDR curve stays unchanged.
+pub(crate) const HDR_SDR_TRANSITION_START: f32 = 1.0 + 1e-3;
+const HDR_SDR_TRANSITION_END: f32 = SDR_OUTPUT_WHITE_NITS / SDR_REFERENCE_WHITE_NITS;
+pub(crate) const HDR_SDR_TRANSITION_INV_WIDTH: f32 =
+    1.0 / (HDR_SDR_TRANSITION_END - HDR_SDR_TRANSITION_START);
 pub(crate) const HDR_LUMA_LUT_SIZE: usize = 2048;
 const HDR_LUMA_LUT_CACHE_SIZE: usize = 4;
 
@@ -96,12 +101,19 @@ pub(crate) struct HdrBt2390Curve {
 #[derive(Clone)]
 pub(crate) struct HdrPreparedContext {
     pub(crate) screen_color_rows: Option<[[f32; 4]; 3]>,
+    pub(crate) output_pixel_format: crate::CapturePixelFormat,
     pub(crate) inv_boost: f32,
     pub(crate) curve: HdrBt2390Curve,
     pub(crate) luma_lut: Option<HdrLumaLut>,
 }
 
 impl HdrPreparedContext {
+    #[inline(always)]
+    pub(crate) fn with_output_format(mut self, output: crate::CapturePixelFormat) -> Self {
+        self.output_pixel_format = output;
+        self
+    }
+
     #[inline(always)]
     #[cfg(any(windows, target_arch = "x86_64"))]
     pub(crate) fn use_lut(&self) -> bool {
@@ -271,6 +283,7 @@ pub(crate) fn prepare_hdr_context(params: HdrFrameContext) -> HdrPreparedContext
     };
     HdrPreparedContext {
         screen_color_rows: None,
+        output_pixel_format: crate::CapturePixelFormat::Rgba8,
         inv_boost,
         curve,
         luma_lut,
@@ -306,12 +319,10 @@ fn inverse_windows_sdr_boost(rgb: &mut [f32; 3], inv_boost: f32) {
 }
 
 #[inline(always)]
-fn is_sdr_identity_pixel(rgb: [f32; 3]) -> bool {
-    rgb[0].max(rgb[1]).max(rgb[2]) <= 1.0 + SDR_IDENTITY_EPS
-}
-
-#[inline(always)]
 fn tone_map_hdr_pixel_bt2390(rgb: &mut [f32; 3], curve: HdrBt2390Curve) {
+    if rgb[0].max(rgb[1]).max(rgb[2]) <= HDR_SDR_TRANSITION_START {
+        return;
+    }
     let y_in = (0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2]).max(0.0);
     if y_in <= EPSILON {
         rgb[0] = 0.0;
@@ -326,6 +337,9 @@ fn tone_map_hdr_pixel_bt2390(rgb: &mut [f32; 3], curve: HdrBt2390Curve) {
 
 #[inline(always)]
 fn tone_map_hdr_pixel_bt2390_lut(rgb: &mut [f32; 3], lut: &HdrLumaLut) {
+    if rgb[0].max(rgb[1]).max(rgb[2]) <= HDR_SDR_TRANSITION_START {
+        return;
+    }
     let y_in = (0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2]).max(0.0);
     if y_in <= EPSILON {
         rgb[0] = 0.0;
@@ -339,6 +353,8 @@ fn tone_map_hdr_pixel_bt2390_lut(rgb: &mut [f32; 3], lut: &HdrLumaLut) {
 
 #[inline(always)]
 fn tone_map_hdr_pixel_with_luma(rgb: &mut [f32; 3], y_in: f32, y_out: f32) {
+    let original = *rgb;
+    let input_max = original[0].max(original[1]).max(original[2]);
     let scale = y_out / y_in.max(EPSILON);
     rgb[0] *= scale;
     rgb[1] *= scale;
@@ -351,6 +367,17 @@ fn tone_map_hdr_pixel_with_luma(rgb: &mut [f32; 3], y_in: f32, y_out: f32) {
         rgb[0] *= inv;
         rgb[1] *= inv;
         rgb[2] *= inv;
+    }
+
+    if input_max < HDR_SDR_TRANSITION_END {
+        let t =
+            ((input_max - HDR_SDR_TRANSITION_START) * HDR_SDR_TRANSITION_INV_WIDTH).clamp(0.0, 1.0);
+        let weight = t * t * (3.0 - 2.0 * t);
+        // Blend after the original gamut compression, retaining its chromaticity
+        // and meeting both the SDR identity and legacy HDR output smoothly.
+        for (channel, input) in rgb.iter_mut().zip(original) {
+            *channel = input + (*channel - input) * weight;
+        }
     }
 }
 
@@ -377,9 +404,23 @@ fn f16_to_srgb_lut() -> &'static [u8; 65_536] {
     })
 }
 
+// AVX2 gathers load 32-bit words. Pack four exact sRGB bytes per word so the
+// nonnegative half values through 1.0 occupy 15 KiB instead of 60 KiB. The last
+// word includes three entries above 1.0, all saturated to 255 by the byte LUT.
+#[cfg(target_arch = "x86_64")]
+pub(crate) fn hdr_srgb_lut() -> &'static [i32; 0xF01] {
+    static LUT: OnceLock<[i32; 0xF01]> = OnceLock::new();
+    LUT.get_or_init(|| {
+        let bytes = f16_to_srgb_lut();
+        std::array::from_fn(|i| i32::from_le_bytes(bytes[i * 4..i * 4 + 4].try_into().unwrap()))
+    })
+}
+
 /// pay the ~1-2 ms build cost.
 pub(crate) fn warmup_lut() {
     let _ = f16_to_srgb_lut();
+    #[cfg(target_arch = "x86_64")]
+    let _ = hdr_srgb_lut();
     let _ = hdr_luma_lut_for_context(HdrFrameContext::default());
 }
 
@@ -611,14 +652,17 @@ unsafe fn convert_f16_rgba_to_srgb_hdr_scalar_prepared_impl<const FORCE_OPAQUE_A
         }
         rgb = rgb.map(|v| v.max(0.0));
         inverse_windows_sdr_boost(&mut rgb, inv_boost);
-        if !is_sdr_identity_pixel(rgb) {
-            if let Some(lut) = hdr_lut {
-                tone_map_hdr_pixel_bt2390_lut(&mut rgb, lut);
-            } else {
-                tone_map_hdr_pixel_bt2390(&mut rgb, curve);
-            }
+        // Preserve the SDR range and blend into the unchanged BT.2390 mapping
+        // only around its former hard switch at SDR white.
+        if let Some(lut) = hdr_lut {
+            tone_map_hdr_pixel_bt2390_lut(&mut rgb, lut);
+        } else {
+            tone_map_hdr_pixel_bt2390(&mut rgb, curve);
         }
 
+        if prepared.output_pixel_format == crate::CapturePixelFormat::Bgra8 {
+            rgb.swap(0, 2);
+        }
         let a_byte = ((a * 255.0 + 0.5) as u32) & 0xFF;
         let color = u32::from(linear_to_srgb_u8(rgb[0]))
             | (u32::from(linear_to_srgb_u8(rgb[1])) << 8)
@@ -682,7 +726,37 @@ mod tests {
     }
 
     #[test]
-    fn sdr_pixels_are_restored_exactly_after_inverse_boost() {
+    fn hdr_highlight_boundary_is_continuous() {
+        for tonemap_use_lut in [false, true] {
+            let prepared = prepare_hdr_context(HdrFrameContext {
+                tonemap_use_lut,
+                ..Default::default()
+            });
+            let src = [
+                pack_half_rgba([1.0, 1.0, 1.0, 1.0]),
+                pack_half_rgba([1.002, 1.002, 1.002, 1.0]),
+            ]
+            .concat();
+            let mut dst = [0u8; 8];
+            unsafe {
+                convert_f16_rgba_to_srgb_hdr_scalar_prepared_unchecked(
+                    src.as_ptr(),
+                    dst.as_mut_ptr(),
+                    2,
+                    &prepared,
+                );
+            }
+            assert!(
+                dst[0].abs_diff(dst[4]) <= 2,
+                "highlight boundary jumps from {} to {} (LUT={tonemap_use_lut})",
+                dst[0],
+                dst[4]
+            );
+        }
+    }
+
+    #[test]
+    fn sdr_pixels_are_restored_after_inverse_boost() {
         let k = 2.0f32; // Equivalent to SDR white level = 160 nits
         let context = HdrFrameContext {
             sdr_white_nits: SDR_REFERENCE_WHITE_NITS * k,
@@ -699,14 +773,21 @@ mod tests {
         ];
 
         let mut src = vec![0u8; src_pixels.len() * 8];
+        let mut unboosted_src = Vec::new();
         for (idx, px) in src_pixels.iter().enumerate() {
             let boosted = [px[0] * k, px[1] * k, px[2] * k, px[3]];
             let packed = pack_half_rgba(boosted);
             src[idx * 8..idx * 8 + 8].copy_from_slice(&packed);
+            unboosted_src.extend_from_slice(&pack_half_rgba(*px));
         }
 
         let mut dst = vec![0u8; src_pixels.len() * 4];
+        let mut unboosted_dst = vec![0u8; dst.len()];
         let prepared = prepare_hdr_context(context);
+        let unboosted_prepared = prepare_hdr_context(HdrFrameContext {
+            sdr_white_nits: SDR_REFERENCE_WHITE_NITS,
+            ..context
+        });
         unsafe {
             convert_f16_rgba_to_srgb_hdr_scalar_prepared_unchecked(
                 src.as_ptr(),
@@ -714,45 +795,43 @@ mod tests {
                 src_pixels.len(),
                 &prepared,
             );
+            convert_f16_rgba_to_srgb_hdr_scalar_prepared_unchecked(
+                unboosted_src.as_ptr(),
+                unboosted_dst.as_mut_ptr(),
+                src_pixels.len(),
+                &unboosted_prepared,
+            );
         }
 
-        for (idx, px) in src_pixels.iter().enumerate() {
-            let off = idx * 4;
-            assert_eq!(dst[off], linear_to_srgb_u8(px[0]));
-            assert_eq!(dst[off + 1], linear_to_srgb_u8(px[1]));
-            assert_eq!(dst[off + 2], linear_to_srgb_u8(px[2]));
-            assert_eq!(dst[off + 3], 255);
+        assert_eq!(dst, unboosted_dst);
+        for (pixel, original) in dst.chunks_exact(4).zip(src_pixels) {
+            assert_eq!(
+                pixel,
+                &[
+                    linear_to_srgb_u8(original[0]),
+                    linear_to_srgb_u8(original[1]),
+                    linear_to_srgb_u8(original[2]),
+                    255,
+                ]
+            );
         }
     }
 
     #[test]
-    fn hdr_pixel_is_tonemapped_while_sdr_pixel_stays_identity() {
-        let context = HdrFrameContext::default();
-        let src = [
-            pack_half_rgba([0.5, 0.25, 0.75, 1.0]),
-            pack_half_rgba([4.0, 2.0, 1.0, 1.0]),
-        ]
-        .concat();
-
-        let mut dst = vec![0u8; 8];
-        let prepared = prepare_hdr_context(context);
-        unsafe {
-            convert_f16_rgba_to_srgb_hdr_scalar_prepared_unchecked(
-                src.as_ptr(),
-                dst.as_mut_ptr(),
-                2,
-                &prepared,
-            );
-        }
-
-        // SDR pixel must stay byte-identical to the baseline conversion.
+    fn sdr_surface_without_hdr_context_stays_identity() {
+        let src = pack_half_rgba([0.5, 0.25, 0.75, 1.0]);
+        let mut dst = [0u8; 4];
+        super::super::convert_row_to_rgba_with_options(
+            super::super::SurfacePixelFormat::Rgba16Float,
+            &src,
+            &mut dst,
+            1,
+            super::super::SurfaceConversionOptions::default(),
+        );
         assert_eq!(dst[0], linear_to_srgb_u8(0.5));
         assert_eq!(dst[1], linear_to_srgb_u8(0.25));
         assert_eq!(dst[2], linear_to_srgb_u8(0.75));
         assert_eq!(dst[3], 255);
-
-        // HDR pixel should still be valid SDR output and not trivially zero.
-        assert!(dst[4] > 0 || dst[5] > 0 || dst[6] > 0);
     }
 
     #[test]

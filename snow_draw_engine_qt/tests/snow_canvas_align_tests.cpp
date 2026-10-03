@@ -60,8 +60,8 @@ QList<RectangleRecord> rectangleRecords(const SnowCanvasRuntime& runtime) {
         const double centerY = center.value(QStringLiteral("y")).toDouble();
         const double width = object.value(QStringLiteral("width")).toDouble();
         const double height = object.value(QStringLiteral("height")).toDouble();
-        result.append({centerX - width / 2, centerX + width / 2, centerY - height / 2,
-                       centerY + height / 2});
+        result.append(
+            {centerX - width / 2, centerX + width / 2, centerY - height / 2, centerY + height / 2});
     }
     return result;
 }
@@ -161,6 +161,77 @@ void distributeSelection() {
     require(distributed[0].left == before[0].left, "left rectangle stays pinned");
     require(distributed[2].right == before[2].right, "right rectangle stays pinned");
 }
+
+void visibleGuideTargetsSnapWithoutElementSnapping() {
+    SnowCanvasRuntime runtime;
+    SnowCanvasWidget canvas(runtime);
+    canvas.resize(800, 600);
+    canvas.show();
+    QApplication::processEvents();
+    require(canvas.setViewportCamera(0.0, 0.0, 1.0), "set guide test camera");
+    require(!canvas.canvasSnapConfig().enabled, "element snapping starts disabled");
+    require(canvas.setCanvasSnapGuideTargets({{100.0}, {80.0}}), "set guide targets");
+    require(canvas.setCanvasTool(SnowCanvasTool::Shape), "select shape tool for guide test");
+    mouse(canvas, QEvent::MouseButtonPress, {450.0, 330.0});
+    mouse(canvas, QEvent::MouseMove, {497.0, 377.0});
+    mouse(canvas, QEvent::MouseButtonRelease, {497.0, 377.0});
+    const auto snapped = rectangleRecords(runtime);
+    require(snapped.size() == 1 && std::abs(snapped[0].right - 100.0) < 1e-9 &&
+                std::abs(snapped[0].bottom - 80.0) < 1e-9,
+            "shape edges snap to visible guides without enabling element snapping");
+    require(canvas.setCanvasSnapGuideTargets({}), "clear guide targets");
+    mouse(canvas, QEvent::MouseButtonPress, {550.0, 330.0});
+    mouse(canvas, QEvent::MouseMove, {597.0, 377.0});
+    mouse(canvas, QEvent::MouseButtonRelease, {597.0, 377.0});
+    const auto unsnapped = rectangleRecords(runtime);
+    require(unsnapped.size() == 2 && std::abs(unsnapped[1].right - 197.0) < 1e-9,
+            "cleared guides must no longer affect creation");
+}
+
+void ctrlTogglesElementSnappingIndependentlyOfVisibleGuides() {
+    for (const bool withGuides : {false, true}) {
+        for (const bool persistentSnapping : {false, true}) {
+            for (const bool ctrl : {false, true}) {
+                for (const bool ctrlDuringDrag : {false, true}) {
+                    SnowCanvasRuntime runtime;
+                    SnowCanvasWidget canvas(runtime);
+                    canvas.resize(800, 600);
+                    canvas.show();
+                    QApplication::processEvents();
+                    require(canvas.setViewportCamera(0.0, 0.0, 1.0), "set Ctrl snap camera");
+                    require(canvas.setCanvasTool(SnowCanvasTool::Shape), "select Ctrl snap shape");
+                    mouse(canvas, QEvent::MouseButtonPress, {300.0, 200.0});
+                    mouse(canvas, QEvent::MouseMove, {500.0, 400.0});
+                    mouse(canvas, QEvent::MouseButtonRelease, {500.0, 400.0});
+                    auto config = canvas.canvasSnapConfig();
+                    config.enabled = persistentSnapping;
+                    require(canvas.setCanvasSnapConfig(config), "configure persistent snapping");
+                    if (withGuides) {
+                        require(canvas.setCanvasSnapGuideTargets({{400.0}, {400.0}}),
+                                "set visible guides away from element snap targets");
+                    }
+                    const auto modifiers = ctrl ? Qt::ControlModifier : Qt::NoModifier;
+                    mouse(canvas, QEvent::MouseButtonPress, {650.0, 120.0},
+                          ctrlDuringDrag ? Qt::NoModifier : modifiers);
+                    mouse(canvas, QEvent::MouseMove, {503.0, 197.0}, modifiers);
+                    mouse(canvas, QEvent::MouseButtonRelease, {503.0, 197.0}, modifiers);
+                    const auto result = rectangleRecords(runtime);
+                    const bool shouldSnap = persistentSnapping != ctrl;
+                    require(result.size() == 2 && result[1].left == (shouldSnap ? 100.0 : 103.0) &&
+                                result[1].bottom == (shouldSnap ? -100.0 : -103.0),
+                            "Ctrl must toggle element snapping before and during drawing, with "
+                            "or without visible guides");
+                    require(canvas.canvasSnapConfig().enabled == persistentSnapping,
+                            "Ctrl snapping must not change the persistent setting");
+                    require(canvas.undo() && rectangleRecords(runtime).size() == 1,
+                            "snapped drawing is one undoable edit");
+                    require(canvas.redo() && rectangleRecords(runtime) == result,
+                            "redo restores snapped geometry");
+                }
+            }
+        }
+    }
+}
 } // namespace
 int main(int argc, char** argv) {
 #ifdef Q_OS_WIN
@@ -172,5 +243,7 @@ int main(int argc, char** argv) {
     alignSelection();
     alignSelectionRequiresMultipleElements();
     distributeSelection();
+    visibleGuideTargetsSnapWithoutElementSnapping();
+    ctrlTogglesElementSnappingIndependentlyOfVisibleGuides();
     std::cout << "Canvas align tests passed\n";
 }

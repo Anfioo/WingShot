@@ -1,10 +1,10 @@
 Unicode true
-Name "WingShot installer running application tests"
+Name "Snow Shot installer running application tests"
 OutFile "${OUTPUT}"
 RequestExecutionLevel user
 !include "LogicLib.nsh"
 !ifdef ANSWER
-!macro SnowShotConfirmClose
+!macro SnowShotConfirmClose Prefix
   StrCmp "${ANSWER}" "closeApp" closeApp declined
 !macroend
 !endif
@@ -14,11 +14,11 @@ RequestExecutionLevel user
 Section
   StrCpy $INSTDIR "${DESTINATION}"
 !ifdef GUARD
-  Push "$INSTDIR\WingShot.exe"
-  Call SnowShotEnsureAppClosed
+  Push "$INSTDIR\snow_shot.exe"
+  Call SnowShotEnsureMainAppClosed
 !endif
   SetOutPath "$INSTDIR"
-  File /oname=WingShot.exe "${PAYLOAD}"
+  File /oname=snow_shot.exe "${PAYLOAD}"
   IfErrors 0 +2
     SetErrorLevel 20
 !ifdef GUARD
@@ -27,8 +27,8 @@ Section
 SectionEnd
 !ifdef GUARD
 Section "Uninstall"
-  Push "$INSTDIR\WingShot.exe"
+  Push "$INSTDIR\snow_shot.exe"
   Call un.SnowShotEnsureAppClosed
-  Delete "$INSTDIR\WingShot.exe"
+  Delete "$INSTDIR\snow_shot.exe"
 SectionEnd
 !endif

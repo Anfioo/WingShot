@@ -1,3 +1,4 @@
+#include "snow_shot/app/edition.h"
 #include "snow_shot/presentation/components/aboutpagewidget.h"
 #include "widgets/detail/pointer_region.h"
 
@@ -29,6 +30,7 @@
 #include <QPainter>
 #include <QPainterPath>
 #include <QRegularExpression>
+#include <QStackedLayout>
 #include <QSvgRenderer>
 #include <QTimer>
 #include <QVBoxLayout>
@@ -116,8 +118,8 @@ class AboutHeroSurface final : public QFrame {
         path.addRect(QRectF(0, m_radius, width(), height() - m_radius));
         path.setFillRule(Qt::WindingFill);
         QLinearGradient gradient(rect().topLeft(), QPointF(rect().left(), rect().bottom()));
-        gradient.setColorAt(0, m_start);
-        gradient.setColorAt(1, m_end);
+        gradient.setColorAt(0, styles::mainWindowBackgroundColor(this, m_start));
+        gradient.setColorAt(1, styles::mainWindowBackgroundColor(this, m_end));
         painter.fillPath(path, gradient);
     }
 
@@ -144,7 +146,10 @@ class AboutArtwork final : public QWidget {
         const auto translated = [](const char* source) {
             return QCoreApplication::translate("AboutPageWidget", source).toHtmlEscaped().toUtf8();
         };
-        svg.replace("{{product}}", translated(QT_TRANSLATE_NOOP("AboutPageWidget", "WingShot")));
+        svg.replace("{{product}}",
+                    snow_shot::app::edition::isMini
+                        ? snow_shot::app::edition::productName().toHtmlEscaped().toUtf8()
+                        : translated(QT_TRANSLATE_NOOP("AboutPageWidget", "Snow Shot")));
         svg.replace("{{moment}}",
                     translated(QT_TRANSLATE_NOOP("AboutPageWidget", "Make every moment clear.")));
         svg.replace("{{ocr}}",
@@ -310,15 +315,11 @@ QUrl aboutProjectUrl(const QString& suffix = {}) {
     url.setPath(path + suffix);
     return url;
 }
-
-QString aboutLink(const QString& url, const QString& label) {
-    return QStringLiteral("<a href=\"%1\">%2</a>")
-        .arg(url.toHtmlEscaped(), label.toHtmlEscaped());
-}
 } // namespace
 
 struct AboutPageWidget::Ui {
     styles::ThemeColorScheme scheme;
+    qreal backgroundOpacity = 1.0;
     PageContainerWidget* container = nullptr;
     AboutHeroSurface* hero = nullptr;
     QBoxLayout* heroLayout = nullptr;
@@ -338,9 +339,9 @@ struct AboutPageWidget::Ui {
     std::array<QLabel*, 6> featureLabels{};
     std::array<AdDivider*, 6> featureSeparators{};
     std::array<adqt::icons::IconRef, 6> featureRefs{
-        custom::twotone::ScreenshotFeature(),  custom::outlined::ToolFreeDraw(),
-        custom::outlined::ToolRecognizeText(), custom::outlined::RecordScreen(),
-        custom::outlined::PinToScreen(),       outlined::History()};
+        custom::twotone::ScreenshotFeature(), custom::outlined::ToolFreeDraw(),
+        custom::outlined::TextRecognition(),  custom::outlined::RecordScreen(),
+        custom::outlined::PinToScreen(),      outlined::History()};
     AdDivider* featureDivider = nullptr;
     QFrame* versionPanel = nullptr;
     QVBoxLayout* versionPanelLayout = nullptr;
@@ -356,20 +357,22 @@ struct AboutPageWidget::Ui {
     QLabel* updateStatus = nullptr;
     QLabel* updateIcon = nullptr;
     AdDivider* updateDivider = nullptr;
+    QStackedLayout* updateRail = nullptr;
     QBoxLayout* updateLayout = nullptr;
     QProgressBar* updateProgress = nullptr;
+    QWidget* updateProgressWrap = nullptr;
     AdButton* updateAction = nullptr;
     AdButton* updateCancel = nullptr;
-    QBoxLayout* updateActions = nullptr;
+    QWidget* updateActionBlank = nullptr;
+    QStackedLayout* updateActions = nullptr;
     QGridLayout* resourceLayout = nullptr;
-    std::array<AboutResourceButton*, 3> resources{};
+    std::array<AboutResourceButton*, 5> resources{};
     QLabel* linkError = nullptr;
     AdDivider* footerDivider = nullptr;
     QBoxLayout* footerLayout = nullptr;
     QLabel* community = nullptr;
     QLabel* heart = nullptr;
     QLabel* license = nullptr;
-    QLabel* attribution = nullptr;
     QLabel* copyright = nullptr;
     QLabel* slogan = nullptr;
     int featureColumns = 0;
@@ -421,16 +424,6 @@ AboutPageWidget::AboutPageWidget(QWidget* parent, UrlOpener urlOpener,
     copyLayout->addWidget(m_ui->tagline);
     m_ui->description = aboutLabel(QStringLiteral("aboutDescription"), m_ui->heroCopy);
     copyLayout->addWidget(m_ui->description);
-    // The upstream attribution shares the hero copy's line budget. The About page already fills
-    // the default window exactly, so the hero description and the footer license line are held
-    // one line shorter to pay for it; keep this text on a single line.
-    m_ui->attribution = aboutLabel(QStringLiteral("aboutAttribution"), m_ui->heroCopy);
-    m_ui->attribution->setTextFormat(Qt::RichText);
-    m_ui->attribution->setTextInteractionFlags(Qt::TextBrowserInteraction);
-    m_ui->attribution->setOpenExternalLinks(false);
-    connect(m_ui->attribution, &QLabel::linkActivated, this,
-            [this](const QString& url) { openProjectLink(QUrl(url)); });
-    copyLayout->addWidget(m_ui->attribution);
     m_ui->heroLayout->addWidget(m_ui->heroCopy, 1);
     m_ui->artwork = new AboutArtwork(m_ui->hero);
     m_ui->heroLayout->addWidget(m_ui->artwork, 0, Qt::AlignCenter);
@@ -519,7 +512,20 @@ AboutPageWidget::AboutPageWidget(QWidget* parent, UrlOpener urlOpener,
         m_ui->updateDivider = new AdDivider(m_ui->versionPanel);
         m_ui->updateDivider->setObjectName(QStringLiteral("aboutUpdateDivider"));
         m_ui->updateDivider->setDividerSize(AdDivider::Size::Small);
-        m_ui->versionPanelLayout->addWidget(m_ui->updateDivider);
+        m_ui->updateProgress = new QProgressBar(m_ui->versionPanel);
+        m_ui->updateProgress->setObjectName(QStringLiteral("aboutUpdateProgress"));
+        m_ui->updateProgress->setRange(0, 1000);
+        m_ui->updateProgress->setTextVisible(false);
+        // While downloading, the slim progress track takes the divider's place so the
+        // updates module keeps the same height in every state.
+        m_ui->updateRail = new QStackedLayout;
+        m_ui->updateRail->addWidget(m_ui->updateDivider);
+        m_ui->updateProgressWrap = new QWidget(m_ui->versionPanel);
+        auto* progressWrapLayout = new QHBoxLayout(m_ui->updateProgressWrap);
+        progressWrapLayout->setContentsMargins(0, 0, 0, 0);
+        progressWrapLayout->addWidget(m_ui->updateProgress, 0, Qt::AlignVCenter);
+        m_ui->updateRail->addWidget(m_ui->updateProgressWrap);
+        m_ui->versionPanelLayout->addLayout(m_ui->updateRail);
         m_ui->updateLayout = new QBoxLayout(QBoxLayout::LeftToRight);
         auto* statusRow = new QHBoxLayout;
         m_ui->updateIcon = new QLabel(m_ui->versionPanel);
@@ -529,25 +535,24 @@ AboutPageWidget::AboutPageWidget(QWidget* parent, UrlOpener urlOpener,
         statusRow->addWidget(m_ui->updateStatus, 1);
         m_ui->updateLayout->addLayout(statusRow, 1);
         m_ui->versionPanelLayout->addLayout(m_ui->updateLayout);
-        m_ui->updateProgress = new QProgressBar(m_ui->versionPanel);
-        m_ui->updateProgress->setObjectName(QStringLiteral("aboutUpdateProgress"));
-        m_ui->updateProgress->setRange(0, 1000);
-        m_ui->updateProgress->setTextVisible(false);
-        m_ui->versionPanelLayout->addWidget(m_ui->updateProgress);
-        m_ui->updateActions = new QBoxLayout(QBoxLayout::LeftToRight);
-        auto* actions = m_ui->updateActions;
+        // The action and cancel buttons never appear together; the stack reserves the larger
+        // of the two so switching states never changes the card's size.
+        m_ui->updateActions = new QStackedLayout;
         m_ui->updateAction = new AdButton(m_ui->versionPanel);
         m_ui->updateAction->setObjectName(QStringLiteral("aboutUpdateAction"));
         m_ui->updateCancel = new AdButton(m_ui->versionPanel);
         m_ui->updateCancel->setObjectName(QStringLiteral("aboutUpdateCancel"));
-        actions->addWidget(m_ui->updateAction);
-        actions->addWidget(m_ui->updateCancel);
+        m_ui->updateActionBlank = new QWidget(m_ui->versionPanel);
+        m_ui->updateActions->addWidget(m_ui->updateAction);
+        m_ui->updateActions->addWidget(m_ui->updateCancel);
+        m_ui->updateActions->addWidget(m_ui->updateActionBlank);
         for (auto* button : {m_ui->updateAction, m_ui->updateCancel}) {
             button->setButtonStyle(AdButton::ButtonStyle::Outline);
             button->setSizeClass(AdButton::SizeClass::Small);
             button->setFocusPolicy(Qt::StrongFocus);
+            m_ui->updateActions->setAlignment(button, Qt::AlignLeft | Qt::AlignVCenter);
         }
-        m_ui->updateLayout->addLayout(actions);
+        m_ui->updateLayout->addLayout(m_ui->updateActions);
         connect(m_ui->updates, &snow_shot::update::UpdateService::statusChanged, this,
                 &AboutPageWidget::refreshUpdateStatus);
         connect(m_ui->updateCancel, &adqt::widgets::AdButton::clicked, m_ui->updates,
@@ -557,7 +562,7 @@ AboutPageWidget::AboutPageWidget(QWidget* parent, UrlOpener urlOpener,
             switch (m_ui->updates->status().state) {
             case UpdateState::Available:
 #ifdef Q_OS_MACOS
-                openProjectLink(QUrl(QStringLiteral(SNOW_SHOT_WEBSITE_URL)));
+                openProjectLink(m_ui->updates->status().downloadUrl);
 #else
                 m_ui->updates->download();
 #endif
@@ -576,7 +581,9 @@ AboutPageWidget::AboutPageWidget(QWidget* parent, UrlOpener urlOpener,
     m_ui->resources = {
         new AboutResourceButton(QStringLiteral("aboutWebsite"), outlined::Global(), m_ui->body),
         new AboutResourceButton(QStringLiteral("aboutSourceCode"), outlined::Code(), m_ui->body),
-        new AboutResourceButton(QStringLiteral("aboutFeedback"), outlined::Comment(), m_ui->body)};
+        new AboutResourceButton(QStringLiteral("aboutFeedback"), outlined::Comment(), m_ui->body),
+        new AboutResourceButton(QStringLiteral("aboutQqGroup2"), outlined::Qq(), m_ui->body),
+        new AboutResourceButton(QStringLiteral("aboutQqGroup3"), outlined::Qq(), m_ui->body)};
     m_ui->bodyLayout->addLayout(m_ui->resourceLayout);
     m_ui->linkError = aboutLabel(QStringLiteral("aboutLinkError"), m_ui->body);
     m_ui->linkError->setTextInteractionFlags(Qt::TextSelectableByMouse |
@@ -634,7 +641,13 @@ AboutPageWidget::AboutPageWidget(QWidget* parent, UrlOpener urlOpener,
             [this]() { openProjectLink(aboutProjectUrl()); });
     connect(m_ui->resources[2], &QAbstractButton::clicked, this,
             [this]() { openProjectLink(aboutProjectUrl(QStringLiteral("/issues"))); });
+    connect(m_ui->resources[3], &QAbstractButton::clicked, this,
+            [this]() { openProjectLink(QUrl(QStringLiteral(SNOW_SHOT_QQ_GROUP_2_URL))); });
+    connect(m_ui->resources[4], &QAbstractButton::clicked, this,
+            [this]() { openProjectLink(QUrl(QStringLiteral(SNOW_SHOT_QQ_GROUP_3_URL))); });
     connect(&themeManager, &styles::ThemeManager::themeChanged, this, &AboutPageWidget::applyTheme);
+    connect(&adqt::theme::ThemeManager::instance(), &adqt::theme::ThemeManager::themeChanged, this,
+            [this] { updateSkinBackgrounds(); });
     applyTheme(m_ui->scheme);
     content->installEventFilter(this);
     m_ui->container->scrollArea()->viewport()->installEventFilter(this);
@@ -647,6 +660,7 @@ AboutPageWidget::~AboutPageWidget() {
 
 void AboutPageWidget::applyTheme(const styles::ThemeColorScheme& scheme) {
     m_ui->scheme = scheme;
+    m_ui->backgroundOpacity = styles::mainWindowBackgroundOpacity(this);
     const auto& metric = scheme.metricAlias;
     const auto& colors = scheme.map;
     const QColor violet(scheme.appearance == styles::ThemeAppearance::Dark ? "#b58aec" : "#7052d8");
@@ -689,30 +703,8 @@ void AboutPageWidget::applyTheme(const styles::ThemeColorScheme& scheme) {
         m_ui->updateActions->setSpacing(metric.paddingXS);
         const int progressHeight = qMax(4, metric.paddingXXS);
         m_ui->updateProgress->setFixedHeight(progressHeight);
-        m_ui->updateProgress->setStyleSheet(
-            QStringLiteral("QProgressBar#aboutUpdateProgress { background: %1; border: none; "
-                           "border-radius: %3px; } QProgressBar#aboutUpdateProgress::chunk { "
-                           "background: %2; border-radius: %3px; }")
-                .arg(colors.colorFillSecondary.name(QColor::HexArgb),
-                     colors.colorPrimary.name(QColor::HexArgb))
-                .arg(progressHeight / 2));
     }
-    const QColor versionBackground =
-        blendAboutColor(colors.colorBgLayout, colors.colorBgContainer, 0.8);
-    m_ui->versionPanel->setStyleSheet(
-        QStringLiteral("QFrame#aboutVersionPanel { background-color: %1; border: 1px solid %2; "
-                       "border-radius: %3px; }")
-            .arg(versionBackground.name(QColor::HexArgb),
-                 colors.colorBorderSecondary.name(QColor::HexArgb))
-            .arg(metric.borderRadiusLG));
-    const QString badgeStyle =
-        QStringLiteral("QLabel { background-color: %1; border: 1px solid %2; "
-                       "border-radius: %3px; padding: 1px 8px; }")
-            .arg(blendAboutColor(violet, colors.colorBgContainer, 0.08).name(QColor::HexArgb),
-                 blendAboutColor(violet, colors.colorBgContainer, 0.22).name(QColor::HexArgb))
-            .arg(metric.borderRadiusSM);
-    m_ui->openSource->setStyleSheet(badgeStyle);
-    m_ui->previewBadge->setStyleSheet(badgeStyle);
+    updateBackgroundStyles();
     styleAboutLabel(m_ui->openSource, metric.fontSizeSM - 2, QFont::Normal, violet);
     styleAboutLabel(m_ui->previewBadge, metric.fontSizeSM - 2, QFont::Normal, violet);
     styleAboutLabel(m_ui->productName, metric.fontSizeXL, QFont::DemiBold, colors.colorText);
@@ -723,13 +715,9 @@ void AboutPageWidget::applyTheme(const styles::ThemeColorScheme& scheme) {
     styleAboutLabel(m_ui->versionValue, metric.fontSizeLG, QFont::DemiBold, colors.colorText);
     styleAboutLabel(m_ui->community, metric.fontSizeSM, QFont::Normal, colors.colorTextSecondary);
     styleAboutLabel(m_ui->copyright, metric.fontSizeSM, QFont::Normal, colors.colorTextSecondary);
-    for (QLabel* label : {m_ui->license, m_ui->attribution, m_ui->slogan}) {
+    for (QLabel* label : {m_ui->license, m_ui->slogan}) {
         styleAboutLabel(label, metric.fontSizeSM - 2, QFont::Normal, colors.colorTextTertiary);
     }
-    // Rich-text links take QPalette::Link rather than the label's window text.
-    QPalette attributionPalette = m_ui->attribution->palette();
-    attributionPalette.setColor(QPalette::Link, colors.colorPrimary);
-    m_ui->attribution->setPalette(attributionPalette);
     styleAboutLabel(m_ui->linkError, metric.fontSizeSM, QFont::Normal, colors.colorErrorText);
     const int logoSize = metric.controlHeight;
     m_ui->logo->setFixedSize(logoSize, logoSize);
@@ -757,12 +745,65 @@ void AboutPageWidget::applyTheme(const styles::ThemeColorScheme& scheme) {
     retranslateUi();
 }
 
+void AboutPageWidget::updateSkinBackgrounds() {
+    const qreal opacity = styles::mainWindowBackgroundOpacity(this);
+    if (m_ui->backgroundOpacity == opacity) {
+        return;
+    }
+    m_ui->backgroundOpacity = opacity;
+    updateBackgroundStyles();
+    m_ui->hero->update();
+}
+
+void AboutPageWidget::updateBackgroundStyles() {
+    const auto& scheme = m_ui->scheme;
+    const auto& metric = scheme.metricAlias;
+    const auto& colors = scheme.map;
+    const QColor violet(scheme.appearance == styles::ThemeAppearance::Dark ? "#b58aec" : "#7052d8");
+    if (m_ui->updateStatus != nullptr) {
+        const int progressHeight = qMax(4, metric.paddingXXS);
+        m_ui->updateProgress->setStyleSheet(
+            QStringLiteral("QProgressBar#aboutUpdateProgress { background: %1; border: none; "
+                           "border-radius: %3px; } QProgressBar#aboutUpdateProgress::chunk { "
+                           "background: %2; border-radius: %3px; }")
+                .arg(styles::mainWindowBackgroundColor(m_ui->updateProgress,
+                                                       colors.colorFillSecondary)
+                         .name(QColor::HexArgb),
+                     styles::mainWindowBackgroundColor(m_ui->updateProgress, colors.colorPrimary)
+                         .name(QColor::HexArgb))
+                .arg(progressHeight / 2));
+    }
+    const QColor versionBackground =
+        blendAboutColor(colors.colorBgLayout, colors.colorBgContainer, 0.8);
+    m_ui->versionPanel->setStyleSheet(
+        QStringLiteral("QFrame#aboutVersionPanel { background-color: %1; border: 1px solid %2; "
+                       "border-radius: %3px; }")
+            .arg(styles::mainWindowBackgroundColor(m_ui->versionPanel, versionBackground)
+                     .name(QColor::HexArgb),
+                 colors.colorBorderSecondary.name(QColor::HexArgb))
+            .arg(metric.borderRadiusLG));
+    const QString badgeStyle =
+        QStringLiteral("QLabel { background-color: %1; border: 1px solid %2; "
+                       "border-radius: %3px; padding: 1px 8px; }")
+            .arg(styles::mainWindowBackgroundColor(
+                     m_ui->openSource, blendAboutColor(violet, colors.colorBgContainer, 0.08))
+                     .name(QColor::HexArgb),
+                 blendAboutColor(violet, colors.colorBgContainer, 0.22).name(QColor::HexArgb))
+            .arg(metric.borderRadiusSM);
+    m_ui->openSource->setStyleSheet(badgeStyle);
+    m_ui->previewBadge->setStyleSheet(badgeStyle);
+}
+
 void AboutPageWidget::retranslateUi() {
     refreshUpdateStatus();
     const bool hasVersion = !m_version.trimmed().isEmpty();
-    setAccessibleName(tr("About WingShot"));
-    m_ui->productName->setText(tr("WingShot"));
-    m_ui->logo->setAccessibleName(tr("WingShot logo"));
+    setAccessibleName(snow_shot::app::edition::isMini
+                          ? tr("About %1").arg(snow_shot::app::edition::productName())
+                          : tr("About Snow Shot"));
+    m_ui->productName->setText(snow_shot::app::edition::productName());
+    m_ui->logo->setAccessibleName(snow_shot::app::edition::isMini
+                                      ? tr("%1 logo").arg(snow_shot::app::edition::productName())
+                                      : tr("Snow Shot logo"));
     m_ui->openSource->setText(tr("Free · Open source"));
     const QColor violet(m_ui->scheme.appearance == styles::ThemeAppearance::Dark ? "#b58aec"
                                                                                  : "#7052d8");
@@ -770,7 +811,8 @@ void AboutPageWidget::retranslateUi() {
                                .arg(violet.name(), tr("Elegant screenshots").toHtmlEscaped(),
                                     tr(", excellent work.").toHtmlEscaped()));
     m_ui->description->setText(
-        tr("Capture, annotate, recognize text, and record your screen."));
+        tr("Capture, annotate, recognize text, and record your screen,\n"
+           "so every moment on screen can be expressed clearly and shared easily."));
     const std::array<QString, 6> features{tr("Screenshot capture"), tr("Easy annotation"),
                                           tr("Text recognition"),   tr("Screen recording"),
                                           tr("Pin to screen"),      tr("Screenshot history")};
@@ -803,23 +845,24 @@ void AboutPageWidget::retranslateUi() {
     m_ui->resources[2]->setCopy(tr("Feedback and suggestions"),
                                 tr("Make the next experience better"),
                                 aboutProjectUrl(QStringLiteral("/issues")));
+    m_ui->resources[3]->setCopy(
+        tr("QQ Group 2"),
+        tr("Discussion and support · Group No. %1").arg(QStringLiteral("895818102")),
+        QUrl(QStringLiteral(SNOW_SHOT_QQ_GROUP_2_URL)));
+    m_ui->resources[4]->setCopy(
+        tr("QQ Group 3"),
+        tr("Discussion and support · Group No. %1").arg(QStringLiteral("1037819112")),
+        QUrl(QStringLiteral(SNOW_SHOT_QQ_GROUP_3_URL)));
     m_ui->community->setText(tr("Built for daily work, and growing with the community."));
     m_ui->license->setText(
         tr("%1 · %2").arg(tr("GNU General Public License v3.0 or later"),
-                          tr("Free software, without warranty.")));
+                          tr("Free and open-source software. Distributed without any warranty.")));
     m_ui->copyright->setText(
         tr("Copyright © %1 %2").arg(QStringLiteral("2025–2026"), QStringLiteral("mg-chao")));
-    m_ui->attribution->setText(
-        tr("Fork of %1 by mg-chao · %2")
-            .arg(aboutLink(QStringLiteral("https://github.com/mg-chao/snow-apps"),
-                           QStringLiteral("Snow Shot")),
-                 aboutLink(QStringLiteral(SNOW_SHOT_PROJECT_URL), QStringLiteral("WingShot"))));
-    m_ui->attribution->setToolTip(
-        tr("WingShot is a fork of Snow Shot (https://github.com/mg-chao/snow-apps) by mg-chao. "
-           "The earlier Tauri version is at https://github.com/xiaofeiTM233/snow-shot. In "
-           "https://github.com/Anfioo/WingShot the main branch keeps the original project and "
-           "the new branch carries the WingShot changes."));
-    m_ui->slogan->setText(tr("WingShot · Make expression clearer"));
+    m_ui->slogan->setText(
+        snow_shot::app::edition::isMini
+            ? tr("%1 · Make expression clearer").arg(snow_shot::app::edition::productName())
+            : tr("Snow Shot · Make expression clearer"));
     m_ui->linkError->setText(m_failedUrl.isEmpty()
                                  ? QString()
                                  : tr("Could not open the link. Open %1 in your browser.")
@@ -860,7 +903,6 @@ void AboutPageWidget::updateLayout() {
             tiny || versionWidth < m_ui->updateActions->sizeHint().width() + qRound(220 * scale);
         m_ui->updateLayout->setDirection(stackUpdate ? QBoxLayout::TopToBottom
                                                      : QBoxLayout::LeftToRight);
-        m_ui->updateActions->setDirection(tiny ? QBoxLayout::TopToBottom : QBoxLayout::LeftToRight);
     }
     m_ui->footerLayout->setDirection(wide ? QBoxLayout::LeftToRight : QBoxLayout::TopToBottom);
     m_ui->copyright->setWordWrap(!wide);
@@ -885,12 +927,27 @@ void AboutPageWidget::updateLayout() {
         separator->setVisible(!lastInRow);
         separator->setFixedHeight(separatorHeight);
     }
-    const int resourceColumns = wide ? 3 : 1;
+    // Wide layouts share a six-column grid: the three project links span two columns each
+    // and the two QQ group cards split the second row evenly. Narrow layouts stack.
+    const int resourceColumns = wide ? 6 : 1;
     if (m_ui->resourceColumns != resourceColumns) {
-        for (int i = 0; i < 3; ++i) {
+        for (auto* resource : m_ui->resources) {
+            m_ui->resourceLayout->removeWidget(resource);
+        }
+        for (int i = 0; i < 6; ++i) {
             m_ui->resourceLayout->setColumnStretch(i, i < resourceColumns ? 1 : 0);
-            m_ui->resourceLayout->addWidget(m_ui->resources[static_cast<size_t>(i)],
-                                            i / resourceColumns, i % resourceColumns);
+        }
+        if (wide) {
+            for (int i = 0; i < 3; ++i) {
+                m_ui->resourceLayout->addWidget(m_ui->resources[static_cast<size_t>(i)], 0, i * 2,
+                                                1, 2);
+            }
+            m_ui->resourceLayout->addWidget(m_ui->resources[3], 1, 0, 1, 3);
+            m_ui->resourceLayout->addWidget(m_ui->resources[4], 1, 3, 1, 3);
+        } else {
+            for (int i = 0; i < 5; ++i) {
+                m_ui->resourceLayout->addWidget(m_ui->resources[static_cast<size_t>(i)], i, 0);
+            }
         }
         m_ui->resourceColumns = resourceColumns;
     }
@@ -943,7 +1000,10 @@ void AboutPageWidget::refreshUpdateStatus() {
         text = tr("Automatic updates are unavailable for this copy.");
         break;
     case UpdateState::Idle:
-        text = status.version.isEmpty() ? tr("Check for a newer version of WingShot.")
+        text = status.version.isEmpty() ? (snow_shot::app::edition::isMini
+                                               ? tr("Check for a newer version of %1.")
+                                                     .arg(snow_shot::app::edition::productName())
+                                               : tr("Check for a newer version of Snow Shot."))
                                         : tr("You are up to date.");
         if (!status.version.isEmpty()) {
             statusIcon = outlined::CheckCircle();
@@ -957,7 +1017,8 @@ void AboutPageWidget::refreshUpdateStatus() {
     case UpdateState::Available:
         text = tr("Update available: %1").arg(status.version);
 #ifdef Q_OS_MACOS
-        action = tr("Download from website");
+        action = status.downloadUrl.host() == u"gitee.com" ? tr("Download from Gitee")
+                                                           : tr("Download from GitHub");
 #else
         action = tr("Download update");
 #endif
@@ -1018,10 +1079,17 @@ void AboutPageWidget::refreshUpdateStatus() {
     m_ui->updateAction->setEnabled(
         status.state == UpdateState::Idle || status.state == UpdateState::Failed ||
         status.state == UpdateState::Available || status.state == UpdateState::Ready);
-    m_ui->updateAction->setVisible(m_ui->updateAction->isEnabled());
     m_ui->updateCancel->setText(tr("Cancel download"));
-    m_ui->updateCancel->setVisible(status.state == UpdateState::Downloading);
-    m_ui->updateProgress->setVisible(status.state == UpdateState::Downloading);
+    const bool downloading = status.state == UpdateState::Downloading;
+    QWidget* currentAction = m_ui->updateActionBlank;
+    if (downloading) {
+        currentAction = m_ui->updateCancel;
+    } else if (m_ui->updateAction->isEnabled()) {
+        currentAction = m_ui->updateAction;
+    }
+    m_ui->updateActions->setCurrentWidget(currentAction);
+    m_ui->updateRail->setCurrentWidget(downloading ? m_ui->updateProgressWrap
+                                                   : m_ui->updateDivider);
     m_ui->updateProgress->setRange(0, status.total > 0 ? 1000 : 0);
     m_ui->updateProgress->setValue(status.total > 0
                                        ? qRound(std::clamp(static_cast<double>(status.received) /

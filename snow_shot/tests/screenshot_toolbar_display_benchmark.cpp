@@ -179,7 +179,11 @@ const ToolInfo kDrawingTools[] = {
     {ScreenshotToolPalette::Tool::PenFilter, "pen-filter", "screenshotPenFilterStyleControls",
      true},
     {ScreenshotToolPalette::Tool::Watermark, "watermark", "screenshotWatermarkStyleControls", true},
-    {ScreenshotToolPalette::Tool::Eraser, "eraser", nullptr, false},
+    {ScreenshotToolPalette::Tool::Eraser, "eraser", "screenshotEraserStyleControls", true},
+    {ScreenshotToolPalette::Tool::RectangleEraser, "rectangle-eraser",
+     "screenshotEraserStyleControls", true},
+    {ScreenshotToolPalette::Tool::BrushEraser, "brush-eraser", "screenshotBrushEraserStyleControls",
+     true},
 };
 constexpr int kDrawingToolCount =
     static_cast<int>(sizeof(kDrawingTools) / sizeof(kDrawingTools[0]));
@@ -242,7 +246,7 @@ class NullToolbarCommands final : public ScreenshotToolbarCommandSink {
     void startScreenRecording() override {}
     void setShapeStyleFromToolbar(const SnowCanvasShapeStyle&, quint32,
                                   SnowCanvasShapeKind) override {}
-    void setTextStyleFromToolbar(const SnowCanvasTextStyle&) override {}
+    void setTextStyleFromToolbar(const SnowCanvasTextStyle&, quint32) override {}
     void setSerialNumberStyleFromToolbar(const SnowCanvasSerialNumberStyle&) override {}
     void decrementSelectedSerialNumbers() override {}
     void incrementSelectedSerialNumbers() override {}

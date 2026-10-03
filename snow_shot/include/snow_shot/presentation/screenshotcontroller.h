@@ -2,7 +2,10 @@
 #define SNOW_SHOT_PRESENTATION_SCREENSHOTCONTROLLER_H
 
 #include <QObject>
+#include <QImage>
+#include <QJsonObject>
 #include <QPointF>
+#include <QRectF>
 #include <QString>
 #include "snow_shot/presentation/globalmousetypes.h"
 
@@ -16,12 +19,37 @@ namespace snow_shot::presentation {
 class PinnedWindowGroupManager;
 }
 class ScreenshotOcrRecognitionService;
+class ScreenshotQrRecognitionPort;
 class SnowShotApiClient;
+class ScreenshotExportArtifact;
+class ScreenRecordingController;
+struct ScreenshotClipboardContent;
+struct ScreenshotClipboardContentSnapshot;
+struct ScreenshotHistoryEntry;
 
 class ScreenshotController : public QObject {
     Q_OBJECT
 
   public:
+    enum class CaptureAction {
+        None,
+        Pin,
+        RecognizeText,
+        RecognizeTextTranslation,
+        Copy,
+        Save,
+        QuickSave,
+        StartVideo,
+        StartScrolling,
+        RecognizeTable,
+        RecognizeQr,
+        RecognizeFormula,
+        ConvertMarkdown,
+        ConvertHtml,
+    };
+    Q_ENUM(CaptureAction)
+    [[nodiscard]] bool captureForAction(CaptureAction action);
+    void pinDroppedContent(ScreenshotClipboardContentSnapshot snapshot, QStringList paths);
     explicit ScreenshotController(
         QObject* parent = nullptr,
         snow_shot::presentation::PinnedWindowGroupManager* groupManager = nullptr,
@@ -30,6 +58,7 @@ class ScreenshotController : public QObject {
     ~ScreenshotController() override;
     void pinSelectedFilesToScreen(snow_shot::platform::SelectedFileTarget target);
     [[nodiscard]] bool captureAvailable() const;
+    [[nodiscard]] bool captureAcquisitionActive() const;
     [[nodiscard]] bool blocksApplicationUpdate() const;
     [[nodiscard]] bool beginGlobalMouseCapture(
         snow_shot::presentation::settings::SettingsGlobalMouseAction action, quint64 gestureId,
@@ -41,6 +70,29 @@ class ScreenshotController : public QObject {
     void cancelGlobalMouseCapture(quint64 gestureId);
 
     void setRecordingPermissionCheck(std::function<bool(bool, bool, bool)> check);
+
+    [[nodiscard]] QJsonObject mcpState() const;
+    using McpCompletion = std::function<void(QJsonObject, QString)>;
+    void mcpCommand(const QString& method, const QJsonObject& params, McpCompletion completion);
+    void mcpCancelCommand();
+    void mcpDetached();
+    [[nodiscard]] bool mcpBegin(const QJsonObject& options, QString* error);
+    [[nodiscard]] bool mcpSetSelection(const QJsonObject& params, QString* error);
+    [[nodiscard]] bool mcpSetTool(const QString& tool, QString* error);
+    [[nodiscard]] bool mcpApplyAnnotations(const QByteArray& payload, QJsonObject* result,
+                                           QString* error);
+    [[nodiscard]] std::shared_ptr<ScreenshotExportArtifact> mcpExportArtifact(qreal scale);
+    [[nodiscard]] bool mcpPinArtifact(std::shared_ptr<ScreenshotExportArtifact> artifact,
+                                      std::function<void(bool)> completion);
+    [[nodiscard]] ScreenRecordingController* automationRecordingController();
+    [[nodiscard]] ScreenshotQrRecognitionPort* mcpQrRecognition();
+    void mcpPinnedImage(const QString& id, std::function<void(QImage, QString)> completion);
+    [[nodiscard]] bool mcpPinContent(ScreenshotClipboardContent content,
+                                     std::function<void(bool)> completion);
+    [[nodiscard]] bool mcpPinDocument(ScreenshotHistoryEntry entry, QImage background,
+                                      std::function<void(bool)> completion);
+    [[nodiscard]] bool mcpPresentDocument(ScreenshotHistoryEntry entry,
+                                          std::function<void(bool)> completion);
 
   public slots:
     void prewarmResources();
@@ -62,14 +114,25 @@ class ScreenshotController : public QObject {
     void pinHistoryRecord(const QString& recordId);
     void pinClipboardContentToScreen();
     void pinSelectedFilesToScreen();
+    // MCP uses the same controller actions as the toolbar. These narrow
+    // adapters preserve the controller's GUI-thread affinity.
+    void mcpCancelCapture();
+    void mcpCopySelectionToClipboard();
+    void mcpPinSelectionToScreen();
+    void mcpUndoCanvasEdit();
+    void mcpRedoCanvasEdit();
 
   signals:
+    void captureActivityChanged(const QString& source, bool active);
     void selectedFilePinFailed(const QString& message);
     void showMainWindowRequested();
     void accessibilityPermissionRequested();
     void translationPageRequested(const QString& text);
     void captureAvailabilityChanged(bool available);
     void globalMouseCaptureEnded(quint64 gestureId);
+    void mcpCapturePresented();
+    void mcpCaptureTerminated();
+    void mcpCanvasChanged();
 
   private:
     struct Impl;

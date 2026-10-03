@@ -81,11 +81,14 @@ class Coordinator {
                              const std::atomic_bool&)>;
     explicit Coordinator(std::function<void()> repaint, Compute compute = reconstruct);
     ~Coordinator();
-    void setSources(const void* owner, const QList<SnowCanvasBaseImageSource>& sources);
+    void setSources(const void* owner, const QList<SnowCanvasBaseImageSource>& sources,
+                    bool notify = true);
     void removeSources(const void* owner);
     void sync(SnowRuntime runtime);
     void syncItems(std::vector<SnowCanvasSceneItem> items);
     void reset();
+    // Current reconstruction results remain available for rendering and export.
+    void clearCache();
     SnowCanvasSmartEraseSnapshot snapshot() const;
     void restoreSnapshot(const SnowCanvasSmartEraseSnapshot& snapshot);
 

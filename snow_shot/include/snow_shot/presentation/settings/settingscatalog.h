@@ -4,6 +4,7 @@
 #include "icon_core.h"
 #include "snow_shot/presentation/globalshortcuttypes.h"
 #include "snow_shot/presentation/globalmousetypes.h"
+#include "snow_shot/presentation/translatabletext.h"
 
 #include <QMetaType>
 #include <QHash>
@@ -17,14 +18,6 @@
 #include <variant>
 
 namespace snow_shot::presentation::settings {
-
-struct TranslatableText {
-    const char* context = nullptr;
-    const char* source = nullptr;
-
-    [[nodiscard]] bool isValid() const;
-    [[nodiscard]] QString translated() const;
-};
 
 struct SettingsLocation {
     QString pageId;
@@ -66,25 +59,33 @@ struct SettingsOptionDefinition {
 enum class SettingsSelectSource {
     Fixed,
     LanguageCatalog,
+    FontFamilies,
 };
 
 enum class SettingsSelectBinding {
     Theme,
     Language,
+    AppFont,
     ApplicationPriority,
+    ApplicationQoS,
     Proxy,
     UpdateMode,
     OcrModelType,
+    OcrDetectorResizePolicy,
     ScreenshotApiMode,
+    ScreenRecordingApiMode,
     WindowElementApi,
     ScreenshotToolbarSize,
     OcrFillStyle,
+    OcrDefaultFormatting,
+    OcrDefaultPunctuation,
     ColorPickerDisplayMode,
     ScreenshotOcrAction,
     ScreenshotDoubleClickAction,
     ScreenshotMiddleClickAction,
     PinMouseWheelZoomMode,
     PinTextSelectionOnRecognitionResults,
+    PinDuplicateContentAction,
     PinDoubleClickAction,
     PinMiddleClickAction,
     ScreenRecordingClarity,
@@ -103,6 +104,10 @@ enum class SettingsSelectBinding {
     TrayMiddleClickAction,
     TranslationLayoutProcessing,
     ScreenshotSelectionResizeMode,
+    SkinDisplayMode,
+    SkinPosition,
+    ToolbarSkinPosition,
+    TrayMenuSkinPosition,
 };
 
 struct SettingsSelectDefinition {
@@ -122,24 +127,32 @@ enum class SettingsSwitchBinding {
     OcrModelHotStart,
     SelectionTransitionAnimation,
     ScreenshotAreaTypeHint,
+    ShowGuidesByDefault,
     TrayEnabled,
+    FloatingToolbarEnabled,
     ScreenshotAutoSaveAfterCopy,
-    ScreenshotCaptureCursor,
+    ScreenshotQuickSelectionModification,
+    ScreenshotShowCursor,
     ScreenshotCaptureUiInScrollingScreenshot,
     ScreenshotShutterSoundNotification,
     ScreenshotConfirmBeforeExitingViaShortcut,
+    ScreenshotAutoRecognizeQrCode,
     ScreenshotRestoreOriginalScreenColors,
     ScreenshotCopyImageFileToClipboard,
     SaveRecognitionResultAsImage,
+    ShowOriginalImagePreview,
     PinAutomaticTextRecognition,
     PinAutoResizeWindow,
+    PinShowWindowButtons,
     OriginalImageTranslation,
     TranslationPageEnabled,
     JumpToTranslationPage,
     StandaloneTranslationWindow,
+    SeparateRecordingAudioTracks,
     LoopAnimatedImages,
     ScreenRecordingCaptureToolbar,
     DisableHotkeysOnFocusedFullscreen,
+    McpEnabled,
     AutoStartAtBoot,
     LaunchAsAdministrator,
     DrawingRememberLastUsedTool,
@@ -178,7 +191,12 @@ struct SettingsIntegerDefinition {
 
 enum class SettingsSliderBinding {
     ShortcutHintOpacity,
+    FloatingToolbarOpacity,
     ScreenshotImageQuality,
+    ScreenRecordingVideoQuality,
+    SkinOpacity,
+    SkinBlurLevel,
+    SkinMaskOpacity,
 };
 
 struct SettingsSliderDefinition {
@@ -191,6 +209,7 @@ enum class SettingsColorBinding {
     SelectionBorderColor,
     SelectionMaskColor,
     CursorGuideLineColor,
+    SelectionCenterGuideLineColor,
     MonitorCenterGuideLineColor,
     ColorPickerCenterGuideLineColor,
     PinBorderColor,
@@ -219,6 +238,9 @@ struct SettingsRadioDefinition {
 
 enum class SettingsFilePathBinding {
     TrayCustomIcon,
+    SkinPath,
+    ToolbarSkinPath,
+    TrayMenuSkinPath,
 };
 
 struct SettingsFilePathDefinition {
@@ -240,6 +262,7 @@ struct SettingsDirectoryPathDefinition {
 };
 
 enum class SettingsTextBinding {
+    ServerUrl,
     ScreenshotManualFilenameFormat,
     ScreenshotAutoFilenameFormat,
     ScreenRecordingVideoFilenameFormat,
@@ -309,6 +332,12 @@ struct SettingsActionFileOpenDefinition {
     TranslatableText fileFilter;
 };
 
+struct SettingsActionExportOptionsDefinition {
+    TranslatableText styleFieldLabel;
+    TranslatableText styleFieldDescription;
+    TranslatableText rejectText;
+};
+
 struct SettingsActionDefinition {
     SettingsActionBinding binding = SettingsActionBinding::ClearCaptureHistory;
     TranslatableText buttonText;
@@ -317,18 +346,22 @@ struct SettingsActionDefinition {
     std::optional<SettingsConfirmationDefinition> confirmation;
     std::optional<SettingsActionFileOpenDefinition> fileOpen;
     std::optional<TranslatableText> successMessage;
+    std::optional<SettingsActionExportOptionsDefinition> exportOptions;
 };
 
 enum class SettingsCustomRenderer {
+    McpStatus,
     PermissionScreenRecording,
     PermissionAccessibility,
     PermissionInputMonitoring,
     PermissionMicrophone,
     CustomAiModels,
+    TextTranslationConfigurations,
     StorageStatus,
     DrawingToolbarEditor,
     ScreenshotToolbarEditor,
     PinnedToolbarEditor,
+    FloatingToolbarEditor,
     TrayMenuOptions,
 };
 
@@ -393,12 +426,14 @@ struct SettingsItemDefinition {
 };
 
 enum class SettingsSectionReset {
+    Server,
     None,
     ScreenshotShortcuts,
     GlobalMouse,
     OtherShortcuts,
     GlobalPinToScreenShortcuts,
     GeneralSettings,
+    Skin,
     HistoryPolicy,
     PinnedHistoryPolicy,
     ScreenshotSettings,
@@ -418,6 +453,8 @@ enum class SettingsSectionReset {
     PinToScreenBehavior,
     Tray,
     TrayBehavior,
+    FloatingToolbarBehavior,
+    FloatingToolbarLayout,
     ScreenRecording,
     ScreenRecordingOutput,
     GlobalHotkeys,
@@ -429,6 +466,7 @@ enum class SettingsSectionReset {
     TextRecognition,
     Translation,
     CustomAiModels,
+    TextTranslationConfigurations,
     ExtendedTranslation,
 };
 

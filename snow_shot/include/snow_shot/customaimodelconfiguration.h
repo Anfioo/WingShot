@@ -20,6 +20,8 @@ struct CustomAiModelConfiguration {
     QString apiKey;
     QString model;
     bool supportsVision = false;
+    bool supportsReasoning = false;
+    int concurrency = 4;
 
     [[nodiscard]] QString selectionId() const {
         return QStringLiteral("custom:") + id;
@@ -59,7 +61,7 @@ inline bool validCustomAiModel(const CustomAiModelConfiguration& value) {
     return !QUuid(value.id).isNull() &&
            QUuid(value.id).toString(QUuid::WithoutBraces) == value.id && !value.name.isEmpty() &&
            !value.model.isEmpty() && !value.apiKey.contains(u'\r') &&
-           !value.apiKey.contains(u'\n') &&
+           !value.apiKey.contains(u'\n') && value.concurrency >= 1 && value.concurrency <= 16 &&
            customAiModelUrlError(value.baseUrl) == CustomAiModelUrlError::None;
 }
 
@@ -71,14 +73,16 @@ inline QJsonArray customAiModelsToJson(const CustomAiModels& models) {
                                   {QStringLiteral("base_url"), model.baseUrl},
                                   {QStringLiteral("api_key"), model.apiKey},
                                   {QStringLiteral("model"), model.model},
-                                  {QStringLiteral("supports_vision"), model.supportsVision}});
+                                  {QStringLiteral("supports_vision"), model.supportsVision},
+                                  {QStringLiteral("supports_reasoning"), model.supportsReasoning},
+                                  {QStringLiteral("concurrency"), model.concurrency}});
     }
     return result;
 }
 
 inline QString customAiModelFingerprint(const CustomAiModelConfiguration& model) {
-    const QJsonArray connection{model.id, model.baseUrl, model.apiKey, model.model,
-                                model.supportsVision};
+    const QJsonArray connection{model.id,    model.baseUrl,        model.apiKey,
+                                model.model, model.supportsVision, model.supportsReasoning};
     return QString::fromLatin1(
         QCryptographicHash::hash(QJsonDocument(connection).toJson(QJsonDocument::Compact),
                                  QCryptographicHash::Sha256)
@@ -98,13 +102,20 @@ inline CustomAiModels customAiModelsFromJson(const QJsonValue& value, bool* vali
             typesValid = typesValid && object.value(QLatin1StringView(key)).isString();
         }
         typesValid = typesValid && object.value(QStringLiteral("supports_vision")).isBool();
+        const auto reasoning = object.value(QStringLiteral("supports_reasoning"));
+        typesValid = typesValid && (reasoning.isUndefined() || reasoning.isBool());
+        const auto limit = object.value(QStringLiteral("concurrency"));
+        const int concurrency = limit.isUndefined() ? 4 : limit.toInt(-1);
+        typesValid = typesValid &&
+                     (limit.isUndefined() || (limit.isDouble() && limit.toDouble() == concurrency));
         auto model =
             normalizeCustomAiModel({object.value(QStringLiteral("id")).toString(),
                                     object.value(QStringLiteral("name")).toString(),
                                     object.value(QStringLiteral("base_url")).toString(),
                                     object.value(QStringLiteral("api_key")).toString(),
                                     object.value(QStringLiteral("model")).toString(),
-                                    object.value(QStringLiteral("supports_vision")).toBool()});
+                                    object.value(QStringLiteral("supports_vision")).toBool(),
+                                    reasoning.toBool(false), concurrency});
         if (!typesValid || !validCustomAiModel(model) || ids.contains(model.id) ||
             names.contains(model.name.toCaseFolded())) {
             allValid = false;

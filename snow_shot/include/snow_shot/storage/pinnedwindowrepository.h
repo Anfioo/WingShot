@@ -10,6 +10,7 @@
 #include <QDateTime>
 
 #include <memory>
+#include <mutex>
 #include <functional>
 #include <optional>
 
@@ -37,21 +38,39 @@ struct PinnedWindowPreviewSource final {
     double firstCreationTextDpi = 1.0;
 };
 
+enum class PinnedWindowOperation {
+    PayloadReadAdmission,
+    PayloadRead,
+    PayloadWrite,
+    RetentionWait,
+    RetentionScan,
+    StorageReadDrain
+};
+
 class PinnedWindowRepository final {
   public:
-    explicit PinnedWindowRepository(QString configurationDirectory, bool writeAvailable = true,
-                                    int debounceMilliseconds = 1000);
+    // Optional diagnostics hook runs on the operation's thread, outside metadata
+    // locks. Hooks must not reenter payload reads, flush, retention, or storage
+    // suspension because payload operations keep their file lease while the hook runs.
+    explicit PinnedWindowRepository(
+        QString configurationDirectory, bool writeAvailable = true, int debounceMilliseconds = 1000,
+        std::function<void(PinnedWindowOperation)> operationObserved = {});
     ~PinnedWindowRepository();
 
     [[nodiscard]] static constexpr int maximumGroupCount() {
         return 128;
     }
 
-    [[nodiscard]] std::optional<PinnedWindowRecord> loadRecord(const QString& id) const;
+    // Allocation admission runs while the payload revision is leased; the
+    // callback must not start another payload read, flush, retention, or storage suspension.
+    [[nodiscard]] std::optional<PinnedWindowRecord>
+    loadRecord(const QString& id, std::function<bool(qint64)> allocationCheck = {}) const;
     [[nodiscard]] std::optional<PinnedWindowPreviewSource>
     loadPreviewSource(const QString& id) const;
     [[nodiscard]] std::optional<quint64> previewSourceRevision(const QString& id) const;
     [[nodiscard]] QVector<PinnedWindowSummary> summaries() const;
+    // Reads source identity without materializing any persisted image payload.
+    [[nodiscard]] PinnedSourceIdentity sourceIdentity(const QString& id) const;
     [[nodiscard]] quint64 revision() const;
     // Advances only when records enter, leave, close, restore, or change groups.
     [[nodiscard]] quint64 membershipRevision() const;
@@ -98,6 +117,11 @@ class PinnedWindowRepository final {
     [[nodiscard]] StorageResult enforcePolicy(QDateTime now = QDateTime::currentDateTimeUtc());
     [[nodiscard]] StorageResult clearClosed();
     [[nodiscard]] StorageResult flush();
+    // Suspension rejects new payload reads and drains admitted readers before
+    // migration may remove this generation's backing files.
+    void suspendWrites(bool suspended);
+    // Called with writers suspended, after flush, and with a prepared destination.
+    void exchangeStorage(PinnedWindowRepository& prepared);
     [[nodiscard]] QString lastError() const;
 
   private:
@@ -107,8 +131,11 @@ class PinnedWindowRepository final {
     [[nodiscard]] StorageResult upsertImpl(PinnedWindowRecord record, bool requireExisting);
     [[nodiscard]] StorageResult markClosedImpl(const QString& id, QDateTime when,
                                                bool enforceImmediately);
+    mutable std::recursive_mutex m_accessMutex;
+    bool m_suspended = false;
     struct Impl;
-    std::unique_ptr<Impl> m_impl;
+    // Readers retain the admitted storage generation across migration.
+    std::shared_ptr<Impl> m_impl;
 };
 
 } // namespace snow_shot::storage

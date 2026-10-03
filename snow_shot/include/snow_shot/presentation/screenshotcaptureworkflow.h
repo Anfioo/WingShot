@@ -40,12 +40,14 @@ struct ScreenshotCaptureWorkflowContext {
     std::function<void()> refreshCanvasCreationStyles = []() {};
     std::function<void()> restoreSelectionPreferences = []() {};
     std::function<bool()> restoreOriginalScreenColors = []() { return true; };
-    std::function<bool()> captureCursor = []() { return false; };
+    std::function<bool()> showCursor = []() { return false; };
     std::function<ScreenshotIntelligentSelectionTarget()> preferredSelectionTarget = []() {
         return ScreenshotIntelligentSelectionTarget::WindowSubElement;
     };
     std::function<void(bool, const QString&)> recaptureCompleted = [](bool, const QString&) {};
     std::function<QPoint()> cursorPosition = [] { return QCursor::pos(); };
+    // Navigation's live desktop backup belongs to the ending capture, not its exports.
+    std::function<void()> releaseCaptureHistory = []() {};
 };
 
 class ScreenshotCaptureWorkflow final : private ScreenshotCaptureWorkerEventSink {
@@ -57,9 +59,11 @@ class ScreenshotCaptureWorkflow final : private ScreenshotCaptureWorkerEventSink
     enum class StartMode { Normal, ExternalDrag };
     enum class ToolbarPreparation { Prewarm, OnDemand };
     enum class ToolbarVisibility { ShowAfterSelection, Suppressed };
+    enum class PresentationMode { Visible, Silent };
     void startCapture(StartMode mode = StartMode::Normal,
                       ToolbarPreparation toolbarPreparation = ToolbarPreparation::Prewarm,
-                      ToolbarVisibility toolbarVisibility = ToolbarVisibility::ShowAfterSelection);
+                      ToolbarVisibility toolbarVisibility = ToolbarVisibility::ShowAfterSelection,
+                      PresentationMode presentation = PresentationMode::Visible);
     [[nodiscard]] bool startRecapture(const QVector<std::uint32_t>& excludedWindowIds = {});
     [[nodiscard]] bool recaptureInProgress() const;
     [[nodiscard]] bool suppressCaptureToolbar() const;

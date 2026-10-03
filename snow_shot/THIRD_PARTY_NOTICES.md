@@ -26,6 +26,12 @@ fix. Cargo retrieves their source and original license files from that fork.
 The release collector includes the selected Rust FFI and static OCR-worker
 dependency graphs, including these Git dependencies.
 
+Windows releases currently redistribute the immutable OCR runtime 1.0.8 from
+the pinned asset manifest. Its license collection retains RapidOCR's original
+CLI, encoded-image, HTTP/TLS, model-download, and YAML dependency closure even
+when the locally built raw-pixel worker omits those features. This collection
+must follow the published runtime until its versioned payload is replaced.
+
 The GPL-3.0-only `snow-shot-updater` sidecar is implemented in Rust and is
 distributed as part of Snow Shot. Its resolved normal and build dependency
 graph—including Tokio, Reqwest with native platform TLS, Serde, RSA/SHA-256,
@@ -67,6 +73,13 @@ and the existing objc2 framework bindings (Zlib OR Apache-2.0 OR MIT) for
 Accessibility and pasteboard interoperability. Their resolved notices are
 included in the generated Rust dependency bundle. Apple system frameworks are
 provided by macOS and are not redistributed.
+Full includes these components in its unified Rust FFI archive; Mini's archive
+does not enable the selected-text dependency.
+
+macOS application QoS uses the repository's Apache-2.0 `snow-core` scheduling
+policy and the existing Rayon worker pools (MIT OR Apache-2.0). Native pthread
+and dispatch APIs are provided by macOS and are not redistributed. The resolved
+Rayon notices remain included in the generated Rust dependency bundle.
 
 Smart selection (`snow-ui-selector` and `snow-ui-selector-c`) uses the same
 accessibility-sys, core-foundation, and core-foundation-sys dependencies
@@ -79,6 +92,12 @@ and `snow-recording-effects-c`) are Apache-2.0 code under `snow-crates/`. They
 reuse crossbeam-channel (MIT OR Apache-2.0) and Microsoft windows-rs (MIT OR
 Apache-2.0) for bounded input observation and native font rendering. Their
 resolved licenses are included in the generated Rust dependency bundle.
+
+Shared recording source metadata and export settings reuse bincode 1.3.3 (MIT)
+for versioned serialization. Its original notice is included in the resolved
+Rust dependency bundle. Deferred HDR source encoding uses the existing x265
+(GPL-2.0-or-later) dependency with both 8-bit and Main10 APIs; it adds no separate
+codec library or license.
 
 GPU screen recording uses the repository's Apache-2.0 `snow-d3d11` crate and
 Microsoft windows-rs (MIT OR Apache-2.0). The restricted FFmpeg 9.0 build enables
@@ -97,9 +116,20 @@ x264 (GPL-2.0-or-later), x265 (GPL-2.0-or-later), WebP (BSD-3-Clause), and zlib-
 do not link FFmpeg. Each architecture's resolved license bundle is generated
 with `scripts/collect-third-party-licenses.ps1 -StandaloneMedia`.
 
+Recording GIF regression tests use the `gif` crate 0.14.2 (MIT OR Apache-2.0)
+as an independent decoder. It is a development dependency; the adaptive palette
+encoder adds no production dependencies. The crate's original notices are in
+the Cargo registry source used by the test build.
+
 The generated bundle is authoritative for a particular binary because its
 contents are produced from that build environment. Dependency licenses and
 copyright notices remain the property of their respective owners.
+
+The optional `snow-shot-mcp` stdio bridge uses the `rmcp` Rust SDK (Apache-2.0)
+and its macro/schema dependencies, plus `interprocess` (0BSD OR Apache-2.0)
+for same-user local sockets. The complete resolved dependency and license
+closure is collected from `snow_shot/rust/snow-shot-mcp/Cargo.lock` by the
+standard license collection script.
 
 ## STranslate OCR Layout Analysis
 
@@ -193,3 +223,93 @@ boundary uses the existing `image` dependency (MIT OR Apache-2.0); JPEG support
 adds `zune-core` and `zune-jpeg` (MIT OR Apache-2.0 OR Zlib). Their resolved
 licenses are included in the Rust dependency notice bundle. OpenCV is not
 required by this feature.
+
+
+## Snow Shot MCP executable
+
+`snow-shot-mcp` is GPL-3.0-only application code. It uses the official Rust MCP SDK
+(`rmcp`, Apache-2.0) and same-user local IPC (`interprocess`, 0BSD OR Apache-2.0).
+The following resolved normal/build dependencies are included in the Windows bridge;
+platform-specific dependencies for macOS are selected by Cargo for the target architecture.
+The packaging license collector includes each package's original license and notice files.
+
+| Package and version | Declared license |
+| --- | --- |
+| anyhow-1.0.104 | MIT OR Apache-2.0 |
+| autocfg-1.5.1 | Apache-2.0 OR MIT |
+| base64-0.22.1 | MIT OR Apache-2.0 |
+| bytes-1.12.1 | MIT |
+| cfg-if-1.0.5 | MIT OR Apache-2.0 |
+| chrono-0.4.45 | MIT OR Apache-2.0 |
+| darling-0.24.1 | MIT |
+| darling_core-0.24.1 | MIT |
+| darling_macro-0.24.1 | MIT |
+| doctest-file-1.1.1 | 0BSD |
+| dyn-clone-1.0.20 | MIT OR Apache-2.0 |
+| equivalent-1.0.2 | Apache-2.0 OR MIT |
+| futures-0.3.34 | MIT OR Apache-2.0 |
+| futures-channel-0.3.34 | MIT OR Apache-2.0 |
+| futures-core-0.3.34 | MIT OR Apache-2.0 |
+| futures-executor-0.3.34 | MIT OR Apache-2.0 |
+| futures-io-0.3.34 | MIT OR Apache-2.0 |
+| futures-macro-0.3.34 | MIT OR Apache-2.0 |
+| futures-sink-0.3.34 | MIT OR Apache-2.0 |
+| futures-task-0.3.34 | MIT OR Apache-2.0 |
+| futures-util-0.3.34 | MIT OR Apache-2.0 |
+| getrandom-0.3.4 | MIT OR Apache-2.0 |
+| getrandom-0.4.3 | MIT OR Apache-2.0 |
+| hashbrown-0.17.1 | MIT OR Apache-2.0 |
+| ident_case-1.0.1 | MIT/Apache-2.0 |
+| indexmap-2.14.2 | Apache-2.0 OR MIT |
+| interprocess-2.4.4 | 0BSD OR Apache-2.0 |
+| itoa-1.0.18 | MIT OR Apache-2.0 |
+| lazy_static-1.5.0 | MIT OR Apache-2.0 |
+| log-0.4.34 | MIT OR Apache-2.0 |
+| matchers-0.2.0 | MIT |
+| memchr-2.8.3 | Unlicense OR MIT |
+| mio-1.2.3 | MIT |
+| nu-ansi-term-0.50.3 | MIT |
+| num-traits-0.2.19 | MIT OR Apache-2.0 |
+| once_cell-1.21.4 | MIT OR Apache-2.0 |
+| pastey-0.2.3 | MIT OR Apache-2.0 |
+| pin-project-lite-0.2.17 | Apache-2.0 OR MIT |
+| proc-macro2-1.0.107 | MIT OR Apache-2.0 |
+| quote-1.0.47 | MIT OR Apache-2.0 |
+| recvmsg-1.0.0 | 0BSD |
+| ref-cast-1.0.27 | MIT OR Apache-2.0 |
+| ref-cast-impl-1.0.27 | MIT OR Apache-2.0 |
+| regex-automata-0.4.18 | MIT OR Apache-2.0 |
+| regex-syntax-0.8.11 | MIT OR Apache-2.0 |
+| rmcp-3.4.1 | Apache-2.0 (canonical fallback: Apache-2.0.txt) |
+| rmcp-macros-3.4.1 | Apache-2.0 (canonical fallback: Apache-2.0.txt) |
+| schemars-1.2.2 | MIT |
+| schemars_derive-1.2.2 | MIT |
+| serde-1.0.229 | MIT OR Apache-2.0 |
+| serde_core-1.0.229 | MIT OR Apache-2.0 |
+| serde_derive-1.0.229 | MIT OR Apache-2.0 |
+| serde_derive_internals-0.30.0 | MIT OR Apache-2.0 |
+| serde_json-1.0.151 | MIT OR Apache-2.0 |
+| sharded-slab-0.1.7 | MIT |
+| slab-0.4.12 | MIT |
+| smallvec-1.16.2 | MIT OR Apache-2.0 |
+| socket2-0.6.5 | MIT OR Apache-2.0 |
+| strsim-0.11.1 | MIT |
+| syn-2.0.119 | MIT OR Apache-2.0 |
+| syn-3.0.6 | MIT OR Apache-2.0 |
+| thiserror-2.0.21 | MIT OR Apache-2.0 |
+| thiserror-impl-2.0.21 | MIT OR Apache-2.0 |
+| thread_local-1.1.10 | MIT OR Apache-2.0 |
+| tokio-1.53.1 | MIT |
+| tokio-macros-2.7.2 | MIT |
+| tokio-util-0.7.19 | MIT |
+| tracing-0.1.44 | MIT |
+| tracing-attributes-0.1.31 | MIT |
+| tracing-core-0.1.36 | MIT |
+| tracing-log-0.2.0 | MIT |
+| tracing-subscriber-0.3.23 | MIT |
+| unicode-ident-1.0.26 | (MIT OR Apache-2.0) AND Unicode-3.0 |
+| uuid-1.26.1 | Apache-2.0 OR MIT |
+| widestring-1.2.1 | MIT OR Apache-2.0 |
+| windows-link-0.2.1 | MIT OR Apache-2.0 |
+| windows-sys-0.61.2 | MIT OR Apache-2.0 |
+| zmij-1.0.23 | MIT |

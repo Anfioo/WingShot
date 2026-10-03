@@ -86,6 +86,7 @@ class SettingsRuntimeSession final : public QObject {
     [[nodiscard]] QVariant selectValue(SettingsSelectBinding binding) const;
     [[nodiscard]] QVector<SettingsRuntimeOption>
     dynamicSelectOptions(SettingsSelectBinding binding) const;
+    void requestFontOptions();
     [[nodiscard]] bool applySelectValue(SettingsSelectBinding binding, const QVariant& value);
     [[nodiscard]] bool switchValue(SettingsSwitchBinding binding) const;
     [[nodiscard]] bool switchEnabled(SettingsSwitchBinding binding) const;
@@ -104,6 +105,8 @@ class SettingsRuntimeSession final : public QObject {
     [[nodiscard]] bool applyRadioValue(SettingsRadioBinding binding, const QVariant& value);
     [[nodiscard]] QString filePathValue(SettingsFilePathBinding binding) const;
     [[nodiscard]] bool applyFilePathValue(SettingsFilePathBinding binding, const QString& value);
+    [[nodiscard]] QString filePathStatus(SettingsFilePathBinding binding) const;
+    [[nodiscard]] bool filePathStatusError(SettingsFilePathBinding binding) const;
     [[nodiscard]] QString directoryPathValue(SettingsDirectoryPathBinding binding) const;
     [[nodiscard]] bool applyDirectoryPathValue(SettingsDirectoryPathBinding binding,
                                                const QString& value);
@@ -137,12 +140,28 @@ class SettingsRuntimeSession final : public QObject {
     globalMouseCombinationAvailable(SettingsGlobalMouseAction action,
                                     const SettingsGlobalMouseCombination& combination) const;
     [[nodiscard]] SettingsActionState actionState(SettingsActionBinding binding) const;
-    [[nodiscard]] bool triggerAction(SettingsActionBinding binding, const QString& filePath = {});
+    [[nodiscard]] bool triggerAction(SettingsActionBinding binding, const QString& filePath = {},
+                                     bool includeToolbarStyles = false);
+#if SNOW_SHOT_ENABLE_API_CONFIGURATION
     [[nodiscard]] CustomAiModels customAiModels() const;
     bool applyCustomAiModels(const CustomAiModels& models);
+    [[nodiscard]] TextTranslationConfigurations textTranslationConfigurations() const;
+    bool applyTextTranslationConfigurations(const TextTranslationConfigurations& values);
+#endif
+    bool
+    importConfigurationSnapshot(const QMap<QString, QJsonValue>& values, int schemaVersion,
+                                std::shared_future<storage::StorageResult>* completion = nullptr) {
+        const bool result =
+            m_backend.importConfigurationSnapshot(values, schemaVersion, completion);
+        refreshAll();
+        return result;
+    }
     [[nodiscard]] storage::StorageStatus storageStatus() const;
     void refreshPlatformSettings();
     void refreshStorageStatus();
+    storage::StorageResult changeStorageDirectory(const QString& directory, bool migrate) {
+        return m_backend.changeStorageDirectory(directory, migrate);
+    }
     void refreshStorageStatusIfStale();
 
     AppPermissionService* appPermissions() const {
@@ -163,6 +182,8 @@ class SettingsRuntimeSession final : public QObject {
     }
 
   signals:
+    void directoryChangeProgress(const snow_shot::storage::StorageDirectoryProgress& progress);
+    void directoryChangeFinished(const snow_shot::storage::StorageDirectoryChangeResult& result);
     void globalMousePermissionChanged();
     void operationMessage(const QString& message, bool warning);
     void fieldChanged(const QString& fieldId,
@@ -179,9 +200,15 @@ class SettingsRuntimeSession final : public QObject {
                          const snow_shot::presentation::GlobalShortcutRegistrationState& state);
     void auxiliaryIntegerChanged(snow_shot::presentation::settings::SettingsIntegerBinding binding,
                                  int value);
+    void filePathStatusChanged(snow_shot::presentation::settings::SettingsFilePathBinding binding);
     void refreshed();
 
   private:
+    struct FilePathStatus {
+        QString text;
+        bool error = false;
+    };
+
     struct PendingWrite {
         QVariant target;
         QVariant baseline;
@@ -240,6 +267,7 @@ class SettingsRuntimeSession final : public QObject {
                                                  const PendingWrite* activeWrite);
     void refreshField(const QString& fieldId, std::optional<quint64> expectedRevision);
     void refreshAuxiliaryInteger(SettingsIntegerBinding binding);
+    void refreshFilePathStatus(SettingsFilePathBinding binding);
     void updateState(const QString& fieldId, const SettingsFieldState& next);
 
     const SettingsRegistry& m_registry;
@@ -250,11 +278,15 @@ class SettingsRuntimeSession final : public QObject {
     // need revision/error tracking distinct from ordinary field writes.
     QHash<QString, PendingWrite> m_pendingResets;
     QHash<QString, QVector<RetiredWrite>> m_retiredWrites;
+    bool m_fontOptionsLoaded = false;
+    QVector<SettingsRuntimeOption> m_fontOptions;
     mutable QHash<QString, SettingsOptions> m_optionsCache;
     QHash<int, SettingsCommandState> m_commandStateCache;
     QHash<int, int> m_auxiliaryIntegerValues;
+    QHash<int, FilePathStatus> m_filePathStatuses;
     storage::StorageStatus m_lastStorageStatus;
     bool m_hasStorageStatus = false;
+    bool m_refreshPending = false;
 };
 
 } // namespace snow_shot::presentation::settings
