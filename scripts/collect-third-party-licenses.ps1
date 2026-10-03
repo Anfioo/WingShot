@@ -169,7 +169,7 @@ foreach ($cargoManifestPath in $cargoManifestPaths) {
     $options = if ($optionsByManifest.ContainsKey($cargoManifestPath)) {
         $optionsByManifest[$cargoManifestPath]
     } else { @() }
-    $metadataOutput = @(& $cargoCommand.Source metadata --locked --offline `
+    $metadataOutput = @(& $cargoCommand.Source metadata --locked `
         --filter-platform $CargoTarget --format-version 1 `
         --manifest-path $cargoManifestPath @options)
     if ($LASTEXITCODE -ne 0) { throw "cargo metadata failed for $cargoManifestPath" }
@@ -186,7 +186,7 @@ foreach ($cargoManifestPath in $cargoManifestPaths) {
         if (!$packagesByNameVersion.ContainsKey($key)) { $packagesByNameVersion[$key] = @() }
         $packagesByNameVersion[$key] += @($package)
     }
-    $tree = @(& $cargoCommand.Source tree --locked --offline --target $CargoTarget `
+    $tree = @(& $cargoCommand.Source tree --locked --target $CargoTarget `
         --manifest-path $cargoManifestPath --package $rootPackage.id `
         --edges normal,build --prefix none --format '{p}' @options)
     if ($LASTEXITCODE -ne 0) { throw "cargo tree failed for $cargoManifestPath" }
