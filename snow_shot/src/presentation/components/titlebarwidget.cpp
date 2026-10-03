@@ -53,7 +53,7 @@ QPixmap renderBrandLogo(int logicalHeight, const QColor& color, qreal devicePixe
     const auto colors = adqt::icons::IconColors::primary(color);
     const auto logo = snow_shot::app::edition::isMini
                           ? custom_icons::brand::SnowShotMiniLogo(colors)
-                          : custom_icons::brand::SnowShotLogo(colors);
+                          : custom_icons::brand::WingshotLogo(colors);
     return adqt::icons::renderIconPixmap(logo, request);
 }
 

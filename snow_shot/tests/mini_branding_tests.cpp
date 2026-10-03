@@ -82,7 +82,7 @@ void titleBarRendersTheEditionSvg(TitleBarWidget& titleBar) {
 #endif
         const auto colors = adqt::icons::IconColors::primary(ink);
         const auto logo = edition::isMini ? icons::brand::SnowShotMiniLogo(colors)
-                                          : icons::brand::SnowShotLogo(colors);
+                                          : icons::brand::WingshotLogo(colors);
         const int height = std::clamp(scheme.metricAlias.fontSizeSM, 10, 14);
         adqt::icons::IconRenderRequest request;
         request.logicalSize =

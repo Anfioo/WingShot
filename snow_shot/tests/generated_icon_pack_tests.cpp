@@ -155,7 +155,7 @@ void projectIconColorsAndModelsArePreserved() {
     namespace icons = snow_shot::presentation::icons::custom;
     const QColor primary(0, 166, 90);
     const QColor brandPurple(0x92, 0x54, 0xde);
-    const auto logoRef = icons::brand::SnowShotLogo(adqt::icons::IconColors::primary(primary));
+    const auto logoRef = icons::brand::WingshotLogo(adqt::icons::IconColors::primary(primary));
     const auto logoMetadata = adqt::icons::describeIcon(logoRef);
     require(logoMetadata.key.pack == QStringLiteral("snow-shot") &&
                 logoMetadata.key.variant == QStringLiteral("brand") &&
@@ -217,7 +217,7 @@ void miniLogoPreservesTheWordmarkAndAddsRoundedVectorLettering() {
         const auto colors = adqt::icons::IconColors::primary(color);
         for (const qreal scale : {1.0, 2.0, 3.0}) {
             const QImage original =
-                render(icons::brand::SnowShotLogo(colors), QSize(95, 17), scale).toImage();
+                render(icons::brand::WingshotLogo(colors), QSize(95, 17), scale).toImage();
             const QImage extended =
                 render(icons::brand::SnowShotMiniLogo(colors), QSize(137, 17), scale).toImage();
             require(extended.copy(original.rect()) == original,

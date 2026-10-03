@@ -1923,7 +1923,7 @@ adqt::icons::IconRef ApplicationTitleBarIcon(const adqt::icons::IconColors& colo
 
 namespace brand {
 
-adqt::icons::IconRef SnowShotLogo(const adqt::icons::IconColors& colors) {
+adqt::icons::IconRef WingshotLogo(const adqt::icons::IconColors& colors) {
     return pack().icon(2, colors);
 }
 
