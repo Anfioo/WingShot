@@ -717,6 +717,21 @@ void ScreenshotRecognitionWindow::registerWindowShortcuts() {
     };
     static_cast<void>(m_shortcutManager->addBinding(this, std::move(copy)));
 
+    // Shift+C copies the recognized text regardless of the current selection, mirroring
+    // the existing Ctrl+C behavior without touching it.
+    ShortcutManager::Binding copyText;
+    copyText.id = QStringLiteral("recognition.copy_text");
+    copyText.keyCombinations = {QKeyCombination(Qt::ShiftModifier, Qt::Key_C)};
+    copyText.priority = ShortcutManager::StandardPriority::WindowCommand;
+    copyText.canActivate = copyCommandsAllowed;
+    copyText.activate = [this](const auto&) {
+        if (copyVisibleContentToClipboard() && m_conversionView == nullptr) {
+            m_actions.handleCopy();
+        }
+        return true;
+    };
+    static_cast<void>(m_shortcutManager->addBinding(this, std::move(copyText)));
+
     const auto textEditorActive = [this](const ShortcutManager::ActivationContext& context) {
         return context.scopeWindow == this && focusInside(m_textEditor, context.focusWidget);
     };
