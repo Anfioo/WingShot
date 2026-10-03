@@ -2451,7 +2451,19 @@ QVector<SettingsPageDefinition> builtInPages() {
                         "SettingsCatalog",
                         "App-wide storage usage, location, mode, errors, and cleanup")),
                     SettingsSectionReset::None,
-                    {storageStatusItem(), clearThumbnailCacheItem(), clearRecordingTempItem()},
+                    {storageStatusItem(),
+                     historyIntegerItem(
+                         QStringLiteral("storage.log-retention-days"),
+                         settingsText(
+                             QT_TRANSLATE_NOOP("SettingsCatalog", "Log retention period")),
+                         settingsText(QT_TRANSLATE_NOOP(
+                             "SettingsCatalog",
+                             "Delete diagnostic logs after they reach this age")),
+                         QStringLiteral("diagnostics/log_retention_days"),
+                         SettingsIntegerBinding::LogRetentionDays,
+                         settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", " days")),
+                         {settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Log age"))}),
+                     clearThumbnailCacheItem(), clearRecordingTempItem()},
                 },
             },
         },
@@ -3627,6 +3639,9 @@ QStringList SettingsCatalog::validationErrors() const {
                         break;
                     case SettingsIntegerBinding::ScreenshotDelaySeconds:
                         expectedKey = QStringLiteral("screenshot/delay_seconds");
+                        break;
+                    case SettingsIntegerBinding::LogRetentionDays:
+                        expectedKey = QStringLiteral("diagnostics/log_retention_days");
                         break;
                     }
                     if (itemDefinition.configurationKey != expectedKey || schemaEntry == nullptr ||

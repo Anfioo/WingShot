@@ -157,6 +157,7 @@ enum class SettingsIntegerBinding {
     HistoryMaxDiskMiB,
     PinnedHistoryMaxDiskMiB,
     ScreenshotDelaySeconds,
+    LogRetentionDays,
 };
 
 enum class SettingsMultiSelectBinding {

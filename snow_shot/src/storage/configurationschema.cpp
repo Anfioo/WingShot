@@ -1070,6 +1070,8 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
     {QStringLiteral("pinned_history/max_disk_mib"), 1024, ConfigurationValueKind::Integer,
      ConfigurationIntegerRange{CaptureHistoryPolicy::MinimumDiskMiB,
                                CaptureHistoryPolicy::MaximumDiskMiB, 1}},
+    {QStringLiteral("diagnostics/log_retention_days"), 7, ConfigurationValueKind::Integer,
+     ConfigurationIntegerRange{1, 90, 1}},
 };
 
 bool shortcutConfigurationKey(const QString& key) {

@@ -1711,4 +1711,12 @@ bool NetworkSettings::setProxy(const QString& proxy) const {
     return cache().setValue(QStringLiteral("network/proxy"), proxy);
 }
 
+int DiagnosticsSettings::logRetentionDays() const {
+    return cache().value(QStringLiteral("diagnostics/log_retention_days")).toInt();
+}
+
+bool DiagnosticsSettings::setLogRetentionDays(int days) const {
+    return cache().setValue(QStringLiteral("diagnostics/log_retention_days"), days);
+}
+
 } // namespace snow_shot::storage
