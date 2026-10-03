@@ -67,11 +67,18 @@ class TranslationPageController final : public QObject {
     void invalidateTranslation();
     void scheduleTranslation();
     void startTranslation();
+    // Swaps the languages when the queued source text is written in the currently
+    // selected target language of an explicit zh/en pair (e.g. English text pasted
+    // into a zh-to-en setup). At most one swap per input session.
+    void maybeAutoSwapLanguagesForDetectedDirection();
     QPointer<translation::TranslationService> m_service;
     QPointer<translation::TranslationJob> m_job;
     QTimer m_debounce;
     QString m_source;
     QString m_result;
+    // Target language recorded when languages were auto-swapped for the current input
+    // session; cleared once the source text is emptied or the page is deactivated.
+    QString m_autoSwappedTarget;
     bool m_active = false;
     bool m_composing = false;
     bool m_requestDue = false;

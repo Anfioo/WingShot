@@ -3,6 +3,36 @@
 #include <algorithm>
 #include <utility>
 
+namespace {
+// Groups zh-Hans/zh-Hant together; anything outside zh/en is returned verbatim.
+QString languageGroup(const QString& code) {
+    if (code.startsWith(QStringLiteral("zh")))
+        return QStringLiteral("zh");
+    if (code == QStringLiteral("en"))
+        return QStringLiteral("en");
+    return code;
+}
+
+// The translation service auto-detects server-side and never reports the detected
+// language back to this controller, so apply a cheap Han-vs-Latin heuristic to the
+// queued text. Empty result means the text cannot be classified.
+QString detectedLanguageGroup(const QString& text) {
+    int han = 0;
+    int latin = 0;
+    for (const QChar& ch : text) {
+        if (!ch.isLetter())
+            continue;
+        if (ch.script() == QChar::Script_Han)
+            ++han;
+        else if (ch.script() == QChar::Script_Latin)
+            ++latin;
+    }
+    if (han == 0 && latin == 0)
+        return QString();
+    return han >= latin ? QStringLiteral("zh") : QStringLiteral("en");
+}
+} // namespace
+
 namespace snow_shot::presentation {
 TranslationPageController::TranslationPageController(SnowShotApiClient& client,
                                                      storage::ConfigurationStore& settings,
@@ -14,6 +44,7 @@ TranslationPageController::TranslationPageController(SnowShotApiClient& client,
     m_debounce.setInterval(std::max(0, debounceMilliseconds));
     connect(&m_debounce, &QTimer::timeout, this, [this] {
         m_requestDue = true;
+        maybeAutoSwapLanguagesForDetectedDirection();
         startTranslation();
     });
     connect(m_service, &translation::TranslationService::preferencesChanged, this,
@@ -54,6 +85,7 @@ void TranslationPageController::activate() {
 void TranslationPageController::deactivate() {
     m_active = false;
     m_retryRequired = false;
+    m_autoSwappedTarget.clear();
     invalidateTranslation();
     m_source.clear();
 }
@@ -82,6 +114,8 @@ void TranslationPageController::scheduleTranslation() {
 void TranslationPageController::setSourceText(const QString& text) {
     if (text == m_source)
         return;
+    if (text.trimmed().isEmpty())
+        m_autoSwappedTarget.clear();
     m_source = text;
     scheduleTranslation();
 }
@@ -117,6 +151,30 @@ void TranslationPageController::swapLanguages() {
     if (current.sourceLanguage != QStringLiteral("auto") &&
         current.sourceLanguage != current.targetLanguage)
         setPreferences(current.targetLanguage, current.sourceLanguage, current.modelId);
+}
+
+void TranslationPageController::maybeAutoSwapLanguagesForDetectedDirection() {
+    if (m_service == nullptr || !m_active || m_composing)
+        return;
+    const translation::TranslationPreferences prefs = preferences();
+    const QString sourceGroup = languageGroup(prefs.sourceLanguage);
+    const QString targetGroup = languageGroup(prefs.targetLanguage);
+    // Source "auto" already lets the server pick the direction; only re-route explicit
+    // zh/en pairs.
+    if (sourceGroup == QStringLiteral("auto") || sourceGroup == targetGroup)
+        return;
+    if (sourceGroup != QStringLiteral("zh") && sourceGroup != QStringLiteral("en"))
+        return;
+    // Swap at most once per input session so typing mixed zh/en text cannot make the
+    // languages ping-pong between debounce runs.
+    if (!m_autoSwappedTarget.isEmpty() && prefs.targetLanguage == m_autoSwappedTarget)
+        return;
+
+    const QString detected = detectedLanguageGroup(m_source);
+    if (detected.isEmpty() || detected == sourceGroup || detected != targetGroup)
+        return;
+    m_autoSwappedTarget = prefs.sourceLanguage; // old source becomes the new target
+    swapLanguages();
 }
 
 void TranslationPageController::startTranslation() {
