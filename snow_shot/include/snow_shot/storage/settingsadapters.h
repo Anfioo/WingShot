@@ -279,6 +279,8 @@ struct ScreenshotTranslationConfiguration {
     QString targetLanguage;
     QString modelId;
     QString layoutProcessing = QStringLiteral("smart_merge");
+    // When true, OCR does not start a translation automatically; the user triggers it.
+    bool manualTrigger = false;
 
     friend bool operator==(const ScreenshotTranslationConfiguration& first,
                            const ScreenshotTranslationConfiguration& second) = default;

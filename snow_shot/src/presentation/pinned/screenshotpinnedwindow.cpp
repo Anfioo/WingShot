@@ -4122,7 +4122,13 @@ void ScreenshotPinnedWindow::configureRecognitionSession() {
                     m_recognitionSession->mode() ==
                         ScreenshotRecognitionSessionController::Mode::Text) {
                     m_translateAfterRecognition = false;
-                    m_recognitionSession->beginTextTranslation();
+                    // In manual translation mode the OCR result stays on screen and the
+                    // user starts the translation explicitly.
+                    if (!snow_shot::storage::ScreenshotTranslationSettings()
+                             .configuration()
+                             .manualTrigger) {
+                        m_recognitionSession->beginTextTranslation();
+                    }
                 }
                 schedulePersistence();
             });
