@@ -17,8 +17,8 @@ ApplicationTitleBarIcon(const adqt::icons::IconColors& colors = {});
 } // namespace app
 
 namespace brand {
-[[nodiscard]] adqt::icons::IconRef WingshotLogo(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef SnowShotMiniLogo(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] adqt::icons::IconRef WingshotLogo(const adqt::icons::IconColors& colors = {});
 } // namespace brand
 
 namespace cursor {
