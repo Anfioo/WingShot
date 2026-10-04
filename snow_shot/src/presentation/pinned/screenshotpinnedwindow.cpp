@@ -4601,6 +4601,7 @@ void ScreenshotPinnedWindow::configureRecognitionSession() {
                 synchronizeHiddenTextSelection();
                 refreshContextMenu();
                 updateRecognitionToolbarState();
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
                 if (available && m_translateAfterRecognition && m_recognitionSession != nullptr &&
                     m_recognitionSession->active() &&
                     m_recognitionSession->mode() ==
@@ -4614,6 +4615,7 @@ void ScreenshotPinnedWindow::configureRecognitionSession() {
                         m_recognitionSession->beginTextTranslation();
                     }
                 }
+#endif
                 schedulePersistence();
             });
     connect(m_recognitionSession.get(), &ScreenshotRecognitionSessionController::textDraftChanged,

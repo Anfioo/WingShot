@@ -2614,6 +2614,7 @@ void ScreenshotController::Impl::handleAutomaticTextRecognitionAction(bool avail
 
     m_ocrAutoActionHandledActivationId = m_ocrActivationId;
 
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
     if (m_ocrTranslateAfterRecognition) {
         m_ocrTranslateAfterRecognition = false;
         // In manual translation mode the OCR result stays on screen and the user
@@ -2622,6 +2623,7 @@ void ScreenshotController::Impl::handleAutomaticTextRecognitionAction(bool avail
             m_ocrController->beginTextTranslation();
         return;
     }
+#endif
 
     const QString action =
         snow_shot::storage::ScreenshotSettings().autoExecuteAfterTextRecognition();

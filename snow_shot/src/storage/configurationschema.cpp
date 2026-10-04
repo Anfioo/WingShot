@@ -310,6 +310,18 @@ const QVector<ConfigurationSchemaEntry> kRawEntries = {
      std::nullopt,
      {QStringLiteral("smart_merge"), QStringLiteral("original")}},
 #endif
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
+    {QStringLiteral("screenshot_translation/manual_trigger"), false,
+     ConfigurationValueKind::Boolean},
+#endif
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
+    {QStringLiteral("screenshot_translation/provider"), QStringLiteral("snowshot"),
+     ConfigurationValueKind::String},
+#endif
+#if SNOW_SHOT_ENABLE_TEXT_TRANSLATION
+    {QStringLiteral("screenshot_translation/provider_config"), QJsonObject(),
+     ConfigurationValueKind::Structured},
+#endif
     {QStringLiteral("interface/sidebar_collapsed"), false, ConfigurationValueKind::Boolean},
     {QStringLiteral("interface/main_window_geometry"), QJsonObject(),
      ConfigurationValueKind::Structured},
