@@ -152,7 +152,9 @@ TranslationPageWidget::TranslationPageWidget(QWidget* parent, SnowShotApiClient*
             m_providerSelect->setPopupMatchSelectWidth(false);
             m_providerSelect->setPopupLayerMode(AdSelect::PopupLayerMode::QtTool);
             m_providerSelect->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
-            row->addWidget(m_providerSelect);
+            // Keep the provider source to the left of the service picker so the service
+            // selector stays flush with the result pane's right edge.
+            row->insertWidget(1, m_providerSelect);
             connect(m_providerSelect, &AdSelect::currentValueChanged, this, [this]() {
                 if (!m_syncing)
                     m_controller->setProvider(m_providerSelect->currentValue().toString());

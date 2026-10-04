@@ -111,7 +111,9 @@ void sharedServiceSelectors() {
     int sharedCommits = 0;
     const auto watchSharedFields = [&](AdModal* editor) {
         const auto fields = editor->contentWidget()->findChildren<form_fields::FormField*>();
-        require(fields.size() == 4, "screenshot settings uses four shared fields");
+        require(fields.size() == 8,
+                "screenshot settings exposes language, provider, service, credential, and toggle "
+                "fields");
         for (auto* field : fields) {
             require(!field->item()->isTouched() && !field->item()->isDirty(),
                     "screenshot settings initializes a clean AdForm baseline");
@@ -258,7 +260,7 @@ void screenshotSettingsGeometry() {
         require(qAbs(body->height() - body->sizeHint().height()) <= 1,
                 "screenshot settings body fits its content without vertical blank space");
         const auto labels = body->findChildren<QLabel*>(QStringLiteral("ad-form-item-label"));
-        require(labels.size() == 4, "screenshot settings has four form labels");
+        require(labels.size() == 8, "screenshot settings labels every configured field");
         for (auto* label : labels) {
             require(label->width() >= label->fontMetrics().horizontalAdvance(label->text()) &&
                         label->height() >= label->fontMetrics().height(),
