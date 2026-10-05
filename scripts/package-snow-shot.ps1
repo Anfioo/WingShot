@@ -1287,13 +1287,13 @@ string(REPLACE "snow-shot-$packageVersion-windows-x64.exe" "$packageBaseName.exe
     }
     $installerVersionInfo = (Get-Item -LiteralPath $packagePath).VersionInfo
     $expectedInstallerMetadata = @{
-        CompanyName = "Snow Apps"
-        FileDescription = "Snow Shot installer"
+        CompanyName = "WingShot"
+        FileDescription = "WingShot installer"
         FileVersion = "$packageVersionNumeric.0"
-        InternalName = "snow-shot-installer"
+        InternalName = "wingshot-installer"
         LegalCopyright = "Copyright (C) 2025-2026 mg-chao"
         OriginalFilename = "$packageBaseName.exe"
-        ProductName = "Snow Shot"
+        ProductName = "WingShot"
         ProductVersion = $packageVersion
     }
     foreach ($property in $expectedInstallerMetadata.Keys) {
