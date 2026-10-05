@@ -799,7 +799,7 @@ void AboutPageWidget::retranslateUi() {
     const bool hasVersion = !m_version.trimmed().isEmpty();
     setAccessibleName(snow_shot::app::edition::isMini
                           ? tr("About %1").arg(snow_shot::app::edition::productName())
-                          : tr("About Snow Shot"));
+                          : tr("About WingShot"));
     m_ui->productName->setText(snow_shot::app::edition::productName());
     m_ui->logo->setAccessibleName(snow_shot::app::edition::isMini
                                       ? tr("%1 logo").arg(snow_shot::app::edition::productName())
