@@ -9,13 +9,13 @@ RequestExecutionLevel user
 Section
   StrCpy $INSTDIR "${DESTINATION}"
   SetOutPath "$INSTDIR\bin"
-  File /oname=WingShot.exe "${PAYLOAD}"
+  File /oname=snow_shot.exe "${PAYLOAD}"
   WriteUninstaller "$INSTDIR\uninstall.exe"
 SectionEnd
 
 Section "Uninstall"
   !insertmacro SnowShotUninstallOwnedCleanup
-  Delete "$INSTDIR\bin\WingShot.exe"
+  Delete "$INSTDIR\bin\snow_shot.exe"
   Delete "$INSTDIR\bin\snow-shot-updater.exe"
   Delete "$INSTDIR\snow-shot-installation.json"
   RMDir "$INSTDIR\bin"

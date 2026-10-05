@@ -68,9 +68,9 @@ foreach ($variant in $variants) {
         $bin = Join-Path $root 'bin'
         $backup = Join-Path $root '.snow-shot-update/backup/bin'
         $null = New-Item -ItemType Directory -Path $bin, $backup
-        Copy-Item -LiteralPath $fixture -Destination (Join-Path $bin 'WingShot.exe')
+        Copy-Item -LiteralPath $fixture -Destination (Join-Path $bin 'snow_shot.exe')
         Copy-Item -LiteralPath $helper -Destination (Join-Path $bin 'snow-shot-updater.exe')
-        $owned = @('WingShot.exe', 'snow-shot-updater.exe') | ForEach-Object {
+        $owned = @('snow_shot.exe', 'snow-shot-updater.exe') | ForEach-Object {
             $path = Join-Path $bin $_
             @{ path = "bin/$_"; size = (Get-Item -LiteralPath $path).Length; sha256 = (Get-FileHash -LiteralPath $path).Hash.ToLowerInvariant() }
         }
@@ -129,7 +129,7 @@ foreach ($variant in $variants) {
                 if (-not $denied) { throw 'Elevation test root is still writable without UAC.' }
                 Write-Output "UAC CANARY: Please $ElevationAction the updater prompt now."
             }
-            $start = [Diagnostics.ProcessStartInfo]::new((Join-Path $bin 'WingShot.exe'))
+            $start = [Diagnostics.ProcessStartInfo]::new((Join-Path $bin 'snow_shot.exe'))
             $start.UseShellExecute = $false
             $start.CreateNoWindow = $true
             foreach ($arg in @($root, (Join-Path $bin 'snow-shot-updater.exe'), $mode)) { $start.ArgumentList.Add($arg) }

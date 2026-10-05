@@ -293,9 +293,9 @@ void startupRunValueReconciliation() {
     const QString run = QStringLiteral("Software\\SnowShotTests\\") +
                         QUuid::createUuid().toString(QUuid::Id128) + QStringLiteral("\\Run");
     const QString usersRunKey = sid + u'\\' + run;
-    const QString expected = QStringLiteral("\"C:\\SnowShotTest\\bin\\WingShot.exe\" --autostart");
+    const QString expected = QStringLiteral("\"C:\\SnowShotTest\\bin\\snow_shot.exe\" --autostart");
     const QString migrated =
-        QStringLiteral("\"C:\\SnowShotMoved\\bin\\WingShot.exe\" --autostart");
+        QStringLiteral("\"C:\\SnowShotMoved\\bin\\snow_shot.exe\" --autostart");
     const QString foreign = QStringLiteral("\"C:\\Other\\app.exe\" --autostart");
     HKEY key = nullptr;
     require(RegCreateKeyExW(HKEY_CURRENT_USER, run.toStdWString().c_str(), 0, nullptr,
