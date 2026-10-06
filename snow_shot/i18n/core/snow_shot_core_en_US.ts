@@ -24,8 +24,8 @@
             <translation>About %1</translation>
         </message>
         <message>
-            <source>About Snow Shot</source>
-            <translation>About Snow Shot</translation>
+            <source>About WingShot</source>
+            <translation>About WingShot</translation>
         </message>
         <message>
             <source>Automatic updates are unavailable for this copy.</source>

@@ -24,8 +24,8 @@
             <translation>關於 %1</translation>
         </message>
         <message>
-            <source>About Snow Shot</source>
-            <translation>關於 Snow Shot</translation>
+            <source>About WingShot</source>
+            <translation>關於 WingShot</translation>
         </message>
         <message>
             <source>Automatic updates are unavailable for this copy.</source>
