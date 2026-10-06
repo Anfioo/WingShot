@@ -610,7 +610,7 @@ AboutPageWidget::AboutPageWidget(QWidget* parent, UrlOpener urlOpener,
     auto* legalWidget = new QWidget(m_ui->body);
     auto* legal = new QVBoxLayout(legalWidget);
     legal->setContentsMargins(0, 0, 0, 0);
-    legal->setSpacing(4);
+    legal->setSpacing(2);
     m_ui->copyright = aboutLabel(QStringLiteral("aboutCopyright"), legalWidget);
     m_ui->copyright->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
     legal->addWidget(m_ui->copyright);
@@ -619,6 +619,11 @@ AboutPageWidget::AboutPageWidget(QWidget* parent, UrlOpener urlOpener,
     legal->addWidget(m_ui->slogan);
     m_ui->attribution = aboutLabel(QStringLiteral("aboutAttribution"), legalWidget);
     m_ui->attribution->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
+    {
+        QFont attrFont = m_ui->attribution->font();
+        attrFont.setPixelSize(10);
+        m_ui->attribution->setFont(attrFont);
+    }
     legal->addWidget(m_ui->attribution);
     m_ui->footerLayout->addWidget(legalWidget, 0, Qt::AlignTop);
     m_ui->bodyLayout->addLayout(m_ui->footerLayout);
