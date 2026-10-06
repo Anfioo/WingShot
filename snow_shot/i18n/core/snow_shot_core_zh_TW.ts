@@ -28,6 +28,10 @@
             <translation>關於 WingShot</translation>
         </message>
         <message>
+            <source>Fork of %1 by mg-chao · %2</source>
+            <translation>Fork of %1 by mg-chao · %2</translation>
+        </message>
+        <message>
             <source>Automatic updates are unavailable for this copy.</source>
             <translation>此副本無法使用自動更新。</translation>
         </message>
@@ -40,10 +44,8 @@
             <translation>取消下載</translation>
         </message>
         <message>
-            <source>Capture, annotate, recognize text, and record your screen,
-so every moment on screen can be expressed clearly and shared easily.</source>
-            <translation>截圖、標註、文字辨識和螢幕錄影，
-讓螢幕上的每一刻都能清晰表達、輕鬆分享。</translation>
+            <source>Capture, annotate, recognize text, and record your screen.</source>
+            <translation>截圖、標註、文字辨識和螢幕錄影。</translation>
         </message>
         <message>
             <source>Changelog</source>
@@ -210,12 +212,12 @@ so every moment on screen can be expressed clearly and shared easily.</source>
             <translation>Snow Shot</translation>
         </message>
         <message>
-            <source>Snow Shot logo</source>
-            <translation>Snow Shot 標誌</translation>
+            <source>WingShot logo</source>
+            <translation>WingShot 標誌</translation>
         </message>
         <message>
-            <source>Snow Shot · Make expression clearer</source>
-            <translation>Snow Shot · 讓表達更清晰</translation>
+            <source>WingShot · Make expression clearer</source>
+            <translation>WingShot · 讓表達更清晰</translation>
         </message>
         <message>
             <source>Text recognition</source>

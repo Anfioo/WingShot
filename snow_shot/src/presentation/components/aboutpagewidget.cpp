@@ -375,6 +375,7 @@ struct AboutPageWidget::Ui {
     QLabel* license = nullptr;
     QLabel* copyright = nullptr;
     QLabel* slogan = nullptr;
+    QLabel* attribution = nullptr;
     int featureColumns = 0;
     int resourceColumns = 0;
 };
@@ -616,6 +617,9 @@ AboutPageWidget::AboutPageWidget(QWidget* parent, UrlOpener urlOpener,
     m_ui->slogan = aboutLabel(QStringLiteral("aboutSlogan"), legalWidget);
     m_ui->slogan->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
     legal->addWidget(m_ui->slogan);
+    m_ui->attribution = aboutLabel(QStringLiteral("aboutAttribution"), legalWidget);
+    m_ui->attribution->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
+    legal->addWidget(m_ui->attribution);
     m_ui->footerLayout->addWidget(legalWidget, 0, Qt::AlignTop);
     m_ui->bodyLayout->addLayout(m_ui->footerLayout);
     layout->addWidget(m_ui->body);
@@ -803,7 +807,7 @@ void AboutPageWidget::retranslateUi() {
     m_ui->productName->setText(snow_shot::app::edition::productName());
     m_ui->logo->setAccessibleName(snow_shot::app::edition::isMini
                                       ? tr("%1 logo").arg(snow_shot::app::edition::productName())
-                                      : tr("Snow Shot logo"));
+                                      : tr("WingShot logo"));
     m_ui->openSource->setText(tr("Free · Open source"));
     const QColor violet(m_ui->scheme.appearance == styles::ThemeAppearance::Dark ? "#b58aec"
                                                                                  : "#7052d8");
@@ -811,8 +815,7 @@ void AboutPageWidget::retranslateUi() {
                                .arg(violet.name(), tr("Elegant screenshots").toHtmlEscaped(),
                                     tr(", excellent work.").toHtmlEscaped()));
     m_ui->description->setText(
-        tr("Capture, annotate, recognize text, and record your screen,\n"
-           "so every moment on screen can be expressed clearly and shared easily."));
+        tr("Capture, annotate, recognize text, and record your screen."));
     const std::array<QString, 6> features{tr("Screenshot capture"), tr("Easy annotation"),
                                           tr("Text recognition"),   tr("Screen recording"),
                                           tr("Pin to screen"),      tr("Screenshot history")};
@@ -862,7 +865,11 @@ void AboutPageWidget::retranslateUi() {
     m_ui->slogan->setText(
         snow_shot::app::edition::isMini
             ? tr("%1 · Make expression clearer").arg(snow_shot::app::edition::productName())
-            : tr("Snow Shot · Make expression clearer"));
+            : tr("WingShot · Make expression clearer"));
+    m_ui->attribution->setText(
+        tr("Fork of %1 by mg-chao · %2")
+            .arg(QStringLiteral("github.com/mg-chao/snow-apps"),
+                 QStringLiteral("github.com/Anfioo/WingShot")));
     m_ui->linkError->setText(m_failedUrl.isEmpty()
                                  ? QString()
                                  : tr("Could not open the link. Open %1 in your browser.")

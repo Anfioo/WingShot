@@ -28,6 +28,10 @@
             <translation>About WingShot</translation>
         </message>
         <message>
+            <source>Fork of %1 by mg-chao · %2</source>
+            <translation>Fork of %1 by mg-chao · %2</translation>
+        </message>
+        <message>
             <source>Automatic updates are unavailable for this copy.</source>
             <translation>Automatic updates are unavailable for this copy.</translation>
         </message>
@@ -40,10 +44,8 @@
             <translation>Cancel download</translation>
         </message>
         <message>
-            <source>Capture, annotate, recognize text, and record your screen,
-so every moment on screen can be expressed clearly and shared easily.</source>
-            <translation>Capture, annotate, recognize text, and record your screen,
-so every moment on screen can be expressed clearly and shared easily.</translation>
+            <source>Capture, annotate, recognize text, and record your screen.</source>
+            <translation>Capture, annotate, recognize text, and record your screen.</translation>
         </message>
         <message>
             <source>Changelog</source>
@@ -210,12 +212,12 @@ so every moment on screen can be expressed clearly and shared easily.</translati
             <translation>Snow Shot</translation>
         </message>
         <message>
-            <source>Snow Shot logo</source>
-            <translation>Snow Shot logo</translation>
+            <source>WingShot logo</source>
+            <translation>WingShot logo</translation>
         </message>
         <message>
-            <source>Snow Shot · Make expression clearer</source>
-            <translation>Snow Shot · Make expression clearer</translation>
+            <source>WingShot · Make expression clearer</source>
+            <translation>WingShot · Make expression clearer</translation>
         </message>
         <message>
             <source>Text recognition</source>
