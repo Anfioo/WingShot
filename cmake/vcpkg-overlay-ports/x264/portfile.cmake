@@ -12,9 +12,8 @@ configure_file("${CURRENT_PORT_DIR}/version.diff.in" "${CURRENT_BUILDTREES_DIR}/
 
 vcpkg_from_git(
     OUT_SOURCE_PATH SOURCE_PATH
-    GIT_URL https://code.videolan.org/videolan/x264.git
-    GIT_REF "${ref}"
-    GIT_SHA "${ref}"
+    URL https://code.videolan.org/videolan/x264.git
+    REF "${ref}"
     PATCHES
         "${CURRENT_BUILDTREES_DIR}/src/version-${VERSION}.diff"
         uwp-cflags.patch
