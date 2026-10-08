@@ -607,7 +607,10 @@ int main(int argc, char** argv) {
     {
         auto manualCheckOptions = options(QStringLiteral("manual-scheduling"));
         manualCheckOptions.startupCheckDelay = std::chrono::milliseconds(25);
-        manualCheckOptions.automaticCheckInterval = std::chrono::milliseconds(100);
+        // Keep the automatic interval far above the 40ms no-check window below.
+        // processFor() sleeps 1ms per iteration and processEvents() may block, so on loaded
+        // CI runners the wall-clock cost of a 40ms window can exceed 100ms and fire the timer.
+        manualCheckOptions.automaticCheckInterval = std::chrono::milliseconds(1000);
         const QString cache = manualCheckOptions.cacheDirectory;
         const QString userComplete = QDir(cache).filePath(QStringLiteral("check-user-complete"));
         const QString periodic = QDir(cache).filePath(QStringLiteral("check-periodic-count"));
